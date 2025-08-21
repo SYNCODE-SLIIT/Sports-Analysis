@@ -1,0 +1,22 @@
+# Virtual env
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# Envs & secrets
+.env
+*.env
+.env.*
+
+# Tools
+.mypy_cache/
+.ipynb_checkpoints/
+.dist/
+.build/
