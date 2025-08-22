@@ -168,14 +168,16 @@ class SportsDBCollector:
 
     # ---- Leagues ----
     def list_sports(self) -> List[str]:
-        """List distinct sports present across all leagues."""
-        data = get_json("all_leagues.php") or {}
-        raw = data.get("leagues") or []
-        sports = sorted(
-            {(x.get("strSport") or "").strip() for x in raw if (x.get("strSport") or "").strip()}
-        )
+        """List distinct sports present across TheSportsDB."""
+        data = get_json("all_sports.php") or {}
+        raw = data.get("sports") or []
+        sports = [
+            (x.get("strSport") or "").strip()
+            for x in raw
+            if (x.get("strSport") or "").strip()
+        ]
         _sleep()
-        return list(sports)
+        return sorted(set(sports))
 
     def list_leagues(self, sport: str | None = None, country: str | None = None) -> List[League]:
         """
