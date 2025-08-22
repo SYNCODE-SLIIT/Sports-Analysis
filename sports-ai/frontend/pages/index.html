@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sports Collector Browser</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --secondary-color: #1e40af;
+      --background-color: #f8fafc;
+      --text-color: #1e293b;
+      --border-color: #e2e8f0;
+    }
+    
+    body { 
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      padding: 2rem;
+      line-height: 1.5;
+      background-color: var(--background-color);
+      color: var(--text-color);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: var(--primary-color);
+      font-size: 2.5rem;
+      margin-bottom: 2rem;
+      text-align: center;
+    }
+
+    h2 {
+      color: var(--secondary-color);
+      margin-top: 2rem;
+    }
+
+    .row { 
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin: 1rem 0;
+      flex-wrap: wrap;
+    }
+
+    label { 
+      font-weight: 600;
+      min-width: 80px;
+    }
+
+    select, input { 
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.375rem;
+      background-color: white;
+      font-size: 0.875rem;
+      min-width: 200px;
+    }
+
+    input[type="number"] {
+      min-width: 100px;
+    }
+
+    button { 
+      cursor: pointer;
+      padding: 0.5rem 1rem;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+
+    button:hover {
+      background-color: var(--secondary-color);
+    }
+
+    pre { 
+      background: white;
+      padding: 1.5rem;
+      border-radius: 0.5rem;
+      overflow: auto;
+      max-height: 50vh;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      font-size: 0.875rem;
+    }
+
+    .section { 
+      background: white;
+      margin-top: 1.5rem;
+      padding: 1.5rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    #baseUrl {
+      width: 300px;
+    }
+
+    @media (max-width: 768px) {
+      body {
+        padding: 1rem;
+      }
+      
+      select, input {
+        width: 100%;
+        min-width: unset;
+      }
+      
+      .row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+      }
+      
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Sports Collector Browser</h1>
+
+  <!-- Base URL (if your backend runs elsewhere) -->
+  <div class="row">
+    <label for="baseUrl">API Base:</label>
+    <input id="baseUrl" value="http://127.0.0.1:8000" style="width:280px" />
+  </div>
+
+  <!-- SPORT -->
+  <div class="row">
+    <label for="sportSel">Sport:</label>
+    <select id="sportSel">
+      <option value="">Loading sports...</option>
+    </select>
+    <button onclick="getLeagues()">Fetch Leagues</button>
+  </div>
+
+  <!-- LEAGUE -->
+  <div class="section">
+    <div class="row">
+      <label for="leagueSel">League:</label>
+      <select id="leagueSel"></select>
+      <label for="limitLeague">Limit:</label>
+      <input id="limitLeague" type="number" min="1" max="50" value="10" style="width:80px" />
+      <button onclick="getLeagueMatches('past')">League Past</button>
+      <button onclick="getLeagueMatches('next')">League Next</button>
+      <button onclick="getLeagueTeams()">League Teams</button>
+    </div>
+  </div>
+
+  <!-- TEAM -->
+  <div class="section">
+    <div class="row">
+      <label for="teamSel">Team:</label>
+      <select id="teamSel"></select>
+      <label for="limitTeam">Limit:</label>
+      <input id="limitTeam" type="number" min="1" max="50" value="5" style="width:80px" />
+      <button onclick="getTeamInfo()">Team Info</button>
+      <button onclick="getTeamMatches('last')">Team Last</button>
+      <button onclick="getTeamMatches('next')">Team Next</button>
+      <button onclick="getTeamPlayers()">Team Players</button>
+    </div>
+  </div>
+
+  <!-- PLAYER -->
+  <div class="section">
+    <div class="row">
+      <label for="playerSel">Player:</label>
+      <select id="playerSel"></select>
+      <button onclick="getPlayer()">Player Details</button>
+    </div>
+  </div>
+
+  <!-- MATCH -->
+  <div class="section">
+    <div class="row">
+      <label for="matchSel">Match:</label>
+      <select id="matchSel"></select>
+      <button onclick="getMatchDetails()">Match Details</button>
+    </div>
+  </div>
+
+  <h2>Output</h2>
+  <pre id="out">Click a button above…</pre>
+
+  <script>
+    const out = document.getElementById("out");
+    const sportSel = document.getElementById("sportSel");
+    const leagueSel = document.getElementById("leagueSel");
+    const teamSel = document.getElementById("teamSel");
+    const playerSel = document.getElementById("playerSel");
+    const matchSel = document.getElementById("matchSel");
+    const limitLeague = document.getElementById("limitLeague");
+    const limitTeam = document.getElementById("limitTeam");
+    const baseUrlInp = document.getElementById("baseUrl");
+
+    // Load sports from API with fallback
+    async function loadSports() {
+      const url = `${apiBase()}/sports`;
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const sports = data.items || [];
+        sportSel.innerHTML = "";
+        for (const s of sports) {
+          const opt = document.createElement("option");
+          opt.value = s;
+          opt.textContent = s;
+          sportSel.appendChild(opt);
+        }
+      } catch (e) {
+        // fallback: hardcoded list
+        const fallbackSports = [
+          "Soccer",
+          "Basketball",
+          "Ice Hockey",
+          "American Football",
+          "Baseball",
+          "Tennis",
+          "Rugby",
+          "Cricket",
+          "Volleyball",
+          "Motorsport"
+        ];
+        sportSel.innerHTML = "";
+        for (const s of fallbackSports) {
+          const opt = document.createElement("option");
+          opt.value = s;
+          opt.textContent = s;
+          sportSel.appendChild(opt);
+        }
+      }
+    }
+
+    // call on page load
+    window.addEventListener('DOMContentLoaded', loadSports);
+
+    function apiBase() { return baseUrlInp.value.replace(/\/+$/, ''); }
+    function show(data) { out.textContent = JSON.stringify(data, null, 2); }
+
+    // ---------- LEAGUES ----------
+    async function getLeagues() {
+      const sport = encodeURIComponent(sportSel.value.trim());
+      const url = `${apiBase()}/leagues?sport=${sport}`;
+      await loadToSelect(url, leagueSel, x => ({value: x.id, label: x.name || x.id}));
+      // clear downstream
+      teamSel.innerHTML = ""; playerSel.innerHTML = ""; matchSel.innerHTML = "";
+    }
+
+    // ---------- LEAGUE MATCHES ----------
+    async function getLeagueMatches(kind) {
+      const leagueId = leagueSel.value;
+      const limit = parseInt(limitLeague.value || "10", 10);
+      if (!leagueId) return show({error:"Select a league first."});
+      const url = `${apiBase()}/leagues/${leagueId}/matches?kind=${encodeURIComponent(kind)}&limit=${limit}`;
+      await loadToSelect(url, matchSel, m => {
+        const score = (m.home_score ?? "") !== "" && (m.away_score ?? "") !== "" ? ` (${m.home_score}-${m.away_score})` : "";
+        return {value: m.id, label: `${m.date || ""} | ${m.home_team || "?"} vs ${m.away_team || "?"}${score}`};
+      });
+    }
+
+    // ---------- LEAGUE TEAMS ----------
+    async function getLeagueTeams() {
+      const leagueId = leagueSel.value;
+      if (!leagueId) return show({error:"Select a league first."});
+      const url = `${apiBase()}/leagues/${leagueId}/teams`;
+      await loadToSelect(url, teamSel, t => ({value: t.id, label: t.name || t.id}));
+      // clear players
+      playerSel.innerHTML = "";
+    }
+
+    // ---------- TEAM ----------
+    async function getTeamInfo() {
+      const teamId = teamSel.value;
+      if (!teamId) return show({error:"Select a team first."});
+      const url = `${apiBase()}/teams/${teamId}`;
+      await fetchAndShow(url);
+    }
+
+    async function getTeamMatches(kind) {
+      const teamId = teamSel.value;
+      const limit = parseInt(limitTeam.value || "5", 10);
+      if (!teamId) return show({error:"Select a team first."});
+      const url = `${apiBase()}/teams/${teamId}/matches?kind=${encodeURIComponent(kind)}&limit=${limit}`;
+      await loadToSelect(url, matchSel, m => {
+        const score = (m.home_score ?? "") !== "" && (m.away_score ?? "") !== "" ? ` (${m.home_score}-${m.away_score})` : "";
+        return {value: m.id, label: `${m.date || ""} | ${m.home_team || "?"} vs ${m.away_team || "?"}${score}`};
+      });
+    }
+
+    // ---------- PLAYERS ----------
+    async function getTeamPlayers() {
+      const teamId = teamSel.value;
+      if (!teamId) return show({error:"Select a team first."});
+      const url = `${apiBase()}/teams/${teamId}/players`;
+      await loadToSelect(url, playerSel, p => ({value: p.id, label: p.name || p.id}));
+    }
+
+    async function getPlayer() {
+      const playerId = playerSel.value;
+      if (!playerId) return show({error:"Select a player first."});
+      const url = `${apiBase()}/players/${playerId}`;
+      await fetchAndShow(url);
+    }
+
+    // ---------- MATCH ----------
+    async function getMatchDetails() {
+      const matchId = matchSel.value;
+      if (!matchId) return show({error:"Select a match first."});
+      const url = `${apiBase()}/matches/${matchId}`;
+      await fetchAndShow(url);
+    }
+
+    // ---------- helpers ----------
+    async function fetchAndShow(url) {
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        show(data);
+      } catch (e) {
+        show({error:String(e), url});
+      }
+    }
+
+    async function loadToSelect(url, selectEl, toOption) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        show(data);
+        const items = data.items || [];
+        selectEl.innerHTML = "";
+        for (const x of items) {
+          const opt = document.createElement("option");
+          const {value, label} = toOption(x);
+          opt.value = value;
+          opt.textContent = label;
+          selectEl.appendChild(opt);
+        }
+        if (items.length === 0) {
+          const opt = document.createElement("option");
+          opt.textContent = "(no data)";
+          selectEl.appendChild(opt);
+        }
+      } catch (e) {
+        show({error:String(e), url});
+      }
+    }
+  </script>
+</body>
+</html>
