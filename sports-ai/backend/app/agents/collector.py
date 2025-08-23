@@ -1,362 +1,287 @@
-from __future__ import annotations
+from typing import Any, Dict, Tuple
+from ..utils.http_client import get_json   # go up one level, then into utils
+# -----------------------
+# Errors
+# -----------------------
+class CollectorError(Exception):
+    def __init__(self, code: str, message: str, details: Dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
 
-import time
-from typing import List, Optional
+class AmbiguousError(CollectorError):
+    pass
 
-from ..utils.http_client import get_json
-from ..utils.config import PAUSE_S
-from ..models.schemas import (
-    League,
-    MatchSummary,
-    TimelineItem,
-    Flags,
-    MatchPackage,
-    Team,
-    Player,
-)
-
-# Normalize event type strings coming from TheSportsDB
-TYPE_MAP = {
-    "Goal": "GOAL",
-    "Red Card": "RED_CARD",
-    "Yellow Card": "YELLOW_CARD",
-    "Substitution": "SUB",
-    "Penalty": "PENALTY",
-}
+class NotFoundError(CollectorError):
+    pass
 
 
-# --------- small utilities ---------
+# -----------------------
+# Collector Agent
+# -----------------------
+class CollectorAgentV2:
+    """JSON-only rule-based collector for TheSportsDB (Soccer only)."""
 
-def _sleep() -> None:
-    """Polite pause to avoid rate limits."""
-    time.sleep(PAUSE_S)
+    def handle(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        trace: list[Dict[str, Any]] = []
+        try:
+            if not isinstance(request, dict):
+                raise CollectorError("BAD_REQUEST", "Request must be a JSON object")
+            intent = request.get("intent")
+            args = request.get("args") or {}
+            if not intent or not isinstance(intent, str):
+                raise CollectorError("BAD_REQUEST", "Missing 'intent' (string)")
+            if not isinstance(args, dict):
+                raise CollectorError("BAD_REQUEST", "'args' must be an object")
 
+            if intent == "leagues.list":
+                data, resolved = self._cap_leagues_list(args, trace)
+            elif intent == "league.get":
+                data, resolved = self._cap_league_get(args, trace)
+            elif intent == "teams.list":
+                data, resolved = self._cap_teams_list(args, trace)
+            elif intent == "team.get":
+                data, resolved = self._cap_team_get(args, trace)
+            elif intent == "players.list":
+                data, resolved = self._cap_players_list(args, trace)
+            elif intent == "player.get":
+                data, resolved = self._cap_player_get(args, trace)
+            elif intent == "events.list":
+                data, resolved = self._cap_events_list(args, trace)
+            elif intent == "event.get":
+                data, resolved = self._cap_event_get(args, trace)
+            elif intent == "seasons.list":
+                data, resolved = self._cap_seasons_list(args, trace)
+            else:
+                raise CollectorError("UNKNOWN_INTENT", f"Unsupported intent '{intent}'")
 
-def _to_int(x) -> Optional[int]:
-    """Convert incoming values like '3' or '' to int/None safely."""
-    try:
-        return int(x) if x is not None and str(x).strip() != "" else None
-    except Exception:
-        return None
+            return {
+                "ok": True,
+                "intent": intent,
+                "args_resolved": resolved,
+                "data": data,
+                "meta": {"trace": trace},
+            }
+        except CollectorError as e:
+            return {
+                "ok": False,
+                "error": {"code": e.code, "message": e.message, "details": e.details},
+                "meta": {"trace": trace},
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": {"code": "INTERNAL", "message": str(e)},
+                "meta": {"trace": trace},
+            }
 
+    # -----------------------
+    # Helpers
+    # -----------------------
+    def _http(self, path: str, params: dict | None, trace: list[Dict[str, Any]]) -> dict:
+        import time
+        p = dict(params or {})
+        p["_ts"] = str(time.time())  # cache-buster
+        data = get_json(path, p)
+        trace.append({"step": "http_get", "path": path, "params": p})
+        return data or {}
 
-def _country_aliases(name: str) -> list[str]:
-    """Loose aliases to help match 'English Premier League' when country='England'."""
-    m = {
-        "england": ["english", "england", "uk", "great britain"],
-        "scotland": ["scottish", "scotland"],
-        "wales": ["welsh", "wales"],
-        "northern ireland": ["northern irish", "northern ireland"],
-        "spain": ["spanish", "spain"],
-        "germany": ["german", "germany"],
-        "france": ["french", "france"],
-        "italy": ["italian", "italy"],
-        "netherlands": ["dutch", "netherlands", "holland"],
-        "belgium": ["belgian", "belgium"],
-        "greece": ["greek", "greece"],
-        "portugal": ["portuguese", "portugal"],
-        "turkey": ["turkish", "turkey"],
-        "usa": ["usa", "united states", "american", "us"],
-        "united states": ["usa", "united states", "american", "us"],
-        "brazil": ["brazilian", "brazil"],
-        "argentina": ["argentine", "argentinian", "argentina"],
-    }
-    key = (name or "").strip().lower()
-    return m.get(key, [key]) if key else []
+    def _first_exact_or_single(self, candidates: list[dict], key: str, value: str) -> Tuple[dict | None, list[dict]]:
+        v = (value or "").strip().lower()
+        exact = [c for c in candidates if (c.get(key) or "").strip().lower() == v]
+        if exact:
+            return exact[0], candidates
+        return None, candidates
 
+    # -----------------------
+    # Resolvers
+    # -----------------------
+    def _resolve_league_id(self, name: str, trace: list[Dict[str, Any]]) -> str:
+        # TheSportsDB free tier does not expose /search_leagues.php.
+        # Resolve league names by listing soccer leagues and matching locally.
+        if not name:
+            raise CollectorError("MISSING_ARG", "Provide leagueName or leagueId")
 
-# --------- normalizers (raw JSON -> clean models) ---------
+        # 1) Try search_all_leagues for Soccer (some payloads return key 'countries').
+        data = self._http("/search_all_leagues.php", {"s": "Soccer"}, trace)
+        leagues = data.get("countries") or data.get("leagues") or []
 
-def _norm_league(raw: dict) -> League:
-    return League(
-        id=raw.get("idLeague") or "",
-        name=raw.get("strLeague") or "",
-        sport=raw.get("strSport"),
-        country=raw.get("strCountry"),
-    )
+        name_l = name.strip().lower()
+        candidates = [L for L in leagues if name_l in ((L.get("strLeague") or "").strip().lower())]
 
+        # 2) Fallback to all_leagues then filter soccer + match by name.
+        if not candidates:
+            data_all = self._http("/all_leagues.php", {}, trace)
+            all_leagues = [L for L in (data_all.get("leagues") or []) if (L.get("strSport") or "").lower() == "soccer"]
+            candidates = [L for L in all_leagues if name_l in ((L.get("strLeague") or "").strip().lower())]
 
-def _norm_match(raw: dict) -> MatchSummary:
-    return MatchSummary(
-        id=raw.get("idEvent") or "",
-        date=raw.get("dateEvent"),
-        league=raw.get("strLeague"),
-        home_team=raw.get("strHomeTeam"),
-        away_team=raw.get("strAwayTeam"),
-        home_score=_to_int(raw.get("intHomeScore")),
-        away_score=_to_int(raw.get("intAwayScore")),
-        venue=raw.get("strVenue"),
-        status=raw.get("strStatus"),
-        video=raw.get("strVideo"),
-        thumb=raw.get("strThumb"),
-    )
+        if not candidates:
+            raise NotFoundError("NOT_FOUND", f"No league found for '{name}'")
 
+        # Prefer exact match if available.
+        exact = [L for L in candidates if (L.get("strLeague") or "").strip().lower() == name_l]
+        pick = exact[0] if exact else candidates[0]
+        if not pick.get("idLeague"):
+            raise NotFoundError("NOT_FOUND", f"Found league '{pick.get('strLeague')}' but missing idLeague")
+        return str(pick.get("idLeague"))
 
-def _norm_timeline_row(raw: dict) -> TimelineItem:
-    minute = _to_int(raw.get("intTime"))
-    raw_type = (raw.get("strEvent") or "").strip()
-    type_norm = TYPE_MAP.get(raw_type, raw_type.upper() if raw_type else "UNKNOWN")
-    team = raw.get("strTeam")
-    player = raw.get("strPlayer")
-    detail = raw.get("strDetail")
+    def _resolve_league_name(self, league_id: str, trace: list[Dict[str, Any]]) -> str:
+        """Resolve leagueId -> canonical strLeague using lookupleague.php."""
+        if not league_id:
+            raise CollectorError("MISSING_ARG", "Provide leagueId")
+        data = self._http("/lookupleague.php", {"id": league_id}, trace)
+        league = (data.get("leagues") or [None])[0] or {}
+        name = (league.get("strLeague") or "").strip()
+        if not name:
+            raise NotFoundError("NOT_FOUND", f"No league name found for id '{league_id}'")
+        return name
 
-    parts: list[str] = []
-    if minute is not None:
-        parts.append(f"{minute}′")
-    if type_norm and type_norm != "UNKNOWN":
-        parts.append(type_norm.replace("_", " "))
-    if player:
-        parts.append(f"by {player}")
-    if team:
-        parts.append(f"({team})")
-    if detail:
-        parts.append(f"— {detail}")
-    text = " ".join(parts) if parts else (raw.get("strEvent") or "Event")
+    def _resolve_team_id(self, name: str, trace: list[Dict[str, Any]]) -> str:
+        data = self._http("/searchteams.php", {"t": name}, trace)
+        teams = data.get("teams") or []
+        if not teams:
+            raise NotFoundError("NOT_FOUND", f"No team found for '{name}'")
+        exact, allc = self._first_exact_or_single(teams, "strTeam", name)
+        pick = exact or (allc[0] if len(allc) == 1 else None)
+        if not pick:
+            raise AmbiguousError("AMBIGUOUS", f"Multiple teams match '{name}'", {"choices": allc})
+        return str(pick.get("idTeam"))
 
-    return TimelineItem(
-        minute=minute,
-        type=type_norm,
-        team=team,
-        player=player,
-        detail=detail,
-        text=text,
-    )
+    def _resolve_player_id(self, name: str, trace: list[Dict[str, Any]]) -> str:
+        data = self._http("/searchplayers.php", {"p": name}, trace)
+        players = data.get("player") or []
+        if not players:
+            raise NotFoundError("NOT_FOUND", f"No player found for '{name}'")
+        exact, allc = self._first_exact_or_single(players, "strPlayer", name)
+        pick = exact or (allc[0] if len(allc) == 1 else None)
+        if not pick:
+            raise AmbiguousError("AMBIGUOUS", f"Multiple players match '{name}'", {"choices": allc})
+        return str(pick.get("idPlayer"))
 
+    # -----------------------
+    # Capabilities (raw JSON)
+    # -----------------------
+    def _cap_leagues_list(self, args, trace):
+        # Use /all_leagues.php then filter to Soccer; alternatively /search_all_leagues.php?s=Soccer
+        data = self._http("/all_leagues.php", {}, trace)
+        leagues = [L for L in (data.get("leagues") or []) if (L.get("strSport") or "").lower() == "soccer"]
+        name = args.get("name")
+        country = args.get("country")
+        if name:
+            leagues = [L for L in leagues if name.lower() in (L.get("strLeague") or "").lower()]
+        if country:
+            leagues = [L for L in leagues if (L.get("strCountry") or "").lower() == str(country).lower()]
+        return {"leagues": leagues}, args
 
-def _norm_team(raw: dict) -> Team:
-    return Team(
-        id=raw.get("idTeam") or "",
-        name=raw.get("strTeam") or "",
-        alt_name=raw.get("strAlternate"),
-        league=raw.get("strLeague"),
-        country=raw.get("strCountry"),
-        formed_year=_to_int(raw.get("intFormedYear")),
-        stadium=raw.get("strStadium"),
-        stadium_thumb=raw.get("strStadiumThumb"),
-        website=raw.get("strWebsite"),
-        badge=raw.get("strTeamBadge"),
-        banner=raw.get("strTeamBanner"),
-        jersey=raw.get("strTeamJersey"),
-        description=raw.get("strDescriptionEN"),
-    )
+    def _cap_league_get(self, args, trace):
+        league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
+        data = self._http("/lookupleague.php", {"id": league_id}, trace)
+        return {"league": (data.get("leagues") or [None])[0]}, {"leagueId": league_id}
 
-
-def _norm_player(raw: dict) -> Player:
-    return Player(
-        id=raw.get("idPlayer") or "",
-        name=raw.get("strPlayer") or "",
-        team=raw.get("strTeam"),
-        team_id=raw.get("idTeam"),
-        nationality=raw.get("strNationality"),
-        position=raw.get("strPosition"),
-        squad_number=raw.get("strNumber"),
-        born=raw.get("dateBorn"),
-        height=raw.get("strHeight"),
-        weight=raw.get("strWeight"),
-        signing=raw.get("strSigning"),
-        wage=raw.get("strWage"),
-        thumb=raw.get("strThumb"),
-        cutout=raw.get("strCutout"),
-        description=raw.get("strDescriptionEN"),
-    )
-
-
-# --------- main collector ---------
-
-class SportsDBCollector:
-    """Deterministic collector over TheSportsDB endpoints."""
-
-    # ---- Leagues ----
-    def list_sports(self) -> List[str]:
-        """List distinct sports present across TheSportsDB."""
-        data = get_json("all_sports.php") or {}
-        raw = data.get("sports") or []
-        sports = [
-            (x.get("strSport") or "").strip()
-            for x in raw
-            if (x.get("strSport") or "").strip()
-        ]
-        _sleep()
-        return sorted(set(sports))
-
-    def list_leagues(self, sport: str | None = None, country: str | None = None) -> List[League]:
+    def _cap_teams_list(self, args, trace):
+        """List teams by teamName | leagueName/leagueId | country.
+        IMPORTANT: Use name-based lookup via /search_all_teams.php because
+        /lookup_all_teams.php can return incorrect/irrelevant teams for many IDs.
         """
-        Fetch leagues with optional filtering:
-        - sport & country -> try targeted search, else fallback to filtering all
-        - sport only      -> filter all by sport
-        - country only    -> filter all by country aliases
-        - neither         -> return all leagues
-        """
-        # sport & country: use specific endpoint first
-        if sport and country:
-            data = get_json("search_all_leagues.php", {"c": country, "s": sport}) or {}
-            raw = data.get("countrys") or []
-            if raw:
-                _sleep()
-                return [_norm_league(x) for x in raw]
+        # 1) Direct team search by name
+        if args.get("teamName"):
+            data = self._http("/searchteams.php", {"t": args["teamName"]}, trace)
+            return {"teams": data.get("teams") or []}, {"teamName": args["teamName"]}
 
-            # fallback: fetch all and filter locally
-            data = get_json("all_leagues.php") or {}
-            all_raw = data.get("leagues") or []
-            aliases = _country_aliases(country)
-            sport_l = (sport or "").strip().lower()
+        # 2) Resolve a league name, then use search_all_teams.php?l={strLeague}&s=Soccer
+        league_name = (args.get("leagueName") or "").strip()
+        league_id = args.get("leagueId")
+        if league_id and not league_name:
+            # Convert id -> name first
+            league_name = self._resolve_league_name(str(league_id), trace)
+        if league_name:
+            # Prefer name-based lookup. Some responses can occasionally be non-JSON (HTML splash).
+            # Try with sport filter first; if it fails, retry without it.
+            params_primary = {"l": league_name, "s": "Soccer"}
+            try:
+                data = self._http("/search_all_teams.php", params_primary, trace)
+            except Exception:
+                data = self._http("/search_all_teams.php", {"l": league_name}, trace)
+            teams = data.get("teams") or []
+            return {"teams": teams}, {"leagueName": league_name}
 
-            def _match_country(lname: str, lcountry: str | None) -> bool:
-                lcountry_l = (lcountry or "").strip().lower()
-                lname_l = (lname or "").strip().lower()
-                if lcountry_l and lcountry_l == country.strip().lower():
-                    return True
-                return any(a in lname_l for a in aliases)
+        # 3) Country search (still via search_all_teams)
+        if args.get("country"):
+            data = self._http("/search_all_teams.php", {"c": args["country"], "s": "Soccer"}, trace)
+            return {"teams": data.get("teams") or []}, {"country": args["country"]}
 
-            filtered = [
-                x
-                for x in all_raw
-                if (x.get("strSport") or "").strip().lower() == sport_l
-                and _match_country(x.get("strLeague"), x.get("strCountry"))
-            ]
-            _sleep()
-            return [_norm_league(x) for x in filtered]
+        raise CollectorError("MISSING_ARG", "Need teamName | leagueId/leagueName | country")
 
-        # sport only
-        if sport and not country:
-            data = get_json("all_leagues.php") or {}
-            all_raw = data.get("leagues") or []
-            sport_l = (sport or "").strip().lower()
-            filtered = [
-                x for x in all_raw if (x.get("strSport") or "").strip().lower() == sport_l
-            ]
-            _sleep()
-            return [_norm_league(x) for x in filtered]
+    def _cap_team_get(self, args, trace):
+        team_id = args.get("teamId") or self._resolve_team_id(args.get("teamName"), trace)
+        data = self._http("/lookupteam.php", {"id": team_id}, trace)
+        return {"team": (data.get("teams") or [None])[0]}, {"teamId": team_id}
 
-        # country only
-        if country and not sport:
-            data = get_json("all_leagues.php") or {}
-            all_raw = data.get("leagues") or []
-            aliases = _country_aliases(country)
+    def _cap_players_list(self, args, trace):
+        if args.get("playerName"):
+            data = self._http("/searchplayers.php", {"p": args["playerName"]}, trace)
+            return {"players": data.get("player") or []}, {"playerName": args["playerName"]}
+        team_id = args.get("teamId")
+        if args.get("teamName") and not team_id:
+            team_id = self._resolve_team_id(args["teamName"], trace)
+        if team_id:
+            data = self._http("/lookup_all_players.php", {"id": team_id}, trace)
+            return {"players": data.get("player") or []}, {"teamId": team_id}
+        raise CollectorError("MISSING_ARG", "Need teamId/teamName or playerName")
 
-            def _match_country(lname: str, lcountry: str | None) -> bool:
-                lcountry_l = (lcountry or "").strip().lower()
-                lname_l = (lname or "").strip().lower()
-                if lcountry_l and lcountry_l == country.strip().lower():
-                    return True
-                return any(a in lname_l for a in aliases)
+    def _cap_player_get(self, args, trace):
+        player_id = args.get("playerId") or self._resolve_player_id(args.get("playerName"), trace)
+        data = self._http("/lookupplayer.php", {"id": player_id}, trace)
+        return {"player": (data.get("players") or [None])[0]}, {"playerId": player_id}
 
-            filtered = [x for x in all_raw if _match_country(x.get("strLeague"), x.get("strCountry"))]
-            _sleep()
-            return [_norm_league(x) for x in filtered]
+    def _cap_events_list(self, args, trace):
+        if args.get("date"):
+            data = self._http("/eventsday.php", {"d": args["date"], "s": "Soccer"}, trace)
+            return {"events": data.get("events") or []}, {"date": args["date"]}
+        league_id = args.get("leagueId")
+        if args.get("leagueName") and not league_id:
+            league_id = self._resolve_league_id(args["leagueName"], trace)
+        if league_id:
+            if args.get("season"):
+                data = self._http("/eventsseason.php", {"id": league_id, "s": args["season"]}, trace)
+                return {"events": data.get("events") or []}, {"leagueId": league_id, "season": args["season"]}
+            if args.get("kind") == "next":
+                data = self._http("/eventsnextleague.php", {"id": league_id}, trace)
+                return {"events": data.get("events") or []}, {"leagueId": league_id, "kind": "next"}
+            data = self._http("/eventspastleague.php", {"id": league_id}, trace)
+            return {"events": data.get("events") or []}, {"leagueId": league_id, "kind": "past"}
+        team_id = args.get("teamId")
+        if args.get("teamName") and not team_id:
+            team_id = self._resolve_team_id(args["teamName"], trace)
+        if team_id:
+            if args.get("kind") == "next":
+                data = self._http("/eventsnext.php", {"id": team_id}, trace)
+                return {"events": data.get("events") or []}, {"teamId": team_id, "kind": "next"}
+            data = self._http("/eventslast.php", {"id": team_id}, trace)
+            return {"events": data.get("results") or []}, {"teamId": team_id, "kind": "last"}
+        raise CollectorError("MISSING_ARG", "Need date | leagueId/leagueName | teamId/teamName")
 
-        # neither: return all
-        data = get_json("all_leagues.php") or {}
-        raw = data.get("leagues") or []
-        _sleep()
-        return [_norm_league(x) for x in raw]
+    def _cap_event_get(self, args, trace):
+        if not args.get("eventId"):
+            raise CollectorError("MISSING_ARG", "Need eventId")
+        event_id = args["eventId"]
+        detail = self._http("/lookupevent.php", {"id": event_id}, trace)
+        ev = (detail.get("events") or [None])[0] or {}
+        out = {"event": ev}
+        expand = args.get("expand") or []
+        if "timeline" in expand:
+            tl = self._http("/lookuptimeline.php", {"id": event_id}, trace)
+            out["timeline"] = tl.get("timeline") or []
+        if "stats" in expand:
+            st = self._http("/lookupeventstats.php", {"id": event_id}, trace)
+            out["stats"] = st.get("eventstats") or []
+        if "lineup" in expand:
+            lu = self._http("/lookuplineup.php", {"id": event_id}, trace)
+            out["lineup"] = lu.get("lineup") or []
+        return out, {"eventId": event_id, "expand": expand}
 
-    # ---- Matches ----
-    def list_matches_for_league(self, league_id: str, kind: str = "past", limit: int = 10) -> List[MatchSummary]:
-        """List past/next matches for a league (limit is a cap; API may return fewer)."""
-        if kind == "past":
-            data = get_json("eventspastleague.php", {"id": league_id}) or {}
-            raw = data.get("events") or []
-        else:
-            data = get_json("eventsnextleague.php", {"id": league_id}) or {}
-            raw = data.get("events") or []
-        _sleep()
-        return [_norm_match(x) for x in raw[:limit]]
-
-    def list_matches_for_team(self, team_id: str, kind: str = "last", limit: int = 5) -> List[MatchSummary]:
-        """List last/next matches for a team."""
-        if kind == "last":
-            data = get_json("eventslast.php", {"id": team_id}) or {}
-            raw = data.get("results") or []
-        else:
-            data = get_json("eventsnext.php", {"id": team_id}) or {}
-            raw = data.get("events") or []
-        _sleep()
-        return [_norm_match(x) for x in raw[:limit]]
-
-    def get_match(self, event_id: str) -> MatchPackage:
-        """Full match package: summary + timeline + availability flags."""
-        detail = get_json("lookupevent.php", {"id": event_id}) or {}
-        ev_raw = (detail.get("events") or [{}])[0]
-        event = _norm_match(ev_raw)
-        _sleep()
-
-        tl = get_json("lookuptimeline.php", {"id": event_id}) or {}
-        timeline_raw = tl.get("timeline") or []
-        timeline = [_norm_timeline_row(x) for x in timeline_raw]
-        _sleep()
-
-        stats = get_json("lookupeventstats.php", {"id": event_id}) or {}
-        lineup = get_json("lookuplineup.php", {"id": event_id}) or {}
-        flags = Flags(
-            has_timeline=bool(timeline_raw),
-            has_stats=bool(stats.get("eventstats") or []),
-            has_lineup=bool(lineup.get("lineup") or []),
-        )
-        _sleep()
-
-        return MatchPackage(
-            event=event,
-            timeline=timeline,
-            flags=flags,
-            provenance={"source": "TheSportsDB"},
-        )
-
-    # ---- Seasons / Day views ----
-    def list_seasons_for_league(self, league_id: str) -> List[str]:
-        """Return season strings like '2025-2026'."""
-        data = get_json("search_all_seasons.php", {"id": league_id}) or {}
-        seasons = [s.get("strSeason") for s in (data.get("seasons") or []) if s.get("strSeason")]
-        _sleep()
-        return seasons
-
-    def list_matches_for_league_season(self, league_id: str, season: str) -> List[MatchSummary]:
-        """Full schedule for a league season."""
-        data = get_json("eventsseason.php", {"id": league_id, "s": season}) or {}
-        raw = data.get("events") or []
-        _sleep()
-        return [_norm_match(x) for x in raw]
-
-    def list_matches_by_day(self, date_iso: str, sport: str = "Soccer") -> List[MatchSummary]:
-        """All events for a given day (ISO date) and sport."""
-        data = get_json("eventsday.php", {"d": date_iso, "s": sport}) or {}
-        raw = data.get("events") or []
-        _sleep()
-        return [_norm_match(x) for x in raw]
-
-    # ---- Teams / Players ----
-    def list_teams_in_league(self, league_id: str) -> List[Team]:
-        data = get_json("lookup_all_teams.php", {"id": league_id}) or {}
-        raw = data.get("teams") or []
-        _sleep()
-        return [_norm_team(x) for x in raw]
-
-    def search_teams(self, name: str) -> List[Team]:
-        data = get_json("searchteams.php", {"t": name}) or {}
-        raw = data.get("teams") or []
-        _sleep()
-        return [_norm_team(x) for x in raw]
-
-    def get_team(self, team_id: str) -> Optional[Team]:
-        data = get_json("lookupteam.php", {"id": team_id}) or {}
-        raw = data.get("teams") or []
-        _sleep()
-        return _norm_team(raw[0]) if raw else None
-
-    def list_players_for_team(self, team_id: str) -> List[Player]:
-        data = get_json("lookup_all_players.php", {"id": team_id}) or {}
-        raw = data.get("player") or []
-        _sleep()
-        return [_norm_player(x) for x in raw]
-
-    def search_players(self, name: str) -> List[Player]:
-        data = get_json("searchplayers.php", {"p": name}) or {}
-        raw = data.get("player") or []
-        _sleep()
-        return [_norm_player(x) for x in raw]
-
-    def get_player(self, player_id: str) -> Optional[Player]:
-        data = get_json("lookupplayer.php", {"id": player_id}) or {}
-        raw = data.get("players") or []
-        _sleep()
-        return _norm_player(raw[0]) if raw else None
+    def _cap_seasons_list(self, args, trace):
+        league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
+        data = self._http("/search_all_seasons.php", {"id": league_id}, trace)
+        return {"seasons": data.get("seasons") or []}, {"leagueId": league_id}
