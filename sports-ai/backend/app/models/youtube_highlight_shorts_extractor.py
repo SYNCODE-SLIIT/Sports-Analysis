@@ -1,9 +1,3 @@
-"""
-YouTube Highlight Shorts Extractor
-Extracts short clips from a YouTube highlight video by detecting special moments (audio spikes + scene changes).
-Optimized for professional, scene-aligned shorts.
-"""
-
 import os
 import numpy as np
 import subprocess
@@ -12,7 +6,7 @@ import librosa
 import shutil
 
 # --- PARAMETERS ---
-youtube_url = 'https://www.youtube.com/watch?v=II_-tx-G0Kw'  # Replace with your URL
+youtube_url = 'https://www.youtube.com/watch?v=II_-tx-G0Kw' 
 output_dir = 'highlight_shorts'
 os.makedirs(output_dir, exist_ok=True)
 clip_duration = 30  # seconds per short
