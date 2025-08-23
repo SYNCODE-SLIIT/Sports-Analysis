@@ -80,8 +80,11 @@ class CollectorAgentV2:
     # Helpers
     # -----------------------
     def _http(self, path: str, params: dict | None, trace: list[Dict[str, Any]]) -> dict:
-        data = get_json(path, params or {})
-        trace.append({"step": "http_get", "path": path, "params": params or {}})
+        import time
+        p = dict(params or {})
+        p["_ts"] = str(time.time())  # cache-buster
+        data = get_json(path, p)
+        trace.append({"step": "http_get", "path": path, "params": p})
         return data or {}
 
     def _first_exact_or_single(self, candidates: list[dict], key: str, value: str) -> Tuple[dict | None, list[dict]]:
