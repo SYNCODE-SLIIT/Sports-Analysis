@@ -1,21 +1,24 @@
-from __future__ import annotations
-from fastapi import FastAPI
+from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import leagues, matches, teams
+from .agents.collector import CollectorAgentV2
 
-app = FastAPI(title="Sports AI Collector", version="0.1.0")
+app = FastAPI(title="Sports Collector HM", version="0.1.0")
 
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # allow all origins (for dev; restrict in prod)
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True,
 )
 
-app.include_router(leagues.router)
-app.include_router(matches.router)
-app.include_router(teams.router)
+agent = CollectorAgentV2()
+
+@app.post("/collect")
+def collect(request: dict = Body(...)):
+    """Single entrypoint: pass {"intent":..., "args":{...}}"""
+    return agent.handle(request)
 
 @app.get("/health")
 def health():
