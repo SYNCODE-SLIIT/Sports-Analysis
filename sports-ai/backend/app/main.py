@@ -90,13 +90,19 @@ def live_games(date: str | None = None):
     return {"ok": True, "date": d, "count": len(games), "games": games}
 
 @app.get("/games")
-def merged_games(date: str | None = None, league_id: str | None = None):
+def merged_games(date: str | None = None, league_id: str | None = None, refresh: bool = False, provider: str | None = None):
     """Unified merged games endpoint combining API-Football + TheSportsDB.
+    Adds optional refresh=true to bypass cached results for past dates and force refetch.
     Returns: {ok, date, count, games:[...]}
     """
     d = date or datetime.utcnow().strftime("%Y-%m-%d")
-    games = games_agent.list_games(date=d, league_id=league_id)
-    return {"ok": True, "date": d, "count": len(games), "games": games}
+    # Recreate agent each call so BASE_URL / headers changes picked up without restart
+    dynamic_agent = GameAnalyticsAgent()
+    games = dynamic_agent.list_games(date=d, league_id=league_id, refresh=refresh)
+    if provider:
+        provider_lower = provider.lower()
+        games = [g for g in games if provider_lower in [p.lower() for p in g.get("providers", [])]]
+    return {"ok": True, "date": d, "count": len(games), "games": games, "refreshed": refresh, "provider_filter": provider}
 
 @app.get("/games/{game_id}/analytics")
 def game_analytics(game_id: str, date: str | None = None):
@@ -115,10 +121,17 @@ def game_analytics(game_id: str, date: str | None = None):
         if str(g.get("game_id")) == str(game_id):
             rec = g
             break
-    # Build agent with potential tsdb event id
-    agent_instance = GameAnalyticsAgent(game_id=game_id, tsdb_event_id=(rec or {}).get("tsdb_event_id"))
+    # Build agent with potential tsdb event id and AllSportsApi id (same as game_id if provider is allsportsapi)
+    allsports_event_id = None
+    if rec and "allsportsapi" in rec.get("providers", []):
+        allsports_event_id = rec.get("game_id")
+    # Build providers list dynamically. Always include api_football & thesportsdb by default; add allsportsapi if applicable.
+    providers = ["api_football", "thesportsdb"]
+    if allsports_event_id:
+        providers.append("allsportsapi")
+    agent_instance = GameAnalyticsAgent(game_id=game_id, tsdb_event_id=(rec or {}).get("tsdb_event_id"), allsports_event_id=allsports_event_id, providers=providers)
     data = agent_instance.get_all_analytics()
-    return {"ok": True, "game_id": game_id, "date": target_date, "data": data, "tsdb_event_id": (rec or {}).get("tsdb_event_id")}
+    return {"ok": True, "game_id": game_id, "date": target_date, "data": data, "tsdb_event_id": (rec or {}).get("tsdb_event_id"), "allsports_event_id": allsports_event_id, "providers": agent_instance.providers, "is_fd_org": agent_instance.is_fd_org}
 
 
 @app.get("/debug/external-test")
