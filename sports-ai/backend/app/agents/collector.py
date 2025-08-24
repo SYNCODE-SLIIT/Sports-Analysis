@@ -1,5 +1,12 @@
 from typing import Any, Dict, Tuple
-from ..utils.http_client import get_json   # go up one level, then into utils
+# Try relative import first (normal package layout). Fallback to absolute if executed differently.
+try:  # pragma: no cover - import robustness
+    from ..utils.http_client import get_json  # type: ignore
+except Exception:  # noqa: blanket ok here
+    try:
+        from backend.app.utils.http_client import get_json  # type: ignore
+    except Exception as _e:  # final fallback
+        raise ImportError("Cannot import get_json from utils.http_client") from _e
 # -----------------------
 # Errors
 # -----------------------

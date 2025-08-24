@@ -562,6 +562,15 @@
             }
         }
 
+        // --- Logo filtering to avoid console net::ERR_FAILED spam for missing images ---
+        const BAD_LOGO_IDS = new Set(['24755','8104','12186']); // extend as observed
+        function filterLogo(url){
+            if(!url) return null;
+            const m = url.match(/\/teams\/(\d+)\.png$/);
+            if(m && BAD_LOGO_IDS.has(m[1])) return null; // skip known broken IDs
+            return url;
+        }
+
         function displayGames(games) {
             const gamesEl = document.getElementById('games');
             
@@ -582,6 +591,9 @@
         }
 
         function createGameCard(game) {
+            // Pre-filter logos so broken ones are not even requested (prevents console errors)
+            const homeLogo = filterLogo(game.home_logo);
+            const awayLogo = filterLogo(game.away_logo);
             const isLive = game.status_short && /^\d+\'$/.test(game.status_short) || 
                            ['HT', 'LIVE', '1H', '2H'].includes(game.status_short) ||
                            (game.status_long && game.status_long.toLowerCase().includes('live'));
@@ -619,7 +631,7 @@
                     
                     <div class="match-main">
                         <div class="team">
-                            ${game.home_logo ? `<img src="${game.home_logo}" alt="home" class="team-logo" onerror="this.style.display='none'">` : '<div class="team-logo">⚽</div>'}
+                            ${homeLogo ? `<img src="${homeLogo}" alt="home" class="team-logo" onerror="this.style.display='none'">` : '<div class="team-logo">⚽</div>'}
                             <div class="team-name">${game.home_team || 'TBD'}</div>
                         </div>
                         
@@ -629,7 +641,7 @@
                         
                         <div class="team away">
                             <div class="team-name">${game.away_team || 'TBD'}</div>
-                            ${game.away_logo ? `<img src="${game.away_logo}" alt="away" class="team-logo" onerror="this.style.display='none'">` : '<div class="team-logo">⚽</div>'}
+                            ${awayLogo ? `<img src="${awayLogo}" alt="away" class="team-logo" onerror="this.style.display='none'">` : '<div class="team-logo">⚽</div>'}
                         </div>
                     </div>
                     
