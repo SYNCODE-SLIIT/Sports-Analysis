@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <!-- Optional: override API base by adding content, e.g. http://127.0.0.1:8030 -->
+    <meta name="api-base" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Football Analytics Dashboard</title>
     <style>
@@ -259,6 +261,14 @@
             border-radius: 50%;
             background: rgba(255,255,255,0.1);
         }
+
+        .logo-fallback, .logo-fallback-large, .logo-fallback-small {
+            display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#1e293b; border-radius:50%; text-transform:uppercase;
+            box-shadow:0 0 0 1px rgba(255,255,255,0.08);
+        }
+        .logo-fallback { width:45px; height:45px; font-size:.75rem; }
+        .logo-fallback-large { width:80px; height:80px; font-size:1rem; }
+        .logo-fallback-small { width:24px; height:24px; font-size:.55rem; }
         
         .team-name {
             font-weight: bold;
@@ -613,7 +623,61 @@
         </div>
     </div>
 
+    <!-- Load the game modal component -->
+        <iframe id="modalFrame" src="../components/game-modal.html" style="display:none" onload="initializeModal()" onerror="fallbackInlineModal()"></iframe>
+
+        <script>
+        function fallbackInlineModal(){
+                if(document.getElementById('gameModal')) return; // already injected
+                console.warn('[modal] iframe failed to load, injecting minimal fallback modal');
+                const wrapper = document.createElement('div');
+                wrapper.id='gameModal';
+                wrapper.className='game-modal show';
+                wrapper.innerHTML = `
+                    <style id="game-modal-styles-fallback">.game-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:9999;padding:1rem;font-family:system-ui,sans-serif}.game-modal.show{display:flex}.modal-container{background:#1f2937;color:#fff;border-radius:12px;max-width:1100px;width:100%;max-height:90vh;overflow:auto;position:relative;padding:1.5rem}.modal-close{position:absolute;top:.5rem;right:.75rem;background:#374151;border:0;color:#fff;width:32px;height:32px;border-radius:6px;cursor:pointer}.tabs-nav{display:flex;gap:.25rem;margin:.75rem 0}.tabs-nav button{flex:1;background:#374151;border:0;padding:.6rem .8rem;color:#9ca3af;font-weight:600;cursor:pointer;border-radius:6px}.tabs-nav button.active{background:#2563eb;color:#fff}.tab-content{display:none}.tab-content.active{display:block}</style>
+                    <div class='modal-container'>
+                        <button class='modal-close' onclick='closeGameModal()'>✕</button>
+                        <h2 id='modalTitle' style='margin:0 0 .75rem;font-size:1.3rem'>Game Details</h2>
+                        <div id='matchHeader' style='margin-bottom:1rem;font-size:.9rem;opacity:.85'>Loading...</div>
+                        <nav class='tabs-nav'>
+                            <button class='tab-button active' onclick='showTab("overview")'>Overview</button>
+                            <button class='tab-button' onclick='showTab("statistics")'>Statistics</button>
+                            <button class='tab-button' onclick='showTab("players")'>Players</button>
+                            <button class='tab-button' onclick='showTab("injuries")'>Injuries</button>
+                            <button class='tab-button' onclick='showTab("videos")'>Videos</button>
+                        </nav>
+                        <div class='tab-content active' id='overviewTab'><div id='overviewContent'>Initializing...</div></div>
+                        <div class='tab-content' id='statisticsTab'><div id='statisticsContent'></div></div>
+                        <div class='tab-content' id='playersTab'><div id='playersContent'></div></div>
+                        <div class='tab-content' id='injuriesTab'><div id='injuriesContent'></div></div>
+                        <div class='tab-content' id='videosTab'><div id='videosContent'></div></div>
+                    </div>`;
+                document.body.appendChild(wrapper);
+                window.__MODAL_READY__ = true;
+                if(window.__PENDING_MODAL_GAME__){
+                        const g = window.__PENDING_MODAL_GAME__;
+                        delete window.__PENDING_MODAL_GAME__;
+                        openGameModal(g);
+                }
+        }
+        // Safety fallback: if iframe not ready in 2.5s, inject fallback
+        setTimeout(()=>{ if(!window.__MODAL_READY__) fallbackInlineModal(); }, 2500);
+        </script>
+
     <script>
+        // --- API base resolution (works if page opened via file:// or wrong origin) ---
+        const API_BASE = (() => {
+            try {
+                const meta = document.querySelector('meta[name="api-base"]');
+                if (meta && meta.content && meta.content.trim()) {
+                    return meta.content.replace(/\/$/, '');
+                }
+                const org = window.location.origin;
+                if (/^https?:/i.test(org)) return org.replace(/\/$/, '');
+            } catch(_) {}
+            // Fallback common dev ports
+            return 'http://127.0.0.1:8030';
+        })();
         // Demo data for fallback
         const demoGames = [
             {
@@ -948,847 +1012,515 @@
             openGameModal(game);
         }
 
-    /* --- Modal handling and analytics fetch --- */
-    const COLLECTOR_API = 'http://127.0.0.1:8030/collect'; // still used for fallback event fetch
-    const ANALYTICS_BASE = 'http://127.0.0.1:8030';
-
-                function openGameModal(game){
-                        const modal = document.getElementById('gameDetailModal');
-                        modal.classList.add('show');
-                        document.getElementById('gameDetailTitle').textContent = `${game.home_team} vs ${game.away_team}`;
-                        document.getElementById('gameDetailMeta').textContent = `ID: ${game.game_id}`;
-                        setActiveTab('overview');
-                        renderOverview(game);
-                        renderRaw({});
-                        const dateOnly = (game.date ? game.date.split('T')[0] : document.getElementById('dateInput').value);
-                        const url = `${ANALYTICS_BASE}/games/${game.game_id}/analytics?date=${encodeURIComponent(dateOnly)}`;
-                        renderLoadingAll();
-                        fetch(url)
-                            .then(r=>{ if(!r.ok) throw new Error('analytics '+r.status); return r.json(); })
-                            .then(j=>{
-                                if(!j.ok) throw new Error('analytics not ok');
-                                const bundle = j.data || {};
-                                document.getElementById('gameDetailMeta').textContent = `ID: ${game.game_id}${j.tsdb_event_id? ' (tsdb:'+j.tsdb_event_id+')':''}${j.allsports_event_id? ' (as:'+j.allsports_event_id+')':''}`;
-                                renderOverview(game,bundle);
-                                renderTimeline(bundle);
-                                renderStatsTab(bundle, game);
-                                renderLineups(bundle);
-                                renderCompetition(bundle);
-                                renderVideos(bundle);
-                                renderRaw(bundle);
-                            })
-                            .catch(err=>{
-                                console.warn('Unified analytics failed', err);
-                                renderVideos({});
-                            });
-                }
-
-                function renderLoadingAll(){
-                        ['overview','timeline','stats','lineups','competition','videos','raw'].forEach(id=>{
-                                const el = document.getElementById('tab-panel-'+id);
-                                if(el) el.innerHTML = '<div class="skeleton" style="height:20px;width:60%"></div><div class="skeleton" style="height:20px;width:80%"></div><div class="skeleton" style="height:20px;width:40%"></div>';
-                        });
-                }
-
-                function renderOverview(game,bundle={}){
-                        const panel = document.getElementById('tab-panel-overview');
-                        if(!panel) return;
-                        const gi = (bundle.game_info)||{};
-                        const providerList = (bundle.sources_used||[]).join(', ') || (game.providers?game.providers.join('+'):(game.provider||''));
-                        // Winner inference client-side if not provided
-                        let winner = gi.score_winner || (game.home_score!=null && game.away_score!=null ? (game.home_score>game.away_score?game.home_team: game.home_score<game.away_score? game.away_team : 'Draw') : '');
-                        const asGoals = bundle.allsportsapi?.goalscorers || [];
-                        const asCards = bundle.allsportsapi?.cards || [];
-                        panel.innerHTML = `
-                            <div class="scoreboard">
-                                <div class="team">
-                                    ${game.home_logo?`<img src="${game.home_logo}" />`:''}
-                                    <div>
-                                        <div style="font-weight:600">${game.home_team}</div>
-                                        <div class="pill">Home</div>
-                                    </div>
-                                </div>
-                                <div class="center">
-                                    <div class="time">${game.status_long||game.status_short||'TBD'}</div>
-                                    <div class="score">${game.home_score ?? '-'} : ${game.away_score ?? '-'}</div>
-                                    <div class="time">${(game.date||'').replace('T',' ').slice(0,16)}</div>
-                                </div>
-                                <div class="team" style="justify-content:flex-end">
-                                    <div style="text-align:right">
-                                        <div style="font-weight:600">${game.away_team}</div>
-                                        <div class="pill">Away</div>
-                                    </div>
-                                    ${game.away_logo?`<img src="${game.away_logo}" />`:''}
-                                </div>
-                            </div>
-                            <div class="kv-grid">
-                                <div class="kv"><strong>League</strong><br>${game.league || gi.league || 'N/A'}</div>
-                                <div class="kv"><strong>Venue</strong><br>${game.venue || gi.venue || 'N/A'}</div>
-                                <div class="kv"><strong>Round</strong><br>${game.round || 'N/A'}</div>
-                                <div class="kv"><strong>Season</strong><br>${game.season || 'N/A'}</div>
-                                <div class="kv"><strong>Referee</strong><br>${game.referee || gi.referee || 'N/A'}</div>
-                                <div class="kv"><strong>Providers</strong><br>${providerList || 'N/A'}</div>
-                                <div class="kv"><strong>Winner</strong><br>${winner||'N/A'}</div>
-                                ${asGoals.length?`<div class="kv" style="grid-column:1/-1"><strong>Goalscorers</strong><br>${asGoals.map(g=>`${g.home_scorer||g.away_scorer||g.player_name||''} ${g.score? '('+g.score+')':''}`).join(', ')}</div>`:''}
-                                ${asCards.length?`<div class="kv" style="grid-column:1/-1"><strong>Cards</strong><br>${asCards.map(c=>`${c.card||c.type||''} ${c.home_fault||c.away_fault||''} ${c.time? '@'+c.time:''}`).join(', ')}</div>`:''}
-                            </div>`;
-                }
-
-                function renderTimeline(bundle={}){
-                        const panel = document.getElementById('tab-panel-timeline');
-                        if(!panel) return;
-                        const tl = bundle.thesportsdb?.timeline || bundle.timeline || [];
-                        const goals = bundle.allsportsapi?.goalscorers || [];
-                        const cards = bundle.allsportsapi?.cards || [];
-                        let extra = [];
-                        goals.forEach(g=>extra.push({intMinute:g.time||g.minute||'', strTeam:g.home_scorer? 'Home':'Away', strPlayer:g.home_scorer||g.away_scorer||g.player_name, strEvent:'Goal'}));
-                        cards.forEach(c=>extra.push({intMinute:c.time||'', strTeam:c.home_fault? 'Home':'Away', strPlayer:c.home_fault||c.away_fault, strEvent:c.card||c.type||'Card'}));
-                        const combined = [...tl, ...extra];
-                        if(!combined.length){ panel.innerHTML = '<div style="opacity:.6;font-size:.65rem">No timeline events</div>'; return; }
-                        combined.sort((a,b)=> (parseInt(a.intMinute)||0) - (parseInt(b.intMinute)||0));
-                        panel.innerHTML = '<ul class="timeline-list">' + combined.map(e=>`<li><strong>${e.intMinute||'?'}'</strong> ${e.strTeam||''} ${e.strPlayer||e.strPlayerName||''} <em style="opacity:.7">${e.strEvent||e.strType||''}</em></li>`).join('') + '</ul>';
-                }
-                function renderStatsTab(bundle={}, game){
-                        const panel = document.getElementById('tab-panel-stats');
-                        if(!panel) return;
-                        const seasonStats = bundle.season_statistics || {};
-                        const tsdbStats = bundle.thesportsdb?.stats || [];
-                        const parts = [];
-                        if(Object.keys(seasonStats).length){
-                            parts.push('<div class="section-title">Season Statistics</div>');
-                            for(const [team, arr] of Object.entries(seasonStats)){
-                                parts.push(`<details open><summary style="font-size:.65rem;cursor:pointer">${team}</summary><table class="mini-table">${(arr||[]).map(s=>`<tr><td>${s.type}</td><td>${s.value ?? '-'}</td></tr>`).join('')}</table></details>`);
-                            }
-                        }
-                        if(tsdbStats.length){
-                            parts.push('<div class="section-title">Match Statistics</div>');
-                            parts.push('<table class="mini-table"><thead><tr><th>Stat</th><th>Home</th><th>Away</th></tr></thead><tbody>'+tsdbStats.map(s=>`<tr><td>${s.strStat||s.type}</td><td>${s.intHome||s.home||'-'}</td><td>${s.intAway||s.away||'-'}</td></tr>`).join('')+'</tbody></table>');
-                        }
-                        if(!parts.length){ panel.innerHTML = '<div style="opacity:.6;font-size:.65rem">No stats available</div>'; return; }
-                        panel.innerHTML = parts.join('');
-                }
-
-                function renderLineups(bundle={}){
-                        const panel = document.getElementById('tab-panel-lineups');
-                        if(!panel) return;
-                        const lineup = bundle.thesportsdb?.lineup || [];
-                        if(!lineup.length){ panel.innerHTML = '<div style="opacity:.6;font-size:.65rem">No lineup data</div>'; return; }
-                        panel.innerHTML = '<div class="section-title">Lineups</div><ul style="list-style:none;padding:0;margin:0;font-size:.6rem;max-height:220px;overflow:auto">'+lineup.map(p=>`<li style="padding:.25rem .4rem;border-bottom:1px solid rgba(255,255,255,.05)">${p.strPlayer||p.strPlayerName||p.player} <span style="opacity:.6">${p.strPosition||p.position||''}</span></li>`).join('')+'</ul>';
-                }
-
-                function renderCompetition(bundle={}){
-                        const panel = document.getElementById('tab-panel-competition');
-                        if(!panel) return;
-                        const gi = bundle.game_info || {};
-                        const raw = gi.fd_raw || {};
-                        if(!Object.keys(raw).length){ panel.innerHTML = '<div style="opacity:.6;font-size:.65rem">No competition details</div>'; return; }
-                        const comp = raw.competition || {}; const area = raw.area || {}; const season = raw.season || {}; const score = raw.score || {};
-                        panel.innerHTML = `
-                          <div class="kv-grid">
-                            <div class="kv"><strong>Name</strong><br>${comp.name||'N/A'}</div>
-                            <div class="kv"><strong>Code</strong><br>${comp.code||'-'}</div>
-                            <div class="kv"><strong>Type</strong><br>${comp.type||'-'}</div>
-                            <div class="kv"><strong>Stage</strong><br>${raw.stage||'-'}</div>
-                            <div class="kv"><strong>Matchday</strong><br>${raw.matchday||'-'}</div>
-                            <div class="kv"><strong>Area</strong><br>${area.name||'-'} ${area.code? '('+area.code+')':''}</div>
-                            <div class="kv"><strong>Season</strong><br>${season.startDate||'-'} → ${season.endDate||'-'}</div>
-                            <div class="kv"><strong>Curr MD</strong><br>${season.currentMatchday||'-'}</div>
-                          </div>
-                          <div class="section-title">Score Breakdown</div>
-                          <table class="mini-table" style="margin-top:.2rem"><thead><tr><th>Phase</th><th>Home</th><th>Away</th></tr></thead><tbody>
-                            ${['fullTime','halfTime','extraTime','penalties'].map(k=>{const s=score[k]||{};return `<tr><td>${k}</td><td>${s.home??'-'}</td><td>${s.away??'-'}</td></tr>`}).join('')}
-                          </tbody></table>
-                          <div class="section-title">Referees</div>
-                          ${(raw.referees||[]).length?'<ul style="list-style:none;padding:0;margin:0;font-size:.6rem">'+(raw.referees||[]).map(r=>`<li style="padding:.25rem 0;border-bottom:1px solid rgba(255,255,255,.05)">${r.name||r.id||'Unknown'} <span style="opacity:.6">${r.type||''}</span></li>`).join('')+'</ul>':'<div style="opacity:.6;font-size:.65rem">No referees listed</div>'}
-                        `;
-                }
-
-                function renderVideos(bundle={}){
-                        const panel = document.getElementById('tab-panel-videos');
-                        if(!panel) return;
-                        const vids = bundle.videos || bundle.allsportsapi?.videos || [];
-                        if(!vids.length){
-                            panel.innerHTML = `
-                                <div class="empty-videos-state">
-                                    <div class="empty-icon">🎥</div>
-                                    <h3>No Videos Available</h3>
-                                    <p>No video content found for this match. Videos may be available after the match concludes or from different providers.</p>
-                                </div>
-                            `;
-                            return;
-                        }
-                        
-                        // Enhanced video processing
-                        function extractVideoInfo(obj){
-                            if(!obj || typeof obj!=='object') return null;
-                            
-                            let url = null;
-                            let title = obj.title || obj.name || obj.type || '';
-                            let thumbnail = obj.thumbnail || obj.thumb || '';
-                            let duration = obj.duration || '';
-                            let quality = obj.quality || obj.resolution || '';
-                            let provider = obj.provider || obj.source || '';
-                            
-                            // Find URL in object
-                            for(const [key, value] of Object.entries(obj)){
-                                if(typeof value === 'string' && /^https?:\/\//i.test(value)){
-                                    if(!url) url = value; // First URL found
-                                    if(key.toLowerCase().includes('video') || key.toLowerCase().includes('stream')) {
-                                        url = value; // Prefer video/stream URLs
-                                        break;
-                                    }
-                                }
-                            }
-                            
-                            return { url, title, thumbnail, duration, quality, provider, raw: obj };
-                        }
-                        
-                        const processedVideos = vids.map(extractVideoInfo).filter(v => v);
-                        
-                        panel.innerHTML = `
-                            <div class="videos-container">
-                                <div class="videos-header">
-                                    <div class="videos-title">
-                                        <span class="videos-icon">🎬</span>
-                                        <h3>Match Videos</h3>
-                                        <span class="videos-count">${processedVideos.length} available</span>
-                                    </div>
-                                    <div class="videos-controls">
-                                        <button class="view-toggle active" data-view="grid" onclick="toggleVideoView('grid')">Grid</button>
-                                        <button class="view-toggle" data-view="list" onclick="toggleVideoView('list')">List</button>
-                                    </div>
-                                </div>
-                                
-                                <div class="videos-grid" id="videosGrid">
-                                    ${processedVideos.map((video, index) => {
-                                        const { url, title, thumbnail, duration, quality, provider } = video;
-                                        
-                                        let videoPlayer = '';
-                                        let videoTypeIcon = '🎥';
-                                        
-                                        if(!url) {
-                                            videoPlayer = `
-                                                <div class="video-placeholder">
-                                                    <div class="placeholder-icon">📄</div>
-                                                    <div class="placeholder-text">No playable URL found</div>
-                                                    <details class="video-raw-data">
-                                                        <summary>View Raw Data</summary>
-                                                        <pre>${JSON.stringify(video.raw, null, 2)}</pre>
-                                                    </details>
-                                                </div>
-                                            `;
-                                        } else if(/youtube\.com|youtu\.be/i.test(url)) {
-                                            videoTypeIcon = '📺';
-                                            let embedUrl = url.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/');
-                                            if(!embedUrl.includes('embed/')) {
-                                                const videoId = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
-                                                if(videoId) embedUrl = `https://youtube.com/embed/${videoId[1]}`;
-                                            }
-                                            videoPlayer = `
-                                                <div class="video-player youtube">
-                                                    <iframe src="${embedUrl}" 
-                                                            loading="lazy" 
-                                                            allowfullscreen 
-                                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture">
-                                                    </iframe>
-                                                    <div class="video-overlay">
-                                                        <div class="play-button" onclick="this.parentElement.style.display='none'">▶️</div>
-                                                    </div>
-                                                </div>
-                                            `;
-                                        } else if(/\.m3u8($|\?)/i.test(url)) {
-                                            videoTypeIcon = '📡';
-                                            videoPlayer = `
-                                                <div class="video-player hls">
-                                                    <div class="hls-info">
-                                                        <div class="hls-icon">📡</div>
-                                                        <div class="hls-text">HLS Live Stream</div>
-                                                        <a href="${url}" target="_blank" class="hls-link">Open Stream</a>
-                                                    </div>
-                                                </div>
-                                            `;
-                                        } else if(/\.(mp4|webm|mov|avi)($|\?)/i.test(url)) {
-                                            videoTypeIcon = '🎬';
-                                            videoPlayer = `
-                                                <div class="video-player native">
-                                                    <video controls preload="metadata" poster="${thumbnail || ''}">
-                                                        <source src="${url}" type="video/${url.split('.').pop().split('?')[0]}">
-                                                        Your browser does not support the video tag.
-                                                    </video>
-                                                </div>
-                                            `;
-                                        } else {
-                                            videoTypeIcon = '🔗';
-                                            videoPlayer = `
-                                                <div class="video-player external">
-                                                    <div class="external-link">
-                                                        <div class="external-icon">🔗</div>
-                                                        <div class="external-text">External Video Link</div>
-                                                        <a href="${url}" target="_blank" class="external-button">Open Video</a>
-                                                    </div>
-                                                </div>
-                                            `;
-                                        }
-                                        
-                                        return `
-                                            <div class="video-card" data-index="${index}">
-                                                <div class="video-header">
-                                                    <div class="video-info">
-                                                        <span class="video-type-icon">${videoTypeIcon}</span>
-                                                        <h4 class="video-title">${title || `Video ${index + 1}`}</h4>
-                                                    </div>
-                                                    <div class="video-meta">
-                                                        ${duration ? `<span class="video-duration">${duration}</span>` : ''}
-                                                        ${quality ? `<span class="video-quality">${quality}</span>` : ''}
-                                                        ${provider ? `<span class="video-provider">${provider}</span>` : ''}
-                                                    </div>
-                                                </div>
-                                                
-                                                <div class="video-content">
-                                                    ${videoPlayer}
-                                                </div>
-                                                
-                                                <div class="video-actions">
-                                                    <button class="action-btn" onclick="copyVideoUrl('${url}')" title="Copy URL">
-                                                        📋 Copy Link
-                                                    </button>
-                                                    <button class="action-btn" onclick="shareVideo('${url}', '${title}')" title="Share">
-                                                        📤 Share
-                                                    </button>
-                                                    <button class="action-btn" onclick="toggleVideoDetails(${index})" title="Details">
-                                                        ℹ️ Details
-                                                    </button>
-                                                </div>
-                                                
-                                                <div class="video-details" id="videoDetails${index}" style="display: none;">
-                                                    <div class="detail-row">
-                                                        <span class="detail-label">URL:</span>
-                                                        <span class="detail-value">${url || 'N/A'}</span>
-                                                    </div>
-                                                    <div class="detail-row">
-                                                        <span class="detail-label">Type:</span>
-                                                        <span class="detail-value">${getVideoType(url)}</span>
-                                                    </div>
-                                                    <div class="detail-row">
-                                                        <span class="detail-label">Provider:</span>
-                                                        <span class="detail-value">${provider || 'Unknown'}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
-                            </div>
-                        `;
-                }
-
-                function getVideoType(url) {
-                    if(!url) return 'Unknown';
-                    if(/youtube\.com|youtu\.be/i.test(url)) return 'YouTube';
-                    if(/\.m3u8($|\?)/i.test(url)) return 'HLS Stream';
-                    if(/\.(mp4|webm|mov|avi)($|\?)/i.test(url)) return 'Video File';
-                    return 'External Link';
-                }
-
-                function toggleVideoView(view) {
-                    const grid = document.getElementById('videosGrid');
-                    const toggles = document.querySelectorAll('.view-toggle');
-                    
-                    toggles.forEach(toggle => {
-                        toggle.classList.toggle('active', toggle.dataset.view === view);
-                    });
-                    
-                    grid.className = view === 'list' ? 'videos-list' : 'videos-grid';
-                }
-
-                function copyVideoUrl(url) {
-                    if(!url) return;
-                    navigator.clipboard.writeText(url).then(() => {
-                        showToast('Video URL copied to clipboard!');
-                    }).catch(() => {
-                        showToast('Failed to copy URL');
-                    });
-                }
-
-                function shareVideo(url, title) {
-                    if(!url) return;
-                    if(navigator.share) {
-                        navigator.share({
-                            title: title || 'Match Video',
-                            url: url
-                        });
-                    } else {
-                        copyVideoUrl(url);
-                        showToast('URL copied for sharing!');
-                    }
-                }
-
-                function toggleVideoDetails(index) {
-                    const details = document.getElementById(`videoDetails${index}`);
-                    if(details) {
-                        details.style.display = details.style.display === 'none' ? 'block' : 'none';
-                    }
-                }
-
-                function showToast(message) {
-                    // Simple toast notification
-                    const toast = document.createElement('div');
-                    toast.className = 'toast-notification';
-                    toast.textContent = message;
-                    toast.style.cssText = `
-                        position: fixed;
-                        top: 20px;
-                        right: 20px;
-                        background: #059669;
-                        color: white;
-                        padding: 12px 20px;
-                        border-radius: 8px;
-                        z-index: 10000;
-                        font-size: 14px;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                    `;
-                    document.body.appendChild(toast);
-                    setTimeout(() => toast.remove(), 3000);
-                }
-
-                function renderRaw(bundle){
-                        const panel = document.getElementById('tab-panel-raw');
-                        if(!panel) return;
-                        
-                        const sources = bundle.sources_used || [];
-                        const gameInfo = bundle.game_info || {};
-                        const seasonStats = bundle.season_statistics || {};
-                        const injuries = bundle.injury_report || {};
-                        const highlights = bundle.highlight_moments || {};
-                        const thesportsdb = bundle.thesportsdb || {};
-                        const allsportsapi = bundle.allsportsapi || {};
-                        const videos = bundle.videos || [];
-                        const errors = bundle.errors || [];
-
-                        panel.innerHTML = `
-                            <div class="data-explorer">
-                                <!-- Data Sources Section -->
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">🔌</span>
-                                        <h4>Data Sources</h4>
-                                        <span class="badge">${sources.length}</span>
-                                    </div>
-                                    <div class="source-pills">
-                                        ${sources.map(s => `<span class="source-pill ${s}">${s}</span>`).join('')}
-                                        ${sources.length === 0 ? '<span class="no-data">No sources available</span>' : ''}
-                                    </div>
-                                </div>
-
-                                <!-- Game Information Section -->
-                                ${Object.keys(gameInfo).length > 0 ? `
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">ℹ️</span>
-                                        <h4>Game Information</h4>
-                                        <span class="badge">${Object.keys(gameInfo).length}</span>
-                                    </div>
-                                    <div class="info-grid">
-                                        ${Object.entries(gameInfo).map(([key, value]) => `
-                                            <div class="info-item">
-                                                <span class="info-key">${key.replace(/_/g, ' ')}</span>
-                                                <span class="info-value">${formatValue(value)}</span>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Season Statistics Section -->
-                                ${Object.keys(seasonStats).length > 0 ? `
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">📊</span>
-                                        <h4>Season Statistics</h4>
-                                        <span class="badge">${Object.keys(seasonStats).length} teams</span>
-                                    </div>
-                                    <div class="stats-teams">
-                                        ${Object.entries(seasonStats).map(([team, stats]) => `
-                                            <div class="team-stats">
-                                                <div class="team-name">${team}</div>
-                                                <div class="stats-list">
-                                                    ${(stats || []).map(stat => `
-                                                        <div class="stat-row">
-                                                            <span class="stat-type">${stat.type}</span>
-                                                            <span class="stat-value">${stat.value || '-'}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Injuries Section -->
-                                ${Object.keys(injuries).length > 0 ? `
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">🏥</span>
-                                        <h4>Injury Report</h4>
-                                        <span class="badge">${Object.values(injuries).flat().length}</span>
-                                    </div>
-                                    <div class="injuries-teams">
-                                        ${Object.entries(injuries).map(([team, playerInjuries]) => `
-                                            <div class="team-injuries">
-                                                <div class="team-name">${team}</div>
-                                                <div class="injury-list">
-                                                    ${(playerInjuries || []).map(injury => `
-                                                        <div class="injury-item">
-                                                            <span class="player-name">${injury.name}</span>
-                                                            <span class="injury-status">${injury.status}</span>
-                                                            <span class="injury-reason">${injury.reason}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Highlights Section -->
-                                ${(highlights.goals?.length || highlights.cards?.length || highlights.assists?.length) ? `
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">⚡</span>
-                                        <h4>Match Highlights</h4>
-                                        <span class="badge">${(highlights.goals?.length || 0) + (highlights.cards?.length || 0) + (highlights.assists?.length || 0)}</span>
-                                    </div>
-                                    <div class="highlights-grid">
-                                        ${highlights.goals?.length ? `
-                                            <div class="highlight-type">
-                                                <div class="highlight-header">⚽ Goals (${highlights.goals.length})</div>
-                                                <div class="highlight-events">
-                                                    ${highlights.goals.map(goal => `
-                                                        <div class="event-item">
-                                                            <span class="event-time">${goal.time?.elapsed || '?'}'</span>
-                                                            <span class="event-player">${goal.player?.name || 'Unknown'}</span>
-                                                            <span class="event-team">${goal.team?.name || ''}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                        ${highlights.cards?.length ? `
-                                            <div class="highlight-type">
-                                                <div class="highlight-header">🟨 Cards (${highlights.cards.length})</div>
-                                                <div class="highlight-events">
-                                                    ${highlights.cards.map(card => `
-                                                        <div class="event-item">
-                                                            <span class="event-time">${card.time?.elapsed || '?'}'</span>
-                                                            <span class="event-player">${card.player?.name || 'Unknown'}</span>
-                                                            <span class="card-type ${card.detail?.toLowerCase() || ''}">${card.detail || 'Card'}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                        ${highlights.assists?.length ? `
-                                            <div class="highlight-type">
-                                                <div class="highlight-header">🎯 Assists (${highlights.assists.length})</div>
-                                                <div class="highlight-events">
-                                                    ${highlights.assists.map(assist => `
-                                                        <div class="event-item">
-                                                            <span class="event-time">${assist.time?.elapsed || '?'}'</span>
-                                                            <span class="event-player">${assist.player?.name || 'Unknown'}</span>
-                                                            <span class="event-team">${assist.team?.name || ''}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- AllSportsAPI Data Section -->
-                                ${Object.keys(allsportsapi).length > 0 ? `
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">🏟️</span>
-                                        <h4>AllSports Data</h4>
-                                        <span class="badge">Enhanced</span>
-                                    </div>
-                                    <div class="allsports-grid">
-                                        ${allsportsapi.goalscorers?.length ? `
-                                            <div class="allsports-item">
-                                                <div class="item-header">⚽ Goalscorers</div>
-                                                <div class="goalscorers-list">
-                                                    ${allsportsapi.goalscorers.map(g => `
-                                                        <div class="goalscorer-item">
-                                                            <span class="scorer-name">${g.home_scorer || g.away_scorer || g.player_name || 'Unknown'}</span>
-                                                            <span class="score-time">${g.time || g.minute || '?'}'</span>
-                                                            <span class="score-result">${g.score || ''}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                        ${allsportsapi.cards?.length ? `
-                                            <div class="allsports-item">
-                                                <div class="item-header">🟨 Cards</div>
-                                                <div class="cards-list">
-                                                    ${allsportsapi.cards.map(c => `
-                                                        <div class="card-item">
-                                                            <span class="card-player">${c.home_fault || c.away_fault || 'Unknown'}</span>
-                                                            <span class="card-time">${c.time || '?'}'</span>
-                                                            <span class="card-type-badge ${(c.card || c.type || '').toLowerCase()}">${c.card || c.type || 'Card'}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        ` : ''}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Videos Section -->
-                                ${videos.length > 0 ? `
-                                <div class="data-section">
-                                    <div class="section-header">
-                                        <span class="icon">🎥</span>
-                                        <h4>Available Videos</h4>
-                                        <span class="badge">${videos.length}</span>
-                                    </div>
-                                    <div class="videos-grid">
-                                        ${videos.map((video, index) => `
-                                            <div class="video-card">
-                                                <div class="video-header">Video ${index + 1}</div>
-                                                <div class="video-details">
-                                                    ${Object.entries(video).map(([key, value]) => `
-                                                        <div class="video-detail">
-                                                            <span class="detail-key">${key}</span>
-                                                            <span class="detail-value">${formatValue(value)}</span>
-                                                        </div>
-                                                    `).join('')}
-                                                </div>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Errors Section -->
-                                ${errors.length > 0 ? `
-                                <div class="data-section error-section">
-                                    <div class="section-header">
-                                        <span class="icon">❌</span>
-                                        <h4>Errors</h4>
-                                        <span class="badge error">${errors.length}</span>
-                                    </div>
-                                    <div class="errors-list">
-                                        ${errors.map(error => `
-                                            <div class="error-item">
-                                                <span class="error-provider">${error.provider}</span>
-                                                <span class="error-message">${error.error}</span>
-                                            </div>
-                                        `).join('')}
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                <!-- Raw Data Toggle (collapsed by default) -->
-                                <div class="data-section">
-                                    <details class="raw-data-toggle">
-                                        <summary class="section-header">
-                                            <span class="icon">📄</span>
-                                            <h4>Raw JSON Data</h4>
-                                            <span class="badge">Debug</span>
-                                        </summary>
-                                        <pre class="raw-json">${JSON.stringify(bundle, null, 2)}</pre>
-                                    </details>
-                                </div>
-                            </div>
-                        `;
-                }
-
-                function formatValue(value) {
-                    if (value === null || value === undefined) return '<span class="null-value">null</span>';
-                    if (typeof value === 'boolean') return `<span class="bool-value">${value}</span>`;
-                    if (typeof value === 'number') return `<span class="number-value">${value}</span>`;
-                    if (typeof value === 'string') {
-                        if (value.startsWith('http')) return `<a href="${value}" target="_blank" class="link-value">${value}</a>`;
-                        if (value.length > 50) return `<span class="long-text" title="${value}">${value.substring(0, 50)}...</span>`;
-                        return `<span class="string-value">${value}</span>`;
-                    }
-                    if (typeof value === 'object') {
-                        if (Array.isArray(value)) return `<span class="array-value">Array(${value.length})</span>`;
-                        return `<span class="object-value">Object(${Object.keys(value).length} keys)</span>`;
-                    }
-                    return String(value);
-                }
-
-                function setActiveTab(id){
-                        document.querySelectorAll('.tab-btn').forEach(btn=>btn.classList.toggle('active', btn.dataset.tab===id));
-                        document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active', p.dataset.tab===id));
-                }
+        /* --- Modal handling and analytics fetch --- */
+        const COLLECTOR_API = 'http://127.0.0.1:8030/collect'; // still used for fallback event fetch
+        const ANALYTICS_BASE = 'http://127.0.0.1:8030';
 
         // Cache events per date to avoid repeated list calls
         const _eventsCache = {}; // date -> array
 
-        async function resolveEventId(game){
-            // 1. Direct identifiers if present
-            const directKeys = ['idEvent','event_id','eventId'];
-            for(const k of directKeys){
-                if(game[k] && /^\d+$/.test(String(game[k]))) return String(game[k]);
-            }
-            // If game_id itself looks numeric and plausible length (TheSportsDB ids are typically 5-7+ digits)
-            if(game.game_id && /^\d{5,}$/.test(String(game.game_id))) return String(game.game_id);
+        // Event listeners
+        document.getElementById('dateInput').addEventListener('change', fetchGames);
+        document.getElementById('sourceSelect').addEventListener('change', fetchGames);
 
-            // 2. Need to list events for the date and match by teams & maybe league
-            const iso = game.date || game.timestamp && new Date(game.timestamp*1000).toISOString();
-            if(!iso){ return null; }
-            const dateOnly = iso.split('T')[0];
-            let events = _eventsCache[dateOnly];
-            if(!events){
-                try{
-                    const resp = await fetch(COLLECTOR_API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent:'events.list', args:{ date: dateOnly }})});
-                    if(resp.ok){
-                        const j = await resp.json();
-                        events = (j.data && j.data.events) || [];
-                        _eventsCache[dateOnly] = events;
-                    } else {
-                        events = [];
-                    }
-                }catch(e){ events = []; }
-            }
-            if(!events || !events.length) return null;
+        // Modal functionality
+        let modalDocument = null;
+        let currentGameData = null;
 
-            // Normalize helper
-            const norm = s => (s||'').toLowerCase().replace(/fc|cf|sc|afc|\./g,'').replace(/\s+/g,' ').trim();
-            const homeN = norm(game.home_team || game.home);
-            const awayN = norm(game.away_team || game.away);
-            let candidates = events.filter(ev => {
-                const h = norm(ev.strHomeTeam);
-                const a = norm(ev.strAwayTeam);
-                return h===homeN && a===awayN;
-            });
-            if(!candidates.length){
-                // try partial contains match
-                candidates = events.filter(ev => {
-                    const h = norm(ev.strHomeTeam);
-                    const a = norm(ev.strAwayTeam);
-                    return h.includes(homeN) && a.includes(awayN) || homeN.includes(h) && awayN.includes(a);
+        function initializeModal() {
+            const frame = document.getElementById('modalFrame');
+            if(!frame) return;
+            modalDocument = frame.contentDocument || frame.contentWindow.document;
+            if(!modalDocument) return;
+            const templateModal = modalDocument.getElementById('gameModal');
+            if(!templateModal){
+                console.warn('[modal] gameModal not found in component document');
+                return;
+            }
+            // Clone modal structure
+            const modalElement = templateModal.cloneNode(true);
+            document.body.appendChild(modalElement);
+            // Copy styles once
+            if(!document.getElementById('game-modal-styles')){
+                const styleEls = modalDocument.querySelectorAll('style');
+                styleEls.forEach((st,i)=>{
+                    const clone = document.createElement('style');
+                    clone.id = i===0 ? 'game-modal-styles' : undefined;
+                    clone.textContent = st.textContent;
+                    document.head.appendChild(clone);
                 });
             }
-            if(candidates.length===1) return String(candidates[0].idEvent);
-            if(candidates.length>1){
-                // Choose closest by kickoff time difference if we have timestamps
-                if(game.timestamp){
-                    const target = game.timestamp*1000;
-                    let best = null; let bestDiff = Infinity;
-                    for(const ev of candidates){
-                        const dtStr = (ev.dateEvent || '') + ' ' + (ev.strTime||'');
-                        let evMs = NaN;
-                        try { evMs = Date.parse(dtStr + ' UTC'); } catch(_){ }
-                        if(!isNaN(evMs)){
-                            const d = Math.abs(evMs - target);
-                            if(d < bestDiff){ bestDiff = d; best = ev; }
-                        }
-                    }
-                    if(best && best.idEvent) return String(best.idEvent);
-                }
-                // fallback pick first
-                if(candidates[0].idEvent) return String(candidates[0].idEvent);
+            frame.remove();
+            window.__MODAL_READY__ = true;
+            if(window.__PENDING_MODAL_GAME__){
+                const g = window.__PENDING_MODAL_GAME__;
+                delete window.__PENDING_MODAL_GAME__;
+                openGameModal(g);
             }
-            return null;
         }
 
-        function formatEventContent(ev, dataBundle){
-            // Defensive normalization: ensure arrays
-            function toArray(val){
-                if(Array.isArray(val)) return val;
-                if(!val) return [];
-                if(typeof val === 'object'){
-                    for(const k of ['timeline','stats','lineup','events','data']){
-                        if(Array.isArray(val[k])) return val[k];
-                    }
-                    const values = Object.values(val);
-                    if(values.every(v => typeof v === 'object')) return values;
-                }
-                return [];
+        function openGameModal(game) {
+            // Defer if modal not ready yet
+            if(!document.getElementById('gameModal')){
+                window.__PENDING_MODAL_GAME__ = game;
+                console.debug('[modal] Modal not yet initialized, deferring open');
+                return;
             }
-            const timeline = toArray(dataBundle.timeline);
-            const stats = toArray(dataBundle.stats);
-            const lineup = toArray(dataBundle.lineup);
-            return `
-                <div class="modal-grid">
-                    <div>
-                        <strong>League:</strong> ${ev.strLeague || 'N/A'}<br>
-                        <strong>Venue:</strong> ${ev.strVenue || 'N/A'}<br>
-                        <strong>Date:</strong> ${ev.dateEvent || 'N/A'}<br>
-                        <strong>Time:</strong> ${ev.strTime || 'N/A'}<br>
-                        <strong>Referee:</strong> ${ev.strReferee || 'N/A'}<br>
-                        <strong>Season:</strong> ${ev.strSeason || 'N/A'}
-                    </div>
-                    <div>
-                        <strong>Home:</strong> ${ev.strHomeTeam} (${ev.intHomeScore != null ? ev.intHomeScore : '-'})<br>
-                        <strong>Away:</strong> ${ev.strAwayTeam} (${ev.intAwayScore != null ? ev.intAwayScore : '-'})<br>
-                        <strong>Status:</strong> ${ev.strStatus || 'N/A'}<br>
-                        <strong>Round:</strong> ${ev.intRound || ev.strRound || 'N/A'}<br>
-                        <strong>Attendance:</strong> ${ev.intSpectators || 'N/A'}
+            const modal = document.getElementById('gameModal');
+            currentGameData = game;
+            modal.classList.add('show');
+            const titleEl = document.getElementById('modalTitle');
+            if(titleEl) titleEl.textContent = `${game.home_team} vs ${game.away_team}`;
+            renderMatchHeader(game);
+            showTab('overview');
+            fetchGameAnalytics(game);
+        }
+
+        function closeGameModal() {
+            const modal = document.getElementById('gameModal');
+            if (modal) {
+                modal.classList.remove('show');
+            }
+        }
+
+        function handleLogoError(img, teamName, size){
+            if(!img || img.dataset.fallback){ return; }
+            const name = (teamName||'').trim();
+            const initials = name.split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase() || '?';
+            const div = document.createElement('div');
+            div.className = size==='large' ? 'logo-fallback-large' : (size==='small' ? 'logo-fallback-small' : 'logo-fallback');
+            div.textContent = initials;
+            div.title = name || 'Unknown';
+            img.insertAdjacentElement('afterend', div);
+            img.remove();
+        }
+
+        function showTab(tabName) {
+            const normalized = (tabName||'').toLowerCase();
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                const label = btn.textContent.trim().toLowerCase();
+                btn.classList.toggle('active', label === normalized);
+            });
+            document.querySelectorAll('.tab-content').forEach(panel => {
+                const idMatch = panel.id.toLowerCase() === normalized + 'tab';
+                panel.classList.toggle('active', idMatch);
+            });
+        }
+
+        function renderMatchHeader(game) {
+            const header = document.getElementById('matchHeader');
+            const homeScore = game.home_score !== null ? game.home_score : '-';
+            const awayScore = game.away_score !== null ? game.away_score : '-';
+            
+            const isLive = ['HT', 'LIVE', '1H', '2H'].includes(game.status_short) || 
+                          /^\d+\'$/.test(game.status_short);
+            
+            const statusClass = isLive ? 'live' : 
+                               ['FT', 'AET', 'PEN'].includes(game.status_short) ? 'finished' : '';
+            
+            header.innerHTML = `
+                <div class="team-section">
+                    <img src="${game.home_logo || ''}" alt="${game.home_team}" class="team-logo" onerror="handleLogoError(this, '${game.home_team.replace(/'/g,"&#39;")}','large')">
+                    <div class="team-info">
+                        <h2>${game.home_team}</h2>
+                        <div class="team-record">${game.league || 'Unknown League'}</div>
                     </div>
                 </div>
-                <div style="margin-top:1rem">
-                    <details open>
-                        <summary><strong>Timeline (${timeline.length})</strong></summary>
-                        ${timeline.length ? '<ul style="margin:0.5rem 0 0 1rem;font-size:0.75rem;max-height:120px;overflow:auto">' + timeline.map(t=>`<li>${t.intMinute||'?'}' ${t.strTeam||''} ${t.strPlayer||''} <em>${t.strEvent||t.strType||''}</em></li>`).join('') + '</ul>' : '<div style="opacity:.7;font-size:.8rem">No timeline</div>'}
-                    </details>
-                    <details>
-                        <summary><strong>Stats (${stats.length})</strong></summary>
-                        ${stats.length ? '<ul style="margin:0.5rem 0 0 1rem;font-size:0.75rem;max-height:140px;overflow:auto">' + stats.map(s=>`<li>${s.strStat || s.type || ''}: ${s.intHome || s.home || '-'} - ${s.intAway || s.away || '-'}</li>`).join('') + '</ul>' : '<div style="opacity:.7;font-size:.8rem">No stats</div>'}
-                    </details>
-                    <details>
-                        <summary><strong>Lineup (${lineup.length})</strong></summary>
-                        ${lineup.length ? '<ul style="margin:0.5rem 0 0 1rem;font-size:0.75rem;max-height:140px;overflow:auto">' + lineup.map(l=>`<li>${l.strPlayer || l.strPlayerName || l.player || ''} (${l.strPosition || l.position || ''})</li>`).join('') + '</ul>' : '<div style="opacity:.7;font-size:.8rem">No lineup</div>'}
-                    </details>
+                
+                <div class="match-score">
+                    <div class="score-display">${homeScore} - ${awayScore}</div>
+                    <div class="match-status ${statusClass}">
+                        ${game.status_long || game.status_short || 'Scheduled'}
+                    </div>
+                </div>
+                
+                <div class="team-section away">
+                    <img src="${game.away_logo || ''}" alt="${game.away_team}" class="team-logo" onerror="handleLogoError(this, '${game.away_team.replace(/'/g,"&#39;")}','large')">
+                    <div class="team-info">
+                        <h2>${game.away_team}</h2>
+                        <div class="team-record">${game.venue || 'Unknown Venue'}</div>
+                    </div>
                 </div>
             `;
         }
 
-    // buildAnalyticsDashboard removed in favor of tabbed renderer above
-
-        function closeGameModal() {
-            const modal = document.getElementById('gameDetailModal');
-            modal.classList.remove('show');
+        async function fetchGameAnalytics(game) {
+            try {
+                const dateOnly = (game.date ? game.date.split('T')[0] : document.getElementById('dateInput').value);
+                const url = `${API_BASE}/games/${game.game_id}/analytics?date=${encodeURIComponent(dateOnly)}`;
+                console.debug('[analytics] fetching', url, {API_BASE, origin: window.location.origin});
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.ok) {
+                    renderAnalytics(data.data, game);
+                } else {
+                    renderErrorState(`Server responded not ok (game_id=${game.game_id}).`);
+                }
+            } catch (error) {
+                console.error('Analytics fetch failed:', error);
+                renderErrorState('Fetch failed: ' + (error && error.message ? error.message : 'Unknown error'));
+            }
         }
 
-        // Event listeners
-        document.getElementById('dateInput').addEventListener('change', fetchGames);
-        document.getElementById('sourceSelect').addEventListener('change', fetchGames);
-    </script>
-    
-        <!-- Game detail modal -->
-                <div id="gameDetailModal" class="modal" onclick="if(event.target===this) closeGameModal()">
-                    <div class="modal-content" role="dialog" aria-modal="true">
-                        <button class="modal-close" onclick="closeGameModal()">✖</button>
-                        <h3 id="gameDetailTitle" style="margin:0 0 .3rem">Game Details</h3>
-                        <div id="gameDetailMeta" style="opacity:.7;font-size:.7rem;letter-spacing:.5px;margin-bottom:.4rem">ID: -</div>
-                        <div class="tabs">
-                            <button class="tab-btn active" data-tab="overview" onclick="setActiveTab('overview')">Overview</button>
-                            <button class="tab-btn" data-tab="timeline" onclick="setActiveTab('timeline')">Timeline</button>
-                            <button class="tab-btn" data-tab="stats" onclick="setActiveTab('stats')">Stats</button>
-                            <button class="tab-btn" data-tab="lineups" onclick="setActiveTab('lineups')">Lineups</button>
-                            <button class="tab-btn" data-tab="competition" onclick="setActiveTab('competition')">Competition</button>
-                            <button class="tab-btn" data-tab="videos" onclick="setActiveTab('videos')">Videos</button>
-                            <button class="tab-btn" data-tab="raw" onclick="setActiveTab('raw')">Raw</button>
+        function renderAnalytics(analytics, game) {
+            renderOverviewTab(analytics, game);
+            renderStatisticsTab(analytics, game);
+            renderPlayersTab(analytics, game);
+            renderInjuriesTab(analytics, game);
+            renderVideosTab(analytics, game);
+            renderAllSportsTab(analytics, game);
+        }
+
+        function renderOverviewTab(analytics, game) {
+            const content = document.getElementById('overviewContent');
+            const gameInfo = analytics.game_info || {};
+            
+            content.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-category">
+                        <h3>Match Information</h3>
+                        <div class="info-list">
+                            <div class="info-item">
+                                <span class="info-label">League:</span>
+                                <span class="info-value">${game.league || 'N/A'}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Venue:</span>
+                                <span class="info-value">${game.venue || gameInfo.venue || 'N/A'}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Referee:</span>
+                                <span class="info-value">${game.referee || gameInfo.referee || 'N/A'}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Date:</span>
+                                <span class="info-value">${new Date(game.date).toLocaleString()}</span>
+                            </div>
                         </div>
-                        <div style="border-top:1px solid rgba(255,255,255,.06);margin-top:.4rem;padding-top:.6rem;max-height:540px;overflow:auto">
-                            <div id="tab-panel-overview" class="tab-panel active" data-tab="overview"></div>
-                            <div id="tab-panel-timeline" class="tab-panel" data-tab="timeline"></div>
-                            <div id="tab-panel-stats" class="tab-panel" data-tab="stats"></div>
-                            <div id="tab-panel-lineups" class="tab-panel" data-tab="lineups"></div>
-                            <div id="tab-panel-competition" class="tab-panel" data-tab="competition"></div>
-                            <div id="tab-panel-videos" class="tab-panel" data-tab="videos"></div>
-                            <pre id="tab-panel-raw" class="tab-panel" data-tab="raw" style="background:#0b1220;padding:.75rem;border-radius:8px;font-size:11px;line-height:1.3"></pre>
+                    </div>
+                    
+                    <div class="stat-category">
+                        <h3>Data Sources</h3>
+                        <div class="source-list">
+                            ${(analytics.sources_used || []).map(source => 
+                                `<span class="source-badge ${source}">${source}</span>`
+                            ).join('')}
                         </div>
                     </div>
                 </div>
+            `;
+        }
+
+        function renderStatisticsTab(analytics, game) {
+            const content = document.getElementById('statisticsContent');
+            const seasonStats = analytics.season_statistics || {};
+            
+            if (Object.keys(seasonStats).length === 0) {
+                content.innerHTML = '<div class="empty-state">No statistics available for this match.</div>';
+                return;
+            }
+            
+            const teams = Object.keys(seasonStats);
+            const homeTeam = teams.find(t => t.toLowerCase().includes(game.home_team.toLowerCase())) || teams[0];
+            const awayTeam = teams.find(t => t.toLowerCase().includes(game.away_team.toLowerCase())) || teams[1];
+            
+            const homeStats = seasonStats[homeTeam] || [];
+            const awayStats = seasonStats[awayTeam] || [];
+            
+            // Group stats by category
+            const statCategories = groupStatsByCategory(homeStats, awayStats);
+            
+            content.innerHTML = `
+                <div class="stats-grid">
+                    ${Object.entries(statCategories).map(([category, stats]) => `
+                        <div class="stat-category">
+                            <h3>${category}</h3>
+                            ${stats.map(stat => renderStatComparison(stat, homeTeam, awayTeam)).join('')}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function groupStatsByCategory(homeStats, awayStats) {
+            const categories = {
+                'Shots on Goal': [],
+                'Possession & Passing': [],
+                'Defensive': [],
+                'Set Pieces': [],
+                'Other': []
+            };
+            
+            const statTypes = [...new Set([
+                ...homeStats.map(s => s.type),
+                ...awayStats.map(s => s.type)
+            ])];
+            
+            statTypes.forEach(type => {
+                const homeStat = homeStats.find(s => s.type === type);
+                const awayStat = awayStats.find(s => s.type === type);
+                
+                const stat = {
+                    type,
+                    home: homeStat ? parseInt(homeStat.value) || 0 : 0,
+                    away: awayStat ? parseInt(awayStat.value) || 0 : 0
+                };
+                
+                if (type.toLowerCase().includes('shot') || type.toLowerCase().includes('goal')) {
+                    categories['Shots on Goal'].push(stat);
+                } else if (type.toLowerCase().includes('pass') || type.toLowerCase().includes('possession')) {
+                    categories['Possession & Passing'].push(stat);
+                } else if (type.toLowerCase().includes('tackle') || type.toLowerCase().includes('foul')) {
+                    categories['Defensive'].push(stat);
+                } else if (type.toLowerCase().includes('corner') || type.toLowerCase().includes('free kick')) {
+                    categories['Set Pieces'].push(stat);
+                } else {
+                    categories['Other'].push(stat);
+                }
+            });
+            
+            // Remove empty categories
+            Object.keys(categories).forEach(key => {
+                if (categories[key].length === 0) {
+                    delete categories[key];
+                }
+            });
+            
+            return categories;
+        }
+
+        function renderStatComparison(stat, homeTeam, awayTeam) {
+            const total = stat.home + stat.away;
+            const homePercent = total > 0 ? (stat.home / total) * 100 : 50;
+            const awayPercent = total > 0 ? (stat.away / total) * 100 : 50;
+            
+            return `
+                <div class="stat-comparison">
+                    <div class="stat-item">
+                        <img src="${currentGameData.home_logo}" class="team-logo-small" onerror="handleLogoError(this, '${(currentGameData.home_team||'').replace(/'/g,"&#39;")}', 'small')">
+                        <span class="stat-value">${stat.home}</span>
+                    </div>
+                    <div class="stat-bar">
+                        <div class="stat-fill home" style="width: ${homePercent}%"></div>
+                    </div>
+                    <div class="stat-label">${stat.type}</div>
+                    <div class="stat-bar">
+                        <div class="stat-fill away" style="width: ${awayPercent}%"></div>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${stat.away}</span>
+                        <img src="${currentGameData.away_logo}" class="team-logo-small" onerror="handleLogoError(this, '${(currentGameData.away_team||'').replace(/'/g,"&#39;")}', 'small')">
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPlayersTab(analytics, game) {
+            const content = document.getElementById('playersContent');
+            
+            content.innerHTML = `
+                <div class="players-section">
+                    <h3>Players to Watch</h3>
+                    <div class="players-grid">
+                        <div class="team-players">
+                            <div class="team-header">
+                                <img src="${game.home_logo}" class="team-logo-small" onerror="handleLogoError(this, '${game.home_team.replace(/'/g,"&#39;")}', 'small')">
+                                <h4>${game.home_team}</h4>
+                            </div>
+                            ${renderPlayerCategories(analytics, 'home')}
+                        </div>
+                        
+                        <div class="team-players">
+                            <div class="team-header">
+                                <img src="${game.away_logo}" class="team-logo-small" onerror="handleLogoError(this, '${game.away_team.replace(/'/g,"&#39;")}', 'small')">
+                                <h4>${game.away_team}</h4>
+                            </div>
+                            ${renderPlayerCategories(analytics, 'away')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPlayerCategories(analytics, side) {
+            // Mock player data based on team names
+            const mockPlayers = {
+                home: [
+                    { name: 'Martin Dubravka', position: 'Goalkeeper', stats: { saves: 0, goals: 0, assists: 0 } },
+                    { name: 'Callum Wilson', position: 'Forward', stats: { saves: 0, goals: 0, assists: 0 } },
+                    { name: 'Bruno Guimaraes', position: 'Midfielder', stats: { saves: 0, goals: 0, assists: 0 } }
+                ],
+                away: [
+                    { name: 'Mohamed Salah', position: 'Forward', stats: { saves: 0, goals: 1, assists: 2 } },
+                    { name: 'Wataru Endo', position: 'Midfielder', stats: { saves: 0, goals: 0, assists: 1 } },
+                    { name: 'Virgil van Dijk', position: 'Defender', stats: { saves: 0, goals: 0, assists: 0 } }
+                ]
+            };
+            
+            const players = mockPlayers[side] || [];
+            
+            return `
+                <div class="player-category">
+                    <div class="category-title">Key Players</div>
+                    ${players.map(player => `
+                        <div class="player-card">
+                            <div class="player-avatar">${player.name.split(' ').map(n => n[0]).join('')}</div>
+                            <div class="player-info">
+                                <div class="player-name">${player.name}</div>
+                                <div class="player-position">${player.position}</div>
+                            </div>
+                            <div class="player-stats">
+                                ${player.stats.goals > 0 ? `<span class="stat-badge goals">${player.stats.goals} G</span>` : ''}
+                                ${player.stats.assists > 0 ? `<span class="stat-badge assists">${player.stats.assists} A</span>` : ''}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderInjuriesTab(analytics, game) {
+            const content = document.getElementById('injuriesContent');
+            const injuries = analytics.injury_report || {};
+            
+            if (Object.keys(injuries).length === 0) {
+                content.innerHTML = '<div class="empty-state">No injury reports available.</div>';
+                return;
+            }
+            
+            content.innerHTML = `
+                <div class="injury-grid">
+                    ${Object.entries(injuries).map(([team, teamInjuries]) => `
+                        <div class="injury-team">
+                            <div class="team-header">
+                          <img src="${team.includes(game.home_team) ? game.home_logo : game.away_logo}" 
+                              class="team-logo-small" onerror="handleLogoError(this, '${team.replace(/'/g,"&#39;")}', 'small')">
+                                <h4>${team}</h4>
+                            </div>
+                            ${(teamInjuries || []).map(injury => `
+                                <div class="injury-item">
+                                    <div class="player-avatar">${injury.name.split(' ').map(n => n[0]).join('')}</div>
+                                    <div class="player-info">
+                                        <div class="player-name">${injury.name}</div>
+                                        <div class="player-position">${injury.position}</div>
+                                    </div>
+                                    <div class="injury-status ${injury.status.toLowerCase().replace(' ', '-')}">${injury.status}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderVideosTab(analytics, game) {
+            const content = document.getElementById('videosContent');
+            const videos = analytics.videos || [];
+            
+            if (videos.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No Videos Available</h3>
+                        <p>Video highlights will be available after the match concludes.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            content.innerHTML = `
+                <div class="videos-grid">
+                    ${videos.map((video, index) => `
+                        <div class="video-card">
+                            <div class="video-thumbnail">🎥</div>
+                            <div class="video-info">
+                                <div class="video-title">${video.title || `Video ${index + 1}`}</div>
+                                <div class="video-meta">${video.duration || 'Unknown duration'}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+                function renderAllSportsTab(analytics, game){
+                        const container = document.getElementById('allsportsContent');
+                        if(!container){ return; }
+                        const as = (analytics.allsportsapi) || {};
+                        if(Object.keys(as).length===0){
+                                container.innerHTML = '<div class="empty-state">No AllSports API enrichment available for this game.</div>';
+                                return;
+                        }
+                        const goals = as.goalscorers || as.goals || as.raw?.goalscorers || [];
+                        const cards = as.cards || as.raw?.cards || [];
+                        const lineups = as.lineups || as.raw?.lineups || {};
+                        const statistics = as.statistics || as.raw?.statistics || [];
+                        const subs = as.substitutes || as.raw?.substitutes || [];
+                        const lineupHome = lineups.home_team || lineups.home || {};
+                        const lineupAway = lineups.away_team || lineups.away || {};
+
+                        function renderList(list, mapFn){
+                                if(!list || list.length===0){ return '<div class="no-data">None</div>'; }
+                                return list.map(mapFn).join('');
+                        }
+
+                        function playerName(p){ return (p.player||p.name||'').trim(); }
+
+                        const statsHtml = statistics && statistics.length ? `
+                                <div class="stat-category">
+                                        <h3>AllSports Match Statistics</h3>
+                                        ${statistics.map(s=>`<div class="stat-comparison"><div class="stat-item"><span class="stat-value">${s.home||s.home_val||s.home_value||'-'}</span></div><div class="stat-label">${s.type||s.stat_type}</div><div class="stat-item"><span class="stat-value">${s.away||s.away_val||s.away_value||'-'}</span></div></div>`).join('')}
+                                </div>` : '';
+
+                        const goalsHtml = goals && goals.length ? `
+                                <div class="stat-category">
+                                    <h3>Goalscorers</h3>
+                                    ${goals.map(g=>`<div class="event-item"><div class="event-time">${g.time||g.minute||'-'}</div><div class="event-player">${g.home_scorer?.player || g.home_scorer || g.away_scorer?.player || g.away_scorer || g.scorer || g.player || '-'}</div><div class="event-team">${g.score||''}</div></div>`).join('')}
+                                </div>`: '';
+
+                        const cardsHtml = cards && cards.length ? `
+                                <div class="stat-category">
+                                    <h3>Cards</h3>
+                                    ${cards.map(c=>`<div class="event-item"><div class="event-time">${c.time||'-'}</div><div class="event-player">${c.home_fault||c.away_fault||c.player||'-'}</div><div class="event-team"><span class="card-type ${(c.card||'').includes('red')?'red':'yellow'}">${c.card||''}</span></div></div>`).join('')}
+                                </div>`: '';
+
+                        const lineupBlock = (label, team) => {
+                                if(!team || Object.keys(team).length===0){ return ''; }
+                                const starters = team.starting_lineups || team.starting || [];
+                                const substitutes = team.substitutes || [];
+                                return `<div class="team-players"><div class="team-header"><h4>${label}</h4></div>
+                                        <div class="player-category"><div class="category-title">Starting XI</div>${renderList(starters, p=>`<div class=\"player-card\"><div class=\"player-avatar\">${playerName(p).slice(0,2)}</div><div class=\"player-info\"><div class=\"player-name\">${playerName(p)}</div><div class=\"player-position\">#${p.player_number||p.number||''} ${p.player_position||p.position||''}</div></div></div>`)}
+                                        </div>
+                                        <div class="player-category"><div class="category-title">Substitutes</div>${renderList(substitutes, p=>`<div class=\"player-card\"><div class=\"player-avatar\">${playerName(p).slice(0,2)}</div><div class=\"player-info\"><div class=\"player-name\">${playerName(p)}</div><div class=\"player-position\">#${p.player_number||p.number||''} ${p.player_position||p.position||''}</div></div></div>`)}
+                                        </div>
+                                </div>`;
+                        };
+
+                        container.innerHTML = `
+                            <div class="stats-grid">
+                                ${statsHtml}
+                                ${goalsHtml}
+                                ${cardsHtml}
+                            </div>
+                            <div class="players-grid">
+                                ${lineupBlock(game.home_team, lineupHome)}
+                                ${lineupBlock(game.away_team, lineupAway)}
+                            </div>
+                        `;
+                }
+
+        function renderErrorState(msg) {
+            document.getElementById('overviewContent').innerHTML = `<div class="empty-state">Unable to load game analytics.<br><small>${msg||''}</small><br><small>API_BASE=${API_BASE}</small></div>`;
+        }
+
+        // Override the existing selectGame function
+        function selectGame(index) {
+            const game = CURRENT_GAMES[index];
+            if(!game){ return; }
+            updateStatus(`🎯 Selected: ${game.home_team} vs ${game.away_team}`,'success');
+            openGameModal(game);
+        }
+    </script>
 </body>
 </html>

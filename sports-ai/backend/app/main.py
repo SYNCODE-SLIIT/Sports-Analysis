@@ -3,6 +3,7 @@ import requests
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from .agents.collector import CollectorAgentV2
 from .agents.game_analytics_agent import GameAnalyticsAgent
 from .models.youtube_highlight_shorts_extractor import extract_youtube_shorts
@@ -13,6 +14,18 @@ app = FastAPI(title="Sports Collector HM", version="0.1.0")
 
 # Mount static directory for highlight shorts
 # app.mount("/highlight_shorts", StaticFiles(directory="highlight_shorts", html=True), name="highlight_shorts")  # Disabled to prevent error if directory does not exist
+
+# --- Frontend static mount (serves /frontend/pages/football-analytics-final.html) ---
+try:
+    # main.py lives at sports-ai/backend/app/main.py -> go up three levels to sports-ai root
+    _SPORTS_ROOT = Path(__file__).resolve().parent.parent.parent
+    _FRONTEND_DIR = _SPORTS_ROOT / "frontend"
+    if _FRONTEND_DIR.exists():
+        app.mount("/frontend", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
+    else:
+        print(f"[startup] Frontend directory not found at {_FRONTEND_DIR}, /frontend mount skipped")
+except Exception as _e:
+    print("[startup] Failed to mount /frontend static dir:", _e)
 
 # Add CORS middleware
 app.add_middleware(
