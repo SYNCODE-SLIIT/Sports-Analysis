@@ -12,8 +12,8 @@ import os
 import json
 from datetime import datetime
 
-API_KEY = "579c329ce5eb86ebad5e69f0eaceae06"
-BASE_URL = "https://v3.football.api-sports.io/"
+API_KEY = os.environ.get("API_KEY")
+BASE_URL = os.environ.get("BASE_URL")
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '../cache')
 if not os.path.exists(CACHE_DIR):  # create lazily if missing
     try:
@@ -23,14 +23,29 @@ if not os.path.exists(CACHE_DIR):  # create lazily if missing
         CACHE_DIR = None
 
 class GameAnalyticsAgent:
-    def __init__(self, game_id=None):
+    """Unified game analytics pulling from multiple providers.
+
+    Current providers:
+      - api_football (primary, rich statistics, injuries, events)
+      - thesportsdb (via CollectorAgentV2 already in the codebase) for event, timeline, lineup, extra stats
+
+    You can control provider priority via the 'providers' parameter; first success wins for a given
+    data facet, but we attempt to augment with secondary sources where it adds unique fields.
+    """
+
+    SUPPORTED_PROVIDERS = ("api_football", "thesportsdb")
+
+    def __init__(self, game_id: int | str | None = None, tsdb_event_id: str | None = None, providers: list[str] | None = None):
         self.game_id = game_id
-        self.headers = {"x-apisports-key": API_KEY}
+        self.tsdb_event_id = tsdb_event_id  # optional matching TheSportsDB event id (if known from merge step)
+        self.providers = [p for p in (providers or ["api_football", "thesportsdb"]) if p in self.SUPPORTED_PROVIDERS]
+        if not self.providers:
+            self.providers = ["api_football"]
+        self.headers = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY", API_KEY)}
         # Ensure cache directory exists
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
         except Exception:
-            # Fallback: disable caching if we cannot create directory
             pass
 
     def _cache_path(self, key):
@@ -343,14 +358,70 @@ class GameAnalyticsAgent:
         return highlights
 
     def get_all_analytics(self):
+        """Return combined analytics data using configured providers.
+
+        Structure:
+          {
+            sources_used: [...],
+            game_info: { ... },            # primary fixture metadata
+            season_statistics: {...},      # API-Football team stats
+            injury_report: {...},          # API-Football injuries
+            highlight_moments: {...},      # API-Football events (goals/cards/etc.)
+            thesportsdb: {                 # only if tsdb data fetched
+               event: {...},
+               timeline: [...],
+               stats: [...],
+               lineup: [...]
+            }
+          }
         """
-        Return all analytics data for the selected game (live from API-Football).
-        """
-        return {
-            "game_info": self.get_game_info(),
-            "season_statistics": self.get_season_statistics(),
-            "injury_report": self.get_injury_report(),
-            "highlight_moments": self.get_highlight_moments()
-        }
+        out: dict[str, any] = {"sources_used": []}
+
+        if "api_football" in self.providers and self.game_id:
+            out["game_info"] = self.get_game_info()
+            out["season_statistics"] = self.get_season_statistics()
+            out["injury_report"] = self.get_injury_report()
+            out["highlight_moments"] = self.get_highlight_moments()
+            out["sources_used"].append("api_football")
+
+        # Attempt TheSportsDB enrichment if requested & event id known (or resolvable later)
+        if "thesportsdb" in self.providers and self.tsdb_event_id:
+            try:
+                tsdb = self._fetch_tsdb_event_bundle(self.tsdb_event_id)
+                if tsdb:
+                    out["thesportsdb"] = tsdb
+                    out["sources_used"].append("thesportsdb")
+                    # Fill missing referee / venue if absent in primary
+                    if "game_info" in out:
+                        gi = out["game_info"]
+                        ev = tsdb.get("event") or {}
+                        gi.setdefault("referee", ev.get("strReferee"))
+                        gi.setdefault("venue", ev.get("strVenue"))
+            except Exception as e:  # noqa: broad - enrichment is best-effort
+                out.setdefault("errors", []).append({"provider": "thesportsdb", "error": str(e)})
+
+        return out
+
+    # ---------------- TheSportsDB enrichment (via existing collector) ---------------
+    def _fetch_tsdb_event_bundle(self, event_id: str):
+        """Use CollectorAgentV2 for event.get with expansions; return dict or None."""
+        try:
+            from .collector import CollectorAgentV2  # local import to avoid circular on module load
+            collector = CollectorAgentV2()
+            result = collector.handle({
+                "intent": "event.get",
+                "args": {"eventId": event_id, "expand": ["timeline", "stats", "lineup"]}
+            })
+            if not result.get("ok"):
+                raise RuntimeError(result.get("error", {}).get("message", "unknown tsdb error"))
+            data = result.get("data") or {}
+            return {
+                "event": data.get("event"),
+                "timeline": data.get("timeline") or [],
+                "stats": data.get("stats") or [],
+                "lineup": data.get("lineup") or []
+            }
+        except Exception as e:
+            raise e
 
 # Comments added for each step above. Now uses API-Football.

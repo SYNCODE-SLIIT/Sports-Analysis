@@ -321,6 +321,57 @@
             opacity: 0.8;
             line-height: 1.6;
         }
+        /* Modal for game details */
+        .modal {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.6);
+            z-index: 9999;
+            padding: 2rem;
+        }
+
+        .modal.show { display: flex; }
+
+        .modal-content {
+            background: linear-gradient(180deg, #1f2937, #111827);
+            color: #fff;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 900px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            padding: 1rem;
+            border: 1px solid rgba(255,255,255,0.06);
+        }
+
+        .modal-close {
+            float: right;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-size: 1.2rem;
+            cursor: pointer;
+        }
+
+        .modal-body { display: grid; gap: 1rem; }
+
+        .modal-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        pre#gameDetailRaw {
+            background: #0b1220;
+            color: #d1d5db;
+            padding: 0.75rem;
+            border-radius: 8px;
+            overflow: auto;
+            max-height: 360px;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -703,29 +754,267 @@
         function selectGame(gameId, homeTeam, awayTeam) {
             updateStatus(`🎯 Selected: ${homeTeam} vs ${awayTeam}`, 'success');
             console.log('Selected game:', gameId);
-            
-            // Show detailed game info
-            const gameInfo = `
-🏆 Game Selected: ${homeTeam} vs ${awayTeam}
-🆔 ID: ${gameId}
+            // Open modal and fetch event details from collector if available
+            openGameModal({ game_id: gameId, home: homeTeam, away: awayTeam });
+        }
 
-🔍 Available Features:
-• Live scores and updates  
-• Team statistics & form
-• Player performances
-• Match highlights
-• Historical data
-• Betting odds & predictions
+    /* --- Modal handling and analytics fetch --- */
+    const COLLECTOR_API = 'http://127.0.0.1:8030/collect'; // still used for fallback event fetch
+    const ANALYTICS_BASE = 'http://127.0.0.1:8030';
 
-⚙️ More analytics features coming soon!
+        function openGameModal(game) {
+            const modal = document.getElementById('gameDetailModal');
+            const title = document.getElementById('gameDetailTitle');
+            const meta = document.getElementById('gameDetailMeta');
+            const raw = document.getElementById('gameDetailRaw');
+            const content = document.getElementById('gameDetailContent');
+
+            title.textContent = `${game.home} vs ${game.away}`;
+            meta.textContent = `ID: ${game.game_id}`;
+            raw.textContent = 'Fetching...';
+                content.innerHTML = '<div class="loading">Loading details...</div>';
+                // The loading message has been updated to remove the invalid character.
+                // The character '�' has been replaced with a space.
+            modal.classList.add('show');
+
+            // First try unified analytics endpoint (richer multi-provider data)
+            const todayDate = (game.date ? game.date.split('T')[0] : document.getElementById('dateInput').value);
+            fetch(`${ANALYTICS_BASE}/games/${game.game_id}/analytics?date=${encodeURIComponent(todayDate)}`)
+              .then(r => { if(!r.ok) throw new Error('analytics http ' + r.status); return r.json(); })
+              .then(data => {
+                  if(!data.ok){ throw new Error('analytics error'); }
+                  raw.textContent = JSON.stringify(data.data, null, 2);
+                  const dash = buildAnalyticsDashboard(game, data.data);
+                  content.innerHTML = dash.html;
+                  meta.textContent = `ID: ${game.game_id}${data.tsdb_event_id ? ' (tsdb:'+data.tsdb_event_id+')' : ''}`;
+              })
+              .catch(err => {
+                  console.warn('Analytics endpoint failed, fallback to event.get resolution', err);
+                  updateStatus('⚠️ Analytics 404 fallback', 'warning');
+                  // Fallback to previous resolution path
+                  resolveEventId(game).then(eventId => {
+                      if(!eventId){
+                          raw.textContent = 'Could not resolve eventId from game data.';
+                          content.innerHTML = '<div class="empty-state"><h3>No matching event</h3><p>Could not map this game to a provider event.</p></div>';
+                          return;
+                      }
+                      meta.textContent = `ID: ${game.game_id} (resolved eventId: ${eventId})`;
+                      return fetch(COLLECTOR_API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent:'event.get', args:{ eventId, expand:['timeline','stats','lineup'] }})})
+                        .then(r=>{ if(!r.ok) throw new Error('collector error ' + r.status); return r.json(); })
+                        .then(j=>{
+                            if(j.ok && j.data && j.data.event){
+                                raw.textContent = JSON.stringify(j.data, null, 2);
+                                content.innerHTML = formatEventContent(j.data.event, j.data);
+                            } else {
+                                raw.textContent = JSON.stringify(j, null, 2);
+                                content.innerHTML = '<div class="empty-state"><h3>No event details</h3><p>event.get did not return an event.</p></div>';
+                            }
+                        });
+                  }).catch(e2 => {
+                      raw.textContent = String(e2);
+                      content.innerHTML = '<div class="empty-state"><h3>Error fetching details</h3><p>' + (e2.message || e2) + '</p></div>';
+                  });
+              });
+        }
+
+        // Cache events per date to avoid repeated list calls
+        const _eventsCache = {}; // date -> array
+
+        async function resolveEventId(game){
+            // 1. Direct identifiers if present
+            const directKeys = ['idEvent','event_id','eventId'];
+            for(const k of directKeys){
+                if(game[k] && /^\d+$/.test(String(game[k]))) return String(game[k]);
+            }
+            // If game_id itself looks numeric and plausible length (TheSportsDB ids are typically 5-7+ digits)
+            if(game.game_id && /^\d{5,}$/.test(String(game.game_id))) return String(game.game_id);
+
+            // 2. Need to list events for the date and match by teams & maybe league
+            const iso = game.date || game.timestamp && new Date(game.timestamp*1000).toISOString();
+            if(!iso){ return null; }
+            const dateOnly = iso.split('T')[0];
+            let events = _eventsCache[dateOnly];
+            if(!events){
+                try{
+                    const resp = await fetch(COLLECTOR_API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent:'events.list', args:{ date: dateOnly }})});
+                    if(resp.ok){
+                        const j = await resp.json();
+                        events = (j.data && j.data.events) || [];
+                        _eventsCache[dateOnly] = events;
+                    } else {
+                        events = [];
+                    }
+                }catch(e){ events = []; }
+            }
+            if(!events || !events.length) return null;
+
+            // Normalize helper
+            const norm = s => (s||'').toLowerCase().replace(/fc|cf|sc|afc|\./g,'').replace(/\s+/g,' ').trim();
+            const homeN = norm(game.home_team || game.home);
+            const awayN = norm(game.away_team || game.away);
+            let candidates = events.filter(ev => {
+                const h = norm(ev.strHomeTeam);
+                const a = norm(ev.strAwayTeam);
+                return h===homeN && a===awayN;
+            });
+            if(!candidates.length){
+                // try partial contains match
+                candidates = events.filter(ev => {
+                    const h = norm(ev.strHomeTeam);
+                    const a = norm(ev.strAwayTeam);
+                    return h.includes(homeN) && a.includes(awayN) || homeN.includes(h) && awayN.includes(a);
+                });
+            }
+            if(candidates.length===1) return String(candidates[0].idEvent);
+            if(candidates.length>1){
+                // Choose closest by kickoff time difference if we have timestamps
+                if(game.timestamp){
+                    const target = game.timestamp*1000;
+                    let best = null; let bestDiff = Infinity;
+                    for(const ev of candidates){
+                        const dtStr = (ev.dateEvent || '') + ' ' + (ev.strTime||'');
+                        let evMs = NaN;
+                        try { evMs = Date.parse(dtStr + ' UTC'); } catch(_){ }
+                        if(!isNaN(evMs)){
+                            const d = Math.abs(evMs - target);
+                            if(d < bestDiff){ bestDiff = d; best = ev; }
+                        }
+                    }
+                    if(best && best.idEvent) return String(best.idEvent);
+                }
+                // fallback pick first
+                if(candidates[0].idEvent) return String(candidates[0].idEvent);
+            }
+            return null;
+        }
+
+        function formatEventContent(ev, dataBundle){
+            // Defensive normalization: ensure arrays
+            function toArray(val){
+                if(Array.isArray(val)) return val;
+                if(!val) return [];
+                if(typeof val === 'object'){
+                    for(const k of ['timeline','stats','lineup','events','data']){
+                        if(Array.isArray(val[k])) return val[k];
+                    }
+                    const values = Object.values(val);
+                    if(values.every(v => typeof v === 'object')) return values;
+                }
+                return [];
+            }
+            const timeline = toArray(dataBundle.timeline);
+            const stats = toArray(dataBundle.stats);
+            const lineup = toArray(dataBundle.lineup);
+            return `
+                <div class="modal-grid">
+                    <div>
+                        <strong>League:</strong> ${ev.strLeague || 'N/A'}<br>
+                        <strong>Venue:</strong> ${ev.strVenue || 'N/A'}<br>
+                        <strong>Date:</strong> ${ev.dateEvent || 'N/A'}<br>
+                        <strong>Time:</strong> ${ev.strTime || 'N/A'}<br>
+                        <strong>Referee:</strong> ${ev.strReferee || 'N/A'}<br>
+                        <strong>Season:</strong> ${ev.strSeason || 'N/A'}
+                    </div>
+                    <div>
+                        <strong>Home:</strong> ${ev.strHomeTeam} (${ev.intHomeScore != null ? ev.intHomeScore : '-'})<br>
+                        <strong>Away:</strong> ${ev.strAwayTeam} (${ev.intAwayScore != null ? ev.intAwayScore : '-'})<br>
+                        <strong>Status:</strong> ${ev.strStatus || 'N/A'}<br>
+                        <strong>Round:</strong> ${ev.intRound || ev.strRound || 'N/A'}<br>
+                        <strong>Attendance:</strong> ${ev.intSpectators || 'N/A'}
+                    </div>
+                </div>
+                <div style="margin-top:1rem">
+                    <details open>
+                        <summary><strong>Timeline (${timeline.length})</strong></summary>
+                        ${timeline.length ? '<ul style="margin:0.5rem 0 0 1rem;font-size:0.75rem;max-height:120px;overflow:auto">' + timeline.map(t=>`<li>${t.intMinute||'?'}' ${t.strTeam||''} ${t.strPlayer||''} <em>${t.strEvent||t.strType||''}</em></li>`).join('') + '</ul>' : '<div style="opacity:.7;font-size:.8rem">No timeline</div>'}
+                    </details>
+                    <details>
+                        <summary><strong>Stats (${stats.length})</strong></summary>
+                        ${stats.length ? '<ul style="margin:0.5rem 0 0 1rem;font-size:0.75rem;max-height:140px;overflow:auto">' + stats.map(s=>`<li>${s.strStat || s.type || ''}: ${s.intHome || s.home || '-'} - ${s.intAway || s.away || '-'}</li>`).join('') + '</ul>' : '<div style="opacity:.7;font-size:.8rem">No stats</div>'}
+                    </details>
+                    <details>
+                        <summary><strong>Lineup (${lineup.length})</strong></summary>
+                        ${lineup.length ? '<ul style="margin:0.5rem 0 0 1rem;font-size:0.75rem;max-height:140px;overflow:auto">' + lineup.map(l=>`<li>${l.strPlayer || l.strPlayerName || l.player || ''} (${l.strPosition || l.position || ''})</li>`).join('') + '</ul>' : '<div style="opacity:.7;font-size:.8rem">No lineup</div>'}
+                    </details>
+                </div>
             `;
-            
-            alert(gameInfo);
+        }
+
+        function buildAnalyticsDashboard(game, bundle){
+            const parts = [];
+            const gi = bundle.game_info || {};
+            const tsdb = bundle.thesportsdb || {};
+            const line1 = `
+                <div class="modal-grid">
+                    <div>
+                        <strong>League:</strong> ${gi.league || tsdb?.event?.strLeague || game.league || 'N/A'}<br>
+                        <strong>Venue:</strong> ${gi.venue || tsdb?.event?.strVenue || game.venue || 'N/A'}<br>
+                        <strong>Referee:</strong> ${gi.referee || tsdb?.event?.strReferee || game.referee || 'N/A'}<br>
+                        <strong>Season:</strong> ${game.season || tsdb?.event?.strSeason || 'N/A'}<br>
+                        <strong>Providers:</strong> ${(bundle.sources_used||[]).join(', ')}
+                    </div>
+                    <div>
+                        <strong>Home:</strong> ${game.home_team} (${game.home_score ?? '-'})<br>
+                        <strong>Away:</strong> ${game.away_team} (${game.away_score ?? '-'})<br>
+                        <strong>Status:</strong> ${game.status_long || game.status_short || 'N/A'}<br>
+                        <strong>Round:</strong> ${game.round || tsdb?.event?.intRound || 'N/A'}<br>
+                        <strong>Attendance:</strong> ${game.spectators || tsdb?.event?.intSpectators || 'N/A'}
+                    </div>
+                </div>`;
+            parts.push(line1);
+
+            // API-Football statistics (season_statistics is keyed by team name)
+            if(bundle.season_statistics && Object.keys(bundle.season_statistics).length){
+                const statBlock = Object.entries(bundle.season_statistics).map(([team, stats])=>{
+                    const rows = (stats||[]).map(s=>`<tr><td>${s.type}</td><td>${s.value ?? '-'}</td></tr>`).join('');
+                    return `<details><summary><strong>${team} Season Stats</strong></summary><table style="width:100%;font-size:0.7rem;margin-top:.3rem">${rows}</table></details>`;
+                }).join('');
+                parts.push(`<div style="margin-top:1rem">${statBlock}</div>`);
+            }
+            // Injuries
+            if(bundle.injury_report && Object.keys(bundle.injury_report).length){
+                const inj = Object.entries(bundle.injury_report).map(([team, list])=>{
+                    return `<details><summary><strong>${team} Injuries (${list.length})</strong></summary><ul style="font-size:0.7rem;margin:.3rem 0 0 1rem">${list.map(i=>`<li>${i.name} - ${i.position} (${i.status}) ${i.reason||''}</li>`).join('')}</ul></details>`;
+                }).join('');
+                parts.push(`<div style="margin-top:1rem">${inj}</div>`);
+            }
+            // Highlights
+            if(bundle.highlight_moments){
+                const h = bundle.highlight_moments;
+                const goals = (h.goals||[]).length;
+                parts.push(`<div style="margin-top:1rem"><details open><summary><strong>Highlights (Goals:${goals})</strong></summary><pre style="font-size:0.65rem;white-space:pre-wrap;background:#0b1220;padding:.5rem;border-radius:6px;max-height:140px;overflow:auto">${JSON.stringify(h, null, 2)}</pre></details></div>`);
+            }
+            // TheSportsDB timeline/stats/lineup
+            if(tsdb.timeline || tsdb.stats || tsdb.lineup){
+                parts.push(`<div style="margin-top:1rem">${formatEventContent(tsdb.event||{}, tsdb)}</div>`);
+            }
+            return { html: parts.join('') };
+        }
+
+        function closeGameModal() {
+            const modal = document.getElementById('gameDetailModal');
+            modal.classList.remove('show');
         }
 
         // Event listeners
         document.getElementById('dateInput').addEventListener('change', fetchGames);
         document.getElementById('sourceSelect').addEventListener('change', fetchGames);
     </script>
+    
+        <!-- Game detail modal -->
+        <div id="gameDetailModal" class="modal" onclick="if(event.target===this) closeGameModal()">
+            <div class="modal-content" role="dialog" aria-modal="true">
+                <button class="modal-close" onclick="closeGameModal()">✖</button>
+                <h3 id="gameDetailTitle">Game Details</h3>
+                <div id="gameDetailMeta" style="opacity:0.8;margin-bottom:0.5rem;font-size:0.9rem">ID: -</div>
+                <div class="modal-body">
+                    <div id="gameDetailContent">No details loaded.</div>
+                    <div>
+                        <label style="font-weight:bold">Raw JSON</label>
+                        <pre id="gameDetailRaw">-</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
 </body>
 </html>

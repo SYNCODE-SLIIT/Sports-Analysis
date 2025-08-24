@@ -96,3 +96,25 @@ def merged_games(date: str | None = None, league_id: str | None = None):
     d = date or datetime.utcnow().strftime("%Y-%m-%d")
     games = games_agent.list_games(date=d, league_id=league_id)
     return {"ok": True, "date": d, "count": len(games), "games": games}
+
+@app.get("/games/{game_id}/analytics")
+def game_analytics(game_id: str, date: str | None = None):
+    """Return enriched analytics for a given merged game id.
+
+    The merged list may include an accompanying TheSportsDB event id stored as 'tsdb_event_id'.
+    We attempt to locate that record by first generating the games list for today (cheap) and
+    matching the numeric id. If found we pass both api_football fixture id and tsdb event id
+    into GameAnalyticsAgent for multi-provider enrichment.
+    """
+    # Fast path: treat game_id as API-Football fixture id (numeric) and also search for tsdb mapping
+    target_date = date or datetime.utcnow().strftime("%Y-%m-%d")
+    merged = games_agent.list_games(date=target_date)
+    rec = None
+    for g in merged:
+        if str(g.get("game_id")) == str(game_id):
+            rec = g
+            break
+    # Build agent with potential tsdb event id
+    agent_instance = GameAnalyticsAgent(game_id=game_id, tsdb_event_id=(rec or {}).get("tsdb_event_id"))
+    data = agent_instance.get_all_analytics()
+    return {"ok": True, "game_id": game_id, "date": target_date, "data": data, "tsdb_event_id": (rec or {}).get("tsdb_event_id")}
