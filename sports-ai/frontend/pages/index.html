@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Sports Collector Agent Demo</title>
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --secondary-color: #1e40af;
+      --background-color: #f8fafc;
+      --text-color: #1e293b;
+      --border-color: #e2e8f0;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      line-height: 1.5;
+      background-color: var(--background-color);
+      color: var(--text-color);
+      padding: 2rem;
+    }
+    
+    h1 {
+      color: var(--primary-color);
+      font-size: 2.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 1rem;
+    }
+    
+    h2 {
+      color: var(--text-color);
+      font-size: 1.5rem;
+      margin: 2rem 0 1rem;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    .section {
+      background: white;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .row {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    
+    select {
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background-color: white;
+      font-size: 0.95rem;
+      min-width: 200px;
+    }
+    
+    button {
+      padding: 0.5rem 1rem;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    
+    button:hover {
+      background-color: var(--secondary-color);
+    }
+    
+    pre {
+      background: #f1f5f9;
+      padding: 1rem;
+      border-radius: 6px;
+      max-height: 300px;
+      overflow: auto;
+      font-size: 0.9rem;
+      margin-top: 1rem;
+      border: 1px solid var(--border-color);
+    }
+    
+    .note {
+      background-color: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+      font-size: 0.95rem;
+    }
+    
+    span[id$="Count"] {
+      color: #64748b;
+      font-size: 0.9rem;
+    }
+    
+    label {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      font-weight: 500;
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <h1>Sports Data Explorer</h1>
+    
+    <div class="note">
+      <strong>Note:</strong> On TheSportsDB free tier, <em>teams</em> and <em>players</em> are not season-specific (current rosters).
+      Season selection mainly affects <em>events</em>.
+    </div>
+
+    <!-- Leagues -->
+    <div class="section">
+      <h2>1. League Selection</h2>
+      <div class="row">
+        <button onclick="loadLeagues()">Fetch Leagues</button>
+        <label>
+          <span>League:</span>
+          <select id="leagueSelect" onchange="onLeagueSelectChange()"></select>
+        </label>
+        <button onclick="showLeague()">Show League Details</button>
+        <span id="leagueCount"></span>
+      </div>
+      <pre id="leagueInfo"></pre>
+    </div>
+
+    <!-- Seasons -->
+    <div class="section">
+      <h2>2. Season Selection</h2>
+      <div class="row">
+        <button onclick="loadSeasons()">Fetch Seasons</button>
+        <label>
+          <span>Season:</span>
+          <select id="seasonSelect" onchange="onSeasonSelectChange()"></select>
+        </label>
+        <span id="seasonCount"></span>
+      </div>
+      <pre id="seasonInfo"></pre>
+    </div>
+
+    <!-- Teams -->
+    <div class="section">
+      <h2>3. Team Selection</h2>
+      <div class="row">
+        <button onclick="loadTeams()">Fetch Teams</button>
+        <label>
+          <span>Team:</span>
+          <select id="teamSelect" onchange="onTeamSelectChange()"></select>
+        </label>
+        <button onclick="showTeam()">Show Team Details</button>
+        <span id="teamCount"></span>
+      </div>
+      <pre id="teamInfo"></pre>
+    </div>
+
+    <!-- Players -->
+    <div class="section">
+      <h2>4. Player Selection</h2>
+      <div class="row">
+        <label>
+          <span>Player:</span>
+          <select id="playerSelect" onchange="onPlayerSelectChange()"></select>
+        </label>
+        <button onclick="showPlayer()">Show Player Details</button>
+        <span id="playerCount"></span>
+      </div>
+      <pre id="playerInfo"></pre>
+    </div>
+
+    <!-- Shorts Generation removed -->
+
+    <!-- Events -->
+    <div class="section">
+      <h2>5. Events / Matches</h2>
+      <div class="row">
+        <button onclick="loadEvents()">Fetch Events</button>
+        <label>
+          <span>Event:</span>
+          <select id="eventSelect" onchange="onEventSelectChange()"></select>
+        </label>
+        <button onclick="showEvent()">Show Event Details</button>
+        <span id="eventCount"></span>
+      </div>
+      <pre id="eventInfo"></pre>
+    </div>
+  </div>
+
+  <script>
+    // Track latest request tokens so late responses can't overwrite new ones
+    const latest = { team: 0, event: 0 };
+    function nextToken(kind) { latest[kind] = (latest[kind] || 0) + 1; return latest[kind]; }
+    function isCurrent(kind, token) { return latest[kind] === token; }
+    const API = "http://127.0.0.1:8030/collect";
+
+    // ---------- helpers ----------
+    function setText(id, text) { document.getElementById(id).textContent = text; }
+    function setJSON(id, obj) { document.getElementById(id).textContent = JSON.stringify(obj || {}, null, 2); }
+    function clearJSON(...ids){ ids.forEach(id => setJSON(id, {})); }
+    function clearSelect(id, placeholder = "") {
+      const sel = document.getElementById(id);
+      if (!sel) {
+        console.warn(`Element with id '${id}' not found.`);
+        return;
+      }
+      sel.innerHTML = "";
+      if (placeholder) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = placeholder;
+        sel.appendChild(opt);
+      }
+    }
+    function fillSelect(id, rows, valueKey, labelKey) {
+      const sel = document.getElementById(id);
+      sel.innerHTML = "";
+      rows.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r[valueKey] || "";
+        opt.textContent = r[labelKey] || r[valueKey] || "";
+        sel.appendChild(opt);
+      });
+    }
+
+    async function callAgent(intent, args = {}) {
+      try {
+        console.log("%c→ calling", "color:#999", intent, args);
+        const res = await fetch(API, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({intent, args}),
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const json = await res.json();
+        console.log("%c← response", "color:#0a0", intent, json);
+
+        if (!json.ok) {
+          alert(`Agent error [${intent}]: ${json.error?.message || "Unknown error"}`);
+        }
+
+        return json;
+      } catch (err) {
+        console.error("Fetch failed for", intent, err);
+        alert(`Network/Fetch error for ${intent}: ${err.message || err}`);
+        return {ok: false, error: {message: String(err)}};
+      }
+    }
+
+    // ---------- select change effects (no fetch) ----------
+    function onLeagueSelectChange() {
+      // When league changes, just clear dependent UI (no API calls)
+      clearSelect("seasonSelect", "Select season"); setText("seasonCount", "");
+      clearSelect("teamSelect", "Select team"); setText("teamCount", "");
+      clearSelect("playerSelect", "Select player"); setText("playerCount", "");
+      clearSelect("eventSelect", "Select event"); setText("eventCount", "");
+      clearJSON("seasonInfo", "teamInfo", "playerInfo", "eventInfo");
+    }
+    function onSeasonSelectChange() {
+      // Season affects events only; we only clear events (no API calls)
+      clearSelect("eventSelect", "Select event"); setText("eventCount", "");
+      clearJSON("eventInfo");
+    }
+    function onTeamSelectChange() {
+      // Team affects players; just clear players pane (no API calls)
+  clearSelect("playerSelect", "Select player"); setText("playerCount", "");
+  clearJSON("playerInfo");
+  // Automatically load players for the selected team
+  // (If no team is selected this will be a no-op)
+  loadPlayers();
+    }
+    function onPlayerSelectChange() {
+      // No fetch on change; user clicks "Show Player Details" to fetch details
+    }
+    function onEventSelectChange() {
+      // No fetch on change; user clicks "Show Event Details" to fetch details
+    }
+
+    // ---------- leagues ----------
+    async function loadLeagues() {
+      const data = await callAgent("leagues.list");
+      if (!data.ok) return;
+      const leagues = (data.data && data.data.leagues) || [];
+      fillSelect("leagueSelect", leagues, "idLeague", "strLeague");
+      setText("leagueCount", `(${leagues.length})`);
+      setJSON("leagueInfo", leagues[0] || {});
+      onLeagueSelectChange(); // clear downstream; no auto-fetch
+    }
+
+    async function showLeague() {
+      const lid = document.getElementById("leagueSelect").value;
+      if (!lid) { alert("Select a league first"); return; }
+      const data = await callAgent("league.get", {leagueId: lid});
+      if (!data.ok) return;
+      setJSON("leagueInfo", data.data?.league || {});
+    }
+
+    // ---------- seasons ----------
+    async function loadSeasons() {
+      const lid = document.getElementById("leagueSelect").value;
+      if (!lid) { alert("Select a league first"); return; }
+      const data = await callAgent("seasons.list", {leagueId: lid});
+      if (!data.ok) return;
+      const seasons = (data.data && data.data.seasons) || [];
+      fillSelect("seasonSelect", seasons, "strSeason", "strSeason");
+      setText("seasonCount", `(${seasons.length})`);
+      setJSON("seasonInfo", seasons[0] || {});
+      // No auto events fetch
+    }
+
+    // ---------- teams ----------
+    async function loadTeams() {
+      const lid = document.getElementById("leagueSelect").value;
+      const leagueName = document.getElementById("leagueSelect").selectedOptions[0]?.text;
+      if (!lid) {
+        console.warn("League ID is missing.");
+        return;
+      }
+
+      console.log("Fetching teams for league:", { leagueId: lid, leagueName });
+
+      const data = await callAgent("teams.list", { leagueId: lid, leagueName });
+      console.log("Teams response:", data);
+
+      if (!data.ok) return;
+
+      const teams = (data.data && data.data.teams) || [];
+      console.log("Processed teams:", teams);
+
+      if ((!teams || teams.length === 0) && lid) {
+        // Fallback: try league matches endpoint and extract teams
+        try {
+          console.log("teams.list empty — falling back to /games?league_id={leagueId}");
+          const today = new Date().toISOString().split('T')[0];
+          const resp = await fetch(`http://127.0.0.1:8030/games?date=${today}&league_id=${lid}`);
+          const json = await resp.json();
+          const games = json.games || [];
+          const seen = new Map();
+          games.forEach(g => {
+            const h = g.home_team || g.home_team_name || g.home_team;
+            const a = g.away_team || g.away_team_name || g.away_team;
+            const hid = g.home_team_id || g.home_team || `h_${h}`;
+            const aid = g.away_team_id || g.away_team || `a_${a}`;
+            if (h && !seen.has(h)) seen.set(h, { id: hid, name: h });
+            if (a && !seen.has(a)) seen.set(a, { id: aid, name: a });
+          });
+          const fallbackTeams = Array.from(seen.values()).map((t, i) => ({ idTeam: t.name, strTeam: t.name }));
+          console.log("Fallback teams from matches:", fallbackTeams);
+          if (fallbackTeams.length) {
+            fillSelect("teamSelect", fallbackTeams, "idTeam", "strTeam");
+            setText("teamCount", `(${fallbackTeams.length})`);
+            setJSON("teamInfo", {});
+            return;
+          }
+        } catch (err) {
+          console.warn("Fallback matches fetch failed", err);
+        }
+      }
+
+      fillSelect("teamSelect", teams, "idTeam", "strTeam");
+      setText("teamCount", `(${teams.length})`);
+      setJSON("teamInfo", {});
+    }
+
+    async function showTeam() {
+      const tid = document.getElementById("teamSelect").value;
+      if (!tid) { alert("Select a team first"); return; }
+    
+      const token = nextToken("team");
+      // If the selected value looks like a numeric id, pass as teamId; otherwise pass as teamName
+      const numeric = /^[0-9]+$/.test(tid);
+      const data = numeric ? await callAgent("team.get", { teamId: tid }) : await callAgent("team.get", { teamName: tid });
+    
+      // Ignore late responses
+      if (!isCurrent("team", token)) {
+        console.log("Ignoring stale team.get response");
+        return;
+      }
+    
+      // Also verify we’re still looking at the same selected item
+      if (document.getElementById("teamSelect").value !== tid) {
+        console.log("Selection changed; skipping update");
+        return;
+      }
+    
+      if (!data.ok) return;
+      setJSON("teamInfo", data.data?.team || {});
+    }
+
+    // ---------- players ----------
+    async function loadPlayers() {
+      const tid = document.getElementById("teamSelect").value;
+      if (!tid) { 
+        // nothing selected — ensure players select is empty
+        clearSelect("playerSelect", "Select player"); setText("playerCount", ""); setJSON("playerInfo", {});
+        return;
+      }
+  console.log("loadPlayers: selected team value=", tid);
+      // Pass teamId if numeric, otherwise pass teamName so backend can resolve it
+      const numeric = /^[0-9]+$/.test(tid);
+      const data = numeric ? await callAgent("players.list", { teamId: tid }) : await callAgent("players.list", { teamName: tid });
+  console.log("players.list response:", data);
+      if (!data.ok) return;
+      const players = (data.data && data.data.players) || [];
+      fillSelect("playerSelect", players, "idPlayer", "strPlayer");
+      setText("playerCount", `(${players.length})`);
+      setJSON("playerInfo", players[0] || {});
+    }
+
+    async function showPlayer() {
+      const pid = document.getElementById("playerSelect").value;
+      if (!pid) { alert("Select a player first"); return; }
+  console.log("showPlayer: selected player id=", pid);
+      const data = await callAgent("player.get", {playerId: pid});
+      if (!data.ok) return;
+      setJSON("playerInfo", data.data?.player || {});
+    }
+
+    // ---------- events ----------
+    async function loadEvents() {
+      const lid = document.getElementById("leagueSelect").value;
+      const season = document.getElementById("seasonSelect").value;
+      if (!lid || !season) return;
+    
+      const data = await callAgent("events.list", { leagueId: lid, season });
+      if (!data.ok) return;
+    
+      const events = (data.data && data.data.events) || [];
+      fillSelect("eventSelect", events, "idEvent", "strEvent");
+      setText("eventCount", `(${events.length})`);
+      // Show nothing until the user explicitly clicks "Show Event Details"
+      setJSON("eventInfo", {});
+    }
+
+    async function showEvent() {
+      const eid = document.getElementById("eventSelect").value;
+      if (!eid) { alert("Select an event first"); return; }
+
+      const token = nextToken("event");
+      const data = await callAgent("event.get", { eventId: eid, expand: ["timeline","stats","lineup"] });
+
+      // Ignore late responses
+      if (!isCurrent("event", token)) {
+        console.log("Ignoring stale event.get response");
+        return;
+      }
+
+      // Verify selection didn’t change while fetching
+      if (document.getElementById("eventSelect").value !== eid) {
+        console.log("Selection changed; skipping update");
+        return;
+      }
+
+      if (!data.ok) return;
+      setJSON("eventInfo", data.data || {});
+    }
+  </script>
+</body>
+</html>

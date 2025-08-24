@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Football Analytics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 2px solid rgba(255,255,255,0.1);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .control-group label {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        
+        .control-group input, .control-group select {
+            padding: 0.5rem;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            font-size: 1rem;
+        }
+        
+        .refresh-btn {
+            padding: 0.7rem 1.5rem;
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            align-self: flex-end;
+        }
+        
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .stats-bar {
+            display: none;
+            justify-content: center;
+            gap: 2rem;
+            padding: 1rem;
+            background: rgba(0,0,0,0.1);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .stat-item {
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .stat-label {
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(0,0,0,0.1);
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #6c757d;
+            transition: all 0.3s ease;
+        }
+        
+        .status-indicator.success {
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.warning {
+            background: #ffc107;
+        }
+        
+        .status-indicator.error {
+            background: #dc3545;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .loading {
+            text-align: center;
+            font-size: 1.2rem;
+            padding: 3rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            margin: 2rem 0;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        
+        .game-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .game-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            background: rgba(255,255,255,0.15);
+        }
+        
+        .game-card.live {
+            border-left: 4px solid #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        .game-card.upcoming {
+            border-left: 4px solid #007bff;
+        }
+        
+        .game-card.finished {
+            border-left: 4px solid #6c757d;
+            opacity: 0.8;
+        }
+        
+        .league-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .league-info {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .league-logo {
+            width: 30px;
+            height: 30px;
+            object-fit: contain;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .league-name {
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        
+        .status-badge {
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        
+        .status-live {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-upcoming {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+        }
+        
+        .status-finished {
+            background: linear-gradient(45deg, #6c757d, #495057);
+        }
+        
+        .match-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 1rem 0;
+        }
+        
+        .team {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            flex: 1;
+        }
+        
+        .team.away {
+            flex-direction: row-reverse;
+            text-align: right;
+        }
+        
+        .team-logo {
+            width: 45px;
+            height: 45px;
+            object-fit: contain;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .team-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        
+        .score-section {
+            text-align: center;
+            padding: 0 1rem;
+        }
+        
+        .score {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .vs {
+            font-size: 1rem;
+            opacity: 0.7;
+            margin: 0 0.5rem;
+        }
+        
+        .match-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+        
+        .match-details div {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            margin: 2rem 0;
+        }
+        
+        .empty-state h3 {
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .empty-state p {
+            opacity: 0.8;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>⚽ Football Analytics Dashboard</h1>
+        <div class="controls">
+            <div class="control-group">
+                <label>Date:</label>
+                <input type="date" id="dateInput" />
+            </div>
+            <div class="control-group">
+                <label>Source:</label>
+                <select id="sourceSelect">
+                    <option value="auto">Auto (API + Demo)</option>
+                    <option value="api">API Only</option>
+                    <option value="demo">Demo Data Only</option>
+                </select>
+            </div>
+            <button class="refresh-btn" onclick="fetchGames()">🔄 Refresh</button>
+            <button class="refresh-btn" style="background:linear-gradient(45deg,#ff9800,#f57c00)" onclick="fetchLiveGames()">📡 Live API</button>
+        </div>
+    </div>
+
+    <div class="stats-bar" id="statsBar">
+        <div class="stat-item">
+            <div class="stat-number" id="totalGames">0</div>
+            <div class="stat-label">Total Games</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="liveGames">0</div>
+            <div class="stat-label">Live</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="upcomingGames">0</div>
+            <div class="stat-label">Upcoming</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-number" id="finishedGames">0</div>
+            <div class="stat-label">Finished</div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-indicator" id="statusIndicator"></div>
+        <span id="statusText">Ready</span>
+    </div>
+
+    <div class="container">
+        <div id="games" class="games-grid">
+            <div class="loading">🔄 Loading live games...</div>
+        </div>
+    </div>
+
+    <script>
+        // Demo data for fallback
+        const demoGames = [
+            {
+                provider: "demo",
+                game_id: "demo_1",
+                date: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+                timestamp: Math.floor(Date.now() / 1000) + 7200,
+                home_team: "Arsenal",
+                away_team: "Chelsea",
+                league: "Premier League",
+                league_logo: "https://media.api-sports.io/football/leagues/39.png",
+                home_logo: "https://media.api-sports.io/football/teams/42.png", 
+                away_logo: "https://media.api-sports.io/football/teams/49.png",
+                venue: "Emirates Stadium",
+                status_short: "NS",
+                status_long: "Not Started",
+                home_score: null,
+                away_score: null,
+                referee: "Anthony Taylor"
+            },
+            {
+                provider: "demo",
+                game_id: "demo_2",
+                date: new Date().toISOString(),
+                timestamp: Math.floor(Date.now() / 1000),
+                home_team: "Manchester United",
+                away_team: "Liverpool",
+                league: "Premier League",
+                league_logo: "https://media.api-sports.io/football/leagues/39.png",
+                home_logo: "https://media.api-sports.io/football/teams/33.png",
+                away_logo: "https://media.api-sports.io/football/teams/40.png",
+                venue: "Old Trafford",
+                status_short: "HT",
+                status_long: "Halftime",
+                home_score: 1,
+                away_score: 2,
+                elapsed: 45,
+                referee: "Michael Oliver"
+            },
+            {
+                provider: "demo",
+                game_id: "demo_3",
+                date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                timestamp: Math.floor(Date.now() / 1000) - 7200,
+                home_team: "Manchester City",
+                away_team: "Tottenham",
+                league: "Premier League",
+                league_logo: "https://media.api-sports.io/football/leagues/39.png",
+                home_logo: "https://media.api-sports.io/football/teams/50.png",
+                away_logo: "https://media.api-sports.io/football/teams/47.png",
+                venue: "Etihad Stadium",
+                status_short: "FT",
+                status_long: "Match Finished",
+                home_score: 3,
+                away_score: 1,
+                referee: "Paul Tierney"
+            },
+            {
+                provider: "demo",
+                game_id: "demo_4", 
+                date: new Date().toISOString(),
+                timestamp: Math.floor(Date.now() / 1000),
+                home_team: "Real Madrid",
+                away_team: "Barcelona",
+                league: "La Liga",
+                league_logo: "https://media.api-sports.io/football/leagues/140.png",
+                home_logo: "https://media.api-sports.io/football/teams/541.png",
+                away_logo: "https://media.api-sports.io/football/teams/529.png",
+                venue: "Santiago Bernabéu",
+                status_short: "87'",
+                status_long: "Second Half",
+                home_score: 2,
+                away_score: 1,
+                elapsed: 87,
+                referee: "José Hernández"
+            },
+            {
+                provider: "demo",
+                game_id: "demo_5",
+                date: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+                timestamp: Math.floor(Date.now() / 1000) + 14400,
+                home_team: "Bayern Munich",
+                away_team: "Borussia Dortmund",
+                league: "Bundesliga",
+                league_logo: "https://media.api-sports.io/football/leagues/78.png",
+                home_logo: "https://media.api-sports.io/football/teams/157.png",
+                away_logo: "https://media.api-sports.io/football/teams/165.png",
+                venue: "Allianz Arena",
+                status_short: "NS",
+                status_long: "Not Started",
+                home_score: null,
+                away_score: null,
+                referee: "Felix Brych"
+            }
+        ];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set today's date as default
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('dateInput').value = today;
+            
+            // Load games
+            fetchGames();
+        });
+
+        async function fetchGames() {
+            showLoader(true);
+            const source = document.getElementById('sourceSelect').value;
+            const date = document.getElementById('dateInput').value;
+            
+            try {
+                let games = null;
+                
+                if (source === 'demo') {
+                    // Use demo data only
+                    games = demoGames;
+                    updateStatus('✅ Demo data loaded', 'success');
+                } else if (source === 'api') {
+                    // Try API only
+                    games = await fetchFromAPI(date);
+                    if (!games || games.length === 0) {
+                        updateStatus('❌ API unavailable', 'error');
+                        return;
+                    }
+                    updateStatus('✅ Live data from API', 'success');
+                } else {
+                    // Auto mode: try API first, fallback to demo
+                    games = await fetchFromAPI(date);
+                    if (!games || games.length === 0) {
+                        console.log('API failed, using demo data');
+                        games = demoGames;
+                        updateStatus('⚠️ Using demo data (API unavailable)', 'warning');
+                    } else {
+                        updateStatus('✅ Live data loaded', 'success');
+                    }
+                }
+                
+                displayGames(games);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                displayGames(demoGames);
+                updateStatus('⚠️ Error occurred, using demo data', 'warning');
+            } finally {
+                showLoader(false);
+            }
+        }
+
+        async function fetchFromAPI(date) {
+            // Preferred order: unified merged /games then /live/games then legacy
+            const bases = [8030,8025,8020,8010,8000,8003,8002,8001];
+            const attempts = [];
+            for (const p of bases){
+                attempts.push(`http://127.0.0.1:${p}/games?date=${date}`);
+                attempts.push(`http://localhost:${p}/games?date=${date}`);
+            }
+            for (const p of bases){
+                attempts.push(`http://127.0.0.1:${p}/live/games?date=${date}`);
+                attempts.push(`http://localhost:${p}/live/games?date=${date}`);
+            }
+            for (const url of attempts){
+                try {
+                    console.log('🔄 Trying', url);
+                    const r = await fetch(url);
+                    if (!r.ok) continue;
+                    const j = await r.json();
+                    if (j.games) return j.games;
+                    if (Array.isArray(j)) return j;
+                } catch(e){ console.log('Fail', url, e.message); }
+            }
+            return null;
+        }
+
+        async function fetchLiveGames(){
+            const date = document.getElementById('dateInput').value;
+            updateStatus('📡 Fetching live collector data...', 'warning');
+            const games = await fetchFromAPI(date);
+            if (games && games.length){
+                displayGames(games);
+                updateStatus(`✅ Live collector data (${games.length})`, 'success');
+            } else {
+                updateStatus('⚠️ Live fetch failed, showing demo', 'warning');
+                displayGames(demoGames);
+            }
+        }
+
+        // --- Logo filtering to avoid console net::ERR_FAILED spam for missing images ---
+        const BAD_LOGO_IDS = new Set(['24755','8104','12186']); // extend as observed
+        function filterLogo(url){
+            if(!url) return null;
+            const m = url.match(/\/teams\/(\d+)\.png$/);
+            if(m && BAD_LOGO_IDS.has(m[1])) return null; // skip known broken IDs
+            return url;
+        }
+
+        function displayGames(games) {
+            const gamesEl = document.getElementById('games');
+            
+            if (!games || games.length === 0) {
+                gamesEl.innerHTML = `
+                    <div class="empty-state">
+                        <h3>⚽ No Games Found</h3>
+                        <p>No matches available for the selected date and source.</p>
+                        <p>Try changing the date or source, or check back later.</p>
+                    </div>
+                `;
+                updateStats([]);
+                return;
+            }
+
+            gamesEl.innerHTML = games.map(createGameCard).join('');
+            updateStats(games);
+        }
+
+        function createGameCard(game) {
+            // Pre-filter logos so broken ones are not even requested (prevents console errors)
+            const homeLogo = filterLogo(game.home_logo);
+            const awayLogo = filterLogo(game.away_logo);
+            const isLive = game.status_short && /^\d+\'$/.test(game.status_short) || 
+                           ['HT', 'LIVE', '1H', '2H'].includes(game.status_short) ||
+                           (game.status_long && game.status_long.toLowerCase().includes('live'));
+            
+            const isUpcoming = ['NS', 'TBD', 'PST'].includes(game.status_short) ||
+                              (game.status_long && game.status_long.toLowerCase().includes('not started'));
+            
+            const isFinished = ['FT', 'AET', 'PEN'].includes(game.status_short) ||
+                              (game.status_long && game.status_long.toLowerCase().includes('finished'));
+
+            const cardClass = `game-card ${isLive ? 'live' : isUpcoming ? 'upcoming' : 'finished'}`;
+            const statusClass = isLive ? 'status-live' : isUpcoming ? 'status-upcoming' : 'status-finished';
+
+            const homeScore = game.home_score !== null ? game.home_score : '-';
+            const awayScore = game.away_score !== null ? game.away_score : '-';
+            
+            const scoreDisplay = (game.home_score !== null && game.away_score !== null) 
+                ? `<div class="score">${homeScore} - ${awayScore}</div>`
+                : `<div class="vs">VS</div>`;
+
+            const status = game.status_long || game.status_short || 'TBD';
+            const elapsedTime = game.elapsed ? `${game.elapsed}'` : '';
+
+            return `
+                <div class="${cardClass}" onclick="selectGame('${game.game_id}', '${game.home_team}', '${game.away_team}')">
+                    <div class="league-header">
+                        <div class="league-info">
+                            ${game.league_logo ? `<img src="${game.league_logo}" alt="league" class="league-logo" onerror="this.style.display='none'">` : '<div class="league-logo">🏆</div>'}
+                            <div class="league-name">${game.league || 'Unknown League'}</div>
+                        </div>
+                        <div class="status-badge ${statusClass}">
+                            ${isLive && elapsedTime ? `${elapsedTime} ${status}` : status}
+                        </div>
+                    </div>
+                    
+                    <div class="match-main">
+                        <div class="team">
+                            ${homeLogo ? `<img src="${homeLogo}" alt="home" class="team-logo" onerror="this.style.display='none'">` : '<div class="team-logo">⚽</div>'}
+                            <div class="team-name">${game.home_team || 'TBD'}</div>
+                        </div>
+                        
+                        <div class="score-section">
+                            ${scoreDisplay}
+                        </div>
+                        
+                        <div class="team away">
+                            <div class="team-name">${game.away_team || 'TBD'}</div>
+                            ${awayLogo ? `<img src="${awayLogo}" alt="away" class="team-logo" onerror="this.style.display='none'">` : '<div class="team-logo">⚽</div>'}
+                        </div>
+                    </div>
+                    
+                    <div class="match-details">
+                        <div>📍 ${game.venue || 'TBD'}</div>
+                        ${game.referee ? `<div>👨‍⚖️ ${game.referee}</div>` : ''}
+                        ${game.season ? `<div>🗓️ ${game.season}</div>` : ''}
+                        ${game.round ? `<div>🔢 ${game.round}</div>` : ''}
+                        ${game.spectators ? `<div>👥 ${game.spectators}</div>` : ''}
+                        <div>📡 ${(game.providers ? game.providers.join('+') : (game.provider || 'unknown'))}</div>
+                        <div>🆔 ${game.game_id}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateStats(games) {
+            const total = games.length;
+            const live = games.filter(g => {
+                const status = (g.status_long || g.status_short || '').toLowerCase();
+                return ['live', 'halftime', '1st half', '2nd half', 'ht'].some(s => status.includes(s)) || 
+                       /\d+'/.test(g.status_short);
+            }).length;
+            const upcoming = games.filter(g => {
+                const status = (g.status_long || g.status_short || '').toLowerCase();
+                return ['ns', 'tbd', 'not started', 'postponed'].some(s => status.includes(s));
+            }).length;
+            const finished = total - live - upcoming;
+            
+            document.getElementById('totalGames').textContent = total;
+            document.getElementById('liveGames').textContent = live;
+            document.getElementById('upcomingGames').textContent = upcoming;
+            document.getElementById('finishedGames').textContent = finished;
+            
+            document.getElementById('statsBar').style.display = total > 0 ? 'flex' : 'none';
+        }
+
+        function showLoader(show) {
+            const gamesEl = document.getElementById('games');
+            if (show) {
+                gamesEl.innerHTML = '<div class="loading">🔄 Loading live games...</div>';
+            }
+        }
+
+        function updateStatus(message, type = '') {
+            const statusText = document.getElementById('statusText');
+            const statusIndicator = document.getElementById('statusIndicator');
+            
+            statusText.textContent = message;
+            statusIndicator.className = `status-indicator ${type}`;
+            
+            // Auto-reset after 5 seconds
+            setTimeout(() => {
+                statusText.textContent = 'Ready';
+                statusIndicator.className = 'status-indicator';
+            }, 5000);
+        }
+
+        function selectGame(gameId, homeTeam, awayTeam) {
+            updateStatus(`🎯 Selected: ${homeTeam} vs ${awayTeam}`, 'success');
+            console.log('Selected game:', gameId);
+            
+            // Show detailed game info
+            const gameInfo = `
+🏆 Game Selected: ${homeTeam} vs ${awayTeam}
+🆔 ID: ${gameId}
+
+🔍 Available Features:
+• Live scores and updates  
+• Team statistics & form
+• Player performances
+• Match highlights
+• Historical data
+• Betting odds & predictions
+
+⚙️ More analytics features coming soon!
+            `;
+            
+            alert(gameInfo);
+        }
+
+        // Event listeners
+        document.getElementById('dateInput').addEventListener('change', fetchGames);
+        document.getElementById('sourceSelect').addEventListener('change', fetchGames);
+    </script>
+</body>
+</html>
