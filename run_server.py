@@ -9,6 +9,13 @@ even though the folder contains a hyphen.
 """
 from __future__ import annotations
 import sys, argparse, pathlib, importlib, traceback, textwrap, os
+# Load .env automatically so env vars in project root are available to the app
+try:
+    from dotenv import load_dotenv
+    load_dotenv(str(pathlib.Path(__file__).parent.resolve() / '.env'))
+except Exception:
+    # python-dotenv may not be installed in the active environment; fallback to no-op
+    pass
 import uvicorn
 
 ROOT = pathlib.Path(__file__).parent.resolve()
@@ -61,6 +68,15 @@ if args.debug:
     print("Loaded module:", mod)
     print("Found app object:", app)
     print("Environment minimal check: fastapi version loaded OK")
+    # Show relevant env vars (mask API key partially)
+    api_key = os.environ.get('API_KEY') or os.environ.get('API_FOOTBALL_KEY')
+    base_url = os.environ.get('BASE_URL')
+    if api_key:
+        masked = api_key[:4] + '...' + api_key[-4:]
+    else:
+        masked = '<not set>'
+    print(f"API_KEY: {masked}")
+    print(f"BASE_URL: {base_url}")
 
 print(f"Starting server on http://{args.host}:{args.port} (reload={args.reload})")
 try:

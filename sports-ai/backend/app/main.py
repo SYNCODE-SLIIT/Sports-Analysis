@@ -1,4 +1,5 @@
 import os
+import requests
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -118,3 +119,36 @@ def game_analytics(game_id: str, date: str | None = None):
     agent_instance = GameAnalyticsAgent(game_id=game_id, tsdb_event_id=(rec or {}).get("tsdb_event_id"))
     data = agent_instance.get_all_analytics()
     return {"ok": True, "game_id": game_id, "date": target_date, "data": data, "tsdb_event_id": (rec or {}).get("tsdb_event_id")}
+
+
+@app.get("/debug/external-test")
+def debug_external_test(date: str | None = None):
+    """Hit the configured external BASE_URL and return raw status + JSON for troubleshooting.
+
+    If BASE_URL contains football-data.org this will call /matches with dateFrom/dateTo.
+    Otherwise it will call API-Football /fixtures?date=...
+    """
+    d = date or datetime.utcnow().strftime("%Y-%m-%d")
+    base = os.environ.get("BASE_URL")
+    if not base:
+        return {"ok": False, "error": "BASE_URL not configured"}
+
+    base = base.rstrip('/') + '/'
+    try:
+        if 'football-data.org' in base:
+            url = base + 'matches'
+            headers = { 'X-Auth-Token': os.environ.get('API_KEY', '') }
+            params = { 'dateFrom': d, 'dateTo': d }
+        else:
+            url = base + 'fixtures'
+            headers = { 'x-apisports-key': os.environ.get('API_KEY', '') }
+            params = { 'date': d }
+
+        resp = requests.get(url, headers=headers, params=params, timeout=15)
+        try:
+            body = resp.json()
+        except Exception:
+            body = resp.text
+        return {"ok": True, "external_url": resp.url, "status_code": resp.status_code, "body": body}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

@@ -41,7 +41,14 @@ class GameAnalyticsAgent:
         self.providers = [p for p in (providers or ["api_football", "thesportsdb"]) if p in self.SUPPORTED_PROVIDERS]
         if not self.providers:
             self.providers = ["api_football"]
-        self.headers = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY", API_KEY)}
+        # Support two possible backends depending on BASE_URL
+        self.is_fd_org = bool(BASE_URL and "football-data.org" in BASE_URL)
+        if self.is_fd_org:
+            # Football-Data.org uses X-Auth-Token
+            self.headers = {"X-Auth-Token": os.getenv("API_KEY", API_KEY)}
+        else:
+            # API-Football compatibility
+            self.headers = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY", API_KEY)}
         # Ensure cache directory exists
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
@@ -50,6 +57,58 @@ class GameAnalyticsAgent:
 
     def _cache_path(self, key):
         return os.path.join(CACHE_DIR, key)
+
+    def _fetch_and_cache(self, path, cache_key):
+        """Helper to fetch a URL path (relative to BASE_URL) and cache JSON by cache_key."""
+        cache_file = None
+        if CACHE_DIR:
+            try:
+                cache_file = self._cache_path(cache_key + '.json')
+            except Exception:
+                cache_file = None
+        if cache_file and os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        try:
+            resp = requests.get(BASE_URL + path, headers=self.headers, timeout=8)
+            if resp.status_code == 200:
+                j = resp.json()
+                if cache_file:
+                    try:
+                        with open(cache_file, 'w', encoding='utf-8') as f:
+                            json.dump(j, f)
+                    except Exception:
+                        pass
+                return j
+        except Exception:
+            pass
+        return None
+
+    def _get_team_info(self, team_id):
+        """Best-effort fetch of team metadata (logo/crest) from Football-Data.org."""
+        if not team_id:
+            return {}
+        data = self._fetch_and_cache(f"teams/{team_id}", f"team_{team_id}")
+        if not data:
+            return {}
+        # football-data v4 team object may be nested under 'team' or top-level
+        team = data.get('team') or data
+        # possible keys: 'crest', 'crestUrl', 'logo'
+        logo = team.get('crest') or team.get('crestUrl') or team.get('logo')
+        return {"id": team.get('id'), "name": team.get('name'), "logo": logo}
+
+    def _get_competition_info(self, comp_id):
+        if not comp_id:
+            return {}
+        data = self._fetch_and_cache(f"competitions/{comp_id}", f"comp_{comp_id}")
+        if not data:
+            return {}
+        comp = data.get('competition') or data
+        emblem = comp.get('emblem') or comp.get('logo') or comp.get('area', {}).get('flag')
+        return {"id": comp.get('id'), "name": comp.get('name'), "emblem": emblem}
 
     def list_games(self, date=None, league_id=None):
         """Return merged list of games for a date from BOTH API-Football & TheSportsDB.
@@ -78,59 +137,136 @@ class GameAnalyticsAgent:
             d = (iso_ts or date)[:10]
             return f"{home.strip().lower()}__{away.strip().lower()}__{d}"
 
-        # 1. API-Football fixtures (primary richness)
-        try:
-            params = {"date": date}
-            if league_id:
-                params["league"] = league_id
-            resp = requests.get(BASE_URL + "fixtures", headers=self.headers, params=params, timeout=10)
-            if resp.status_code == 200:
-                for fix in resp.json().get("response", []) or []:
-                    f = fix.get("fixture", {})
-                    l = fix.get("league", {})
-                    t = fix.get("teams", {})
-                    g = fix.get("goals", {})
-                    s = f.get("status", {})
-                    record = {
-                        "providers": ["api_football"],
-                        "primary_provider": "api_football",
-                        "game_id": f.get("id"),
-                        "date": f.get("date"),
-                        "timestamp": f.get("timestamp"),
-                        "timezone": f.get("timezone"),
-                        "referee": f.get("referee"),
-                        "venue": (f.get("venue") or {}).get("name"),
-                        "venue_city": (f.get("venue") or {}).get("city"),
-                        "status_short": s.get("short"),
-                        "status_long": s.get("long"),
-                        "elapsed": s.get("elapsed"),
-                        "league_id": l.get("id"),
-                        "league": l.get("name"),
-                        "league_country": l.get("country"),
-                        "league_logo": l.get("logo"),
-                        "league_flag": l.get("flag"),
-                        "season": l.get("season"),
-                        "round": l.get("round"),
-                        "home_team_id": (t.get("home") or {}).get("id"),
-                        "home_team": (t.get("home") or {}).get("name"),
-                        "home_logo": (t.get("home") or {}).get("logo"),
-                        "home_winner": (t.get("home") or {}).get("winner"),
-                        "away_team_id": (t.get("away") or {}).get("id"),
-                        "away_team": (t.get("away") or {}).get("name"),
-                        "away_logo": (t.get("away") or {}).get("logo"),
-                        "away_winner": (t.get("away") or {}).get("winner"),
-                        "home_score": g.get("home"),
-                        "away_score": g.get("away"),
-                        "score": fix.get("score", {}),
-                        # placeholders for TheSportsDB extras
-                        "spectators": None,
-                        "tsdb_event_id": None,
-                    }
-                    k = key_fn(record.get("home_team"), record.get("away_team"), record.get("date"))
-                    if k:
-                        merged[k] = record
-        except Exception as e:
-            print(f"API-Football error: {e}")
+        # 1a. Football-Data.org (if configured) - use /matches with date filters
+        if self.is_fd_org:
+            try:
+                params = {"dateFrom": date, "dateTo": date}
+                resp = requests.get(BASE_URL + "matches", headers=self.headers, params=params, timeout=10)
+                if resp.status_code == 200:
+                    fd_list = resp.json().get("matches", []) or []
+                    if os.getenv("SPORTS_DEBUG") == "1":
+                        print(f"[DEBUG][FD] status=200 matches={len(fd_list)} date={date}")
+                        if fd_list:
+                            sample = fd_list[0]
+                            print(f"[DEBUG][FD] sample_ids home={sample.get('homeTeam',{}).get('id')} away={sample.get('awayTeam',{}).get('id')} comp={sample.get('competition',{}).get('id')}")
+                    for m in fd_list:
+                        # Defensive access - football-data fields differ from API-Football
+                        comp = m.get("competition") or {}
+                        home = m.get("homeTeam") or {}
+                        away = m.get("awayTeam") or {}
+                        score = m.get("score") or {}
+                        full = score.get("fullTime") or {}
+                        utc = m.get("utcDate")
+                        ts = None
+                        try:
+                            if utc:
+                                ts = int(datetime.fromisoformat(utc.replace('Z', '+00:00')).timestamp())
+                        except Exception:
+                            ts = None
+                        # Enrich with team and competition metadata when available
+                        home_meta = self._get_team_info(home.get('id')) if home else {}
+                        away_meta = self._get_team_info(away.get('id')) if away else {}
+                        comp_meta = self._get_competition_info(comp.get('id')) if comp else {}
+                        record = {
+                            "providers": ["football-data"],
+                            "primary_provider": "football-data",
+                            "game_id": m.get("id"),
+                            "date": utc,
+                            "timestamp": ts,
+                            "timezone": "UTC",
+                            "referee": None,
+                            "venue": m.get("venue"),
+                            "venue_city": None,
+                            "status_short": m.get("status"),
+                            "status_long": m.get("status"),
+                            "elapsed": None,
+                            "league_id": comp.get("id"),
+                            "league": comp.get("name"),
+                            "league_country": None,
+                            "league_logo": None,
+                            "league_flag": None,
+                            "season": comp.get("season"),
+                            "round": m.get("matchday"),
+                            "home_team_id": home.get("id"),
+                            "home_team": home.get("name"),
+                            "home_logo": home_meta.get('logo'),
+                            "home_winner": None,
+                            "away_team_id": away.get("id"),
+                            "away_team": away.get("name"),
+                            "away_logo": away_meta.get('logo'),
+                            "away_winner": None,
+                            "home_score": full.get("homeTeam"),
+                            "away_score": full.get("awayTeam"),
+                            "score": {
+                                "halftime": (score.get("halfTime") or {}).get("homeTeam") if isinstance(score.get("halfTime"), dict) else None,
+                                "fulltime": full,
+                                "extratime": None,
+                                "penalty": None,
+                            },
+                            "spectators": None,
+                            "tsdb_event_id": None,
+                        }
+                        k = key_fn(record.get("home_team"), record.get("away_team"), record.get("date"))
+                        if k:
+                            merged[k] = record
+                        elif os.getenv("SPORTS_DEBUG") == "1":
+                            print(f"[DEBUG][FD] skipped_record missing key home={record.get('home_team')} away={record.get('away_team')} date={record.get('date')}")
+            except Exception as e:
+                print(f"Football-Data.org error: {e}")
+        else:
+            # 1b. API-Football fixtures (primary richness)
+            try:
+                params = {"date": date}
+                if league_id:
+                    params["league"] = league_id
+                resp = requests.get(BASE_URL + "fixtures", headers=self.headers, params=params, timeout=10)
+                if resp.status_code == 200:
+                    for fix in resp.json().get("response", []) or []:
+                        f = fix.get("fixture", {})
+                        l = fix.get("league", {})
+                        t = fix.get("teams", {})
+                        g = fix.get("goals", {})
+                        s = f.get("status", {})
+                        record = {
+                            "providers": ["api_football"],
+                            "primary_provider": "api_football",
+                            "game_id": f.get("id"),
+                            "date": f.get("date"),
+                            "timestamp": f.get("timestamp"),
+                            "timezone": f.get("timezone"),
+                            "referee": f.get("referee"),
+                            "venue": (f.get("venue") or {}).get("name"),
+                            "venue_city": (f.get("venue") or {}).get("city"),
+                            "status_short": s.get("short"),
+                            "status_long": s.get("long"),
+                            "elapsed": s.get("elapsed"),
+                            "league_id": l.get("id"),
+                            "league": l.get("name"),
+                            "league_country": l.get("country"),
+                            "league_logo": l.get("logo"),
+                            "league_flag": l.get("flag"),
+                            "season": l.get("season"),
+                            "round": l.get("round"),
+                            "home_team_id": (t.get("home") or {}).get("id"),
+                            "home_team": (t.get("home") or {}).get("name"),
+                            "home_logo": (t.get("home") or {}).get("logo"),
+                            "home_winner": (t.get("home") or {}).get("winner"),
+                            "away_team_id": (t.get("away") or {}).get("id"),
+                            "away_team": (t.get("away") or {}).get("name"),
+                            "away_logo": (t.get("away") or {}).get("logo"),
+                            "away_winner": (t.get("away") or {}).get("winner"),
+                            "home_score": g.get("home"),
+                            "away_score": g.get("away"),
+                            "score": fix.get("score", {}),
+                            # placeholders for TheSportsDB extras
+                            "spectators": None,
+                            "tsdb_event_id": None,
+                        }
+                        k = key_fn(record.get("home_team"), record.get("away_team"), record.get("date"))
+                        if k:
+                            merged[k] = record
+            except Exception as e:
+                print(f"API-Football error: {e}")
 
         # 2. TheSportsDB events for the same date
         try:
@@ -168,7 +304,7 @@ class GameAnalyticsAgent:
                     "league_id": ev.get("idLeague"),
                     "league": ev.get("strLeague"),
                     "league_country": ev.get("strCountry"),
-                    "league_logo": None,
+                            "league_logo": comp_meta.get('emblem'),
                     "league_flag": None,
                     "season": ev.get("strSeason"),
                     "round": ev.get("intRound") or ev.get("strRound"),
@@ -210,6 +346,8 @@ class GameAnalyticsAgent:
             print(f"TheSportsDB merge error: {e}")
 
         games = list(merged.values())
+        if os.getenv("SPORTS_DEBUG") == "1":
+            print(f"[DEBUG] merged_count_after_sources={len(games)} (before demo fallback) date={date}")
 
         # 3. Demo fallback if absolutely nothing
         if not games:
@@ -267,7 +405,12 @@ class GameAnalyticsAgent:
                     return json.load(f)
             except Exception:
                 pass
-        resp = requests.get(BASE_URL + f"fixtures?id={self.game_id}", headers=self.headers)
+        # API-Football: /fixtures?id=...
+        # Football-Data.org: /matches/{id}
+        if self.is_fd_org:
+            resp = requests.get(BASE_URL + f"matches/{self.game_id}", headers=self.headers)
+        else:
+            resp = requests.get(BASE_URL + f"fixtures?id={self.game_id}", headers=self.headers)
         info = {}
         if resp.status_code == 200:
             fix = (resp.json().get("response") or [{}])[0]
@@ -291,6 +434,9 @@ class GameAnalyticsAgent:
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
+        # No direct equivalent in Football-Data.org; skip for fd.org
+        if self.is_fd_org:
+            return {}
         resp = requests.get(BASE_URL + f"fixtures/statistics?fixture={self.game_id}", headers=self.headers)
         stats = {}
         if resp.status_code == 200:
@@ -312,6 +458,9 @@ class GameAnalyticsAgent:
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
+        # Football-Data.org does not provide injuries endpoint in v4; skip for fd.org
+        if self.is_fd_org:
+            return {}
         resp = requests.get(BASE_URL + f"injuries?fixture={self.game_id}", headers=self.headers)
         injuries = {}
         if resp.status_code == 200:
@@ -340,6 +489,9 @@ class GameAnalyticsAgent:
         if os.path.exists(cache_file):
             with open(cache_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
+        # Football-Data.org does not provide per-match event feed like API-Football in v4
+        if self.is_fd_org:
+            return {"goals": [], "assists": [], "cards": []}
         resp = requests.get(BASE_URL + f"fixtures/events?fixture={self.game_id}", headers=self.headers)
         highlights = {"goals": [], "assists": [], "cards": []}
         if resp.status_code == 200:
