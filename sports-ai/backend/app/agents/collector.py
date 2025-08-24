@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, List
 # Try relative import first (normal package layout). Fallback to absolute if executed differently.
 try:  # pragma: no cover - import robustness
     from ..utils.http_client import get_json  # type: ignore
@@ -7,6 +7,7 @@ except Exception:  # noqa: blanket ok here
         from backend.app.utils.http_client import get_json  # type: ignore
     except Exception as _e:  # final fallback
         raise ImportError("Cannot import get_json from utils.http_client") from _e
+from ..models.schemas import Team
 # -----------------------
 # Errors
 # -----------------------
@@ -194,7 +195,8 @@ class CollectorAgentV2:
         # 1) Direct team search by name
         if args.get("teamName"):
             data = self._http("/searchteams.php", {"t": args["teamName"]}, trace)
-            return {"teams": data.get("teams") or []}, {"teamName": args["teamName"]}
+            teams = data.get("teams") or []
+            return {"teams": teams}, {"teamName": args["teamName"]}
 
         # 2) Resolve a league name, then use search_all_teams.php?l={strLeague}&s=Soccer
         league_name = (args.get("leagueName") or "").strip()
@@ -211,12 +213,40 @@ class CollectorAgentV2:
             except Exception:
                 data = self._http("/search_all_teams.php", {"l": league_name}, trace)
             teams = data.get("teams") or []
+
+            # If the name-based search returned no teams but we have a league_id,
+            # Regardless of name-based results, if a league_id is present attempt
+            # lookup by id (lookup_all_teams.php) as an additional fallback/source.
+            if league_id:
+                trace.append({"step": "attempt_lookup_all_teams_by_id", "league_id": league_id})
+                try:
+                    raw = self.list_teams_in_league(str(league_id), league_name)
+                    teams_from_lookup = [
+                        {
+                            "idTeam": t.id,
+                            "strTeam": t.name,
+                            "strAlternate": t.alt_name,
+                            "strTeamBadge": t.badge,
+                        }
+                        for t in raw
+                    ]
+                    # prefer name-based teams if present, otherwise use lookup results
+                    if not teams:
+                        teams = teams_from_lookup
+                    # record what we got
+                    trace.append({"step": "lookup_all_teams_result", "count": len(teams_from_lookup)})
+                except Exception as e:
+                    # record failure but don't fail the whole intent
+                    trace.append({"step": "lookup_all_teams_failed", "error": str(e)})
+                    # leave teams as-is (could be empty or name-based results)
+
             return {"teams": teams}, {"leagueName": league_name}
 
         # 3) Country search (still via search_all_teams)
         if args.get("country"):
             data = self._http("/search_all_teams.php", {"c": args["country"], "s": "Soccer"}, trace)
-            return {"teams": data.get("teams") or []}, {"country": args["country"]}
+            teams = data.get("teams") or []
+            return {"teams": teams}, {"country": args["country"]}
 
         raise CollectorError("MISSING_ARG", "Need teamName | leagueId/leagueName | country")
 
@@ -292,3 +322,31 @@ class CollectorAgentV2:
         league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
         data = self._http("/search_all_seasons.php", {"id": league_id}, trace)
         return {"seasons": data.get("seasons") or []}, {"leagueId": league_id}
+
+    def list_teams_in_league(self, league_id: str, league_name: str = None) -> List[Team]:
+        """Return teams for a given league id by calling lookup_all_teams.php."""
+        data = get_json("lookup_all_teams.php", {"id": league_id}) or {}
+        raw = data.get("teams") or []
+        self._sleep()
+        return [self._norm_team(x) for x in raw]
+
+    def _sleep(self):
+        import time
+        time.sleep(1)  # Polite pause to avoid rate limits
+
+    def _norm_team(self, raw_team: dict) -> Team:
+        return Team(
+            id=raw_team.get("idTeam"),
+            name=raw_team.get("strTeam"),
+            alt_name=raw_team.get("strAlternate"),
+            league=raw_team.get("strLeague"),
+            country=raw_team.get("strCountry"),
+            formed_year=int(raw_team.get("intFormedYear") or 0),
+            stadium=raw_team.get("strStadium"),
+            stadium_thumb=raw_team.get("strStadiumThumb"),
+            website=raw_team.get("strWebsite"),
+            badge=raw_team.get("strTeamBadge"),
+            banner=raw_team.get("strTeamBanner"),
+            jersey=raw_team.get("strTeamJersey"),
+            description=raw_team.get("strDescriptionEN"),
+        )

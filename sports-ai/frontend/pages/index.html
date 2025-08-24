@@ -172,18 +172,21 @@
       <pre id="teamInfo"></pre>
     </div>
 
-    <!-- Shorts Generation -->
+    <!-- Players -->
     <div class="section">
-      <h2>5. Highlight Shorts Generator</h2>
+      <h2>4. Player Selection</h2>
       <div class="row">
         <label>
-          <span>Event ID:</span>
-          <input type="text" id="shortsEventId" placeholder="Enter event ID" style="padding:0.5rem 1rem; border:1px solid var(--border-color); border-radius:6px;" />
+          <span>Player:</span>
+          <select id="playerSelect" onchange="onPlayerSelectChange()"></select>
         </label>
-        <button onclick="generateShorts()">Generate Shorts</button>
+        <button onclick="showPlayer()">Show Player Details</button>
+        <span id="playerCount"></span>
       </div>
-      <div id="shortsResult"></div>
+      <pre id="playerInfo"></pre>
     </div>
+
+    <!-- Shorts Generation removed -->
 
     <!-- Events -->
     <div class="section">
@@ -206,7 +209,7 @@
     const latest = { team: 0, event: 0 };
     function nextToken(kind) { latest[kind] = (latest[kind] || 0) + 1; return latest[kind]; }
     function isCurrent(kind, token) { return latest[kind] === token; }
-    const API = "http://127.0.0.1:8000/collect";
+    const API = "http://127.0.0.1:8030/collect";
 
     // ---------- helpers ----------
     function setText(id, text) { document.getElementById(id).textContent = text; }
@@ -214,6 +217,10 @@
     function clearJSON(...ids){ ids.forEach(id => setJSON(id, {})); }
     function clearSelect(id, placeholder = "") {
       const sel = document.getElementById(id);
+      if (!sel) {
+        console.warn(`Element with id '${id}' not found.`);
+        return;
+      }
       sel.innerHTML = "";
       if (placeholder) {
         const opt = document.createElement("option");
@@ -241,16 +248,23 @@
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({intent, args}),
         });
+
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
         const json = await res.json();
         console.log("%c← response", "color:#0a0", intent, json);
+
         if (!json.ok) {
           alert(`Agent error [${intent}]: ${json.error?.message || "Unknown error"}`);
         }
+
         return json;
       } catch (err) {
         console.error("Fetch failed for", intent, err);
-        alert(`Network/Fetch error for ${intent}: ${err}`);
-        return {ok:false, error:{message:String(err)}};
+        alert(`Network/Fetch error for ${intent}: ${err.message || err}`);
+        return {ok: false, error: {message: String(err)}};
       }
     }
 
@@ -270,8 +284,11 @@
     }
     function onTeamSelectChange() {
       // Team affects players; just clear players pane (no API calls)
-      clearSelect("playerSelect", "Select player"); setText("playerCount", "");
-      clearJSON("playerInfo");
+  clearSelect("playerSelect", "Select player"); setText("playerCount", "");
+  clearJSON("playerInfo");
+  // Automatically load players for the selected team
+  // (If no team is selected this will be a no-op)
+  loadPlayers();
     }
     function onPlayerSelectChange() {
       // No fetch on change; user clicks "Show Player Details" to fetch details
@@ -315,14 +332,54 @@
     // ---------- teams ----------
     async function loadTeams() {
       const lid = document.getElementById("leagueSelect").value;
-      if (!lid) return;
-      const data = await callAgent("teams.list", { leagueId: lid, leagueName: document.getElementById("leagueSelect").selectedOptions[0]?.text });
+      const leagueName = document.getElementById("leagueSelect").selectedOptions[0]?.text;
+      if (!lid) {
+        console.warn("League ID is missing.");
+        return;
+      }
+
+      console.log("Fetching teams for league:", { leagueId: lid, leagueName });
+
+      const data = await callAgent("teams.list", { leagueId: lid, leagueName });
+      console.log("Teams response:", data);
+
       if (!data.ok) return;
-    
+
       const teams = (data.data && data.data.teams) || [];
+      console.log("Processed teams:", teams);
+
+      if ((!teams || teams.length === 0) && lid) {
+        // Fallback: try league matches endpoint and extract teams
+        try {
+          console.log("teams.list empty — falling back to /games?league_id={leagueId}");
+          const today = new Date().toISOString().split('T')[0];
+          const resp = await fetch(`http://127.0.0.1:8030/games?date=${today}&league_id=${lid}`);
+          const json = await resp.json();
+          const games = json.games || [];
+          const seen = new Map();
+          games.forEach(g => {
+            const h = g.home_team || g.home_team_name || g.home_team;
+            const a = g.away_team || g.away_team_name || g.away_team;
+            const hid = g.home_team_id || g.home_team || `h_${h}`;
+            const aid = g.away_team_id || g.away_team || `a_${a}`;
+            if (h && !seen.has(h)) seen.set(h, { id: hid, name: h });
+            if (a && !seen.has(a)) seen.set(a, { id: aid, name: a });
+          });
+          const fallbackTeams = Array.from(seen.values()).map((t, i) => ({ idTeam: t.name, strTeam: t.name }));
+          console.log("Fallback teams from matches:", fallbackTeams);
+          if (fallbackTeams.length) {
+            fillSelect("teamSelect", fallbackTeams, "idTeam", "strTeam");
+            setText("teamCount", `(${fallbackTeams.length})`);
+            setJSON("teamInfo", {});
+            return;
+          }
+        } catch (err) {
+          console.warn("Fallback matches fetch failed", err);
+        }
+      }
+
       fillSelect("teamSelect", teams, "idTeam", "strTeam");
       setText("teamCount", `(${teams.length})`);
-      // Show nothing until the user explicitly clicks "Show Team Details"
       setJSON("teamInfo", {});
     }
 
@@ -331,7 +388,9 @@
       if (!tid) { alert("Select a team first"); return; }
     
       const token = nextToken("team");
-      const data = await callAgent("team.get", { teamId: tid });
+      // If the selected value looks like a numeric id, pass as teamId; otherwise pass as teamName
+      const numeric = /^[0-9]+$/.test(tid);
+      const data = numeric ? await callAgent("team.get", { teamId: tid }) : await callAgent("team.get", { teamName: tid });
     
       // Ignore late responses
       if (!isCurrent("team", token)) {
@@ -352,8 +411,16 @@
     // ---------- players ----------
     async function loadPlayers() {
       const tid = document.getElementById("teamSelect").value;
-      if (!tid) { alert("Select a team first"); return; }
-      const data = await callAgent("players.list", {teamId: tid});
+      if (!tid) { 
+        // nothing selected — ensure players select is empty
+        clearSelect("playerSelect", "Select player"); setText("playerCount", ""); setJSON("playerInfo", {});
+        return;
+      }
+  console.log("loadPlayers: selected team value=", tid);
+      // Pass teamId if numeric, otherwise pass teamName so backend can resolve it
+      const numeric = /^[0-9]+$/.test(tid);
+      const data = numeric ? await callAgent("players.list", { teamId: tid }) : await callAgent("players.list", { teamName: tid });
+  console.log("players.list response:", data);
       if (!data.ok) return;
       const players = (data.data && data.data.players) || [];
       fillSelect("playerSelect", players, "idPlayer", "strPlayer");
@@ -364,6 +431,7 @@
     async function showPlayer() {
       const pid = document.getElementById("playerSelect").value;
       if (!pid) { alert("Select a player first"); return; }
+  console.log("showPlayer: selected player id=", pid);
       const data = await callAgent("player.get", {playerId: pid});
       if (!data.ok) return;
       setJSON("playerInfo", data.data?.player || {});
@@ -388,57 +456,24 @@
     async function showEvent() {
       const eid = document.getElementById("eventSelect").value;
       if (!eid) { alert("Select an event first"); return; }
-    
+
       const token = nextToken("event");
       const data = await callAgent("event.get", { eventId: eid, expand: ["timeline","stats","lineup"] });
-    
+
       // Ignore late responses
       if (!isCurrent("event", token)) {
         console.log("Ignoring stale event.get response");
         return;
       }
-    
+
       // Verify selection didn’t change while fetching
       if (document.getElementById("eventSelect").value !== eid) {
         console.log("Selection changed; skipping update");
         return;
       }
-    
+
       if (!data.ok) return;
       setJSON("eventInfo", data.data || {});
-    }
-    async function generateShorts() {
-      const eventId = document.getElementById("shortsEventId").value.trim();
-      if (!eventId) {
-        alert("Please enter an event ID.");
-        return;
-      }
-      const resultDiv = document.getElementById("shortsResult");
-      resultDiv.innerHTML = "<em>Generating shorts...</em>";
-      try {
-        const resp = await fetch(`/highlights/${eventId}/shorts`, {
-          method: "POST",
-        });
-        const data = await resp.json();
-        if (!data.ok) {
-          resultDiv.innerHTML = `<span style='color:red;'>${data.error || "Error generating shorts."}</span>`;
-          return;
-        }
-        let html = `<div><strong>YouTube Highlight URL:</strong> <a href='${data.youtube_url}' target='_blank'>${data.youtube_url}</a></div>`;
-        html += `<div style='margin-top:1rem;'><strong>Generated Shorts:</strong></div>`;
-        if (data.shorts && data.shorts.length > 0) {
-          html += `<ul>`;
-          for (const short of data.shorts) {
-            html += `<li><video src='/${short}' controls width='320'></video><br><span>${short}</span></li>`;
-          }
-          html += `</ul>`;
-        } else {
-          html += `<div>No shorts generated.</div>`;
-        }
-        resultDiv.innerHTML = html;
-      } catch (err) {
-        resultDiv.innerHTML = `<span style='color:red;'>${err}</span>`;
-      }
     }
   </script>
 </body>
