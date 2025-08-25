@@ -8,6 +8,17 @@ except Exception:  # noqa: blanket ok here
         from backend.app.utils.http_client import get_json  # type: ignore
     except Exception as _e:  # final fallback
         raise ImportError("Cannot import get_json from utils.http_client") from _e
+
+# Optional AllSports API client import.  This provides a secondary
+# datasource so the collector can fall back if TheSportsDB is unavailable.
+try:  # pragma: no cover - import robustness
+    from .game_analytics_agent import allsports_client  # type: ignore
+except Exception:  # noqa: blanket ok here
+    try:
+        from backend.app.agents.game_analytics_agent import allsports_client  # type: ignore
+    except Exception:  # If even this fails we operate without the fallback.
+        allsports_client = None
+
 from dataclasses import dataclass
 
 @dataclass
@@ -305,15 +316,40 @@ class CollectorAgentV2:
     # -----------------------
     def _cap_leagues_list(self, args, trace):
         # Use /all_leagues.php then filter to Soccer; alternatively /search_all_leagues.php?s=Soccer
-        data = self._http("/all_leagues.php", {}, trace)
-        leagues = [L for L in (data.get("leagues") or []) if (L.get("strSport") or "").lower() == "soccer"]
+        leagues: List[Dict[str, Any]] = []
+        try:
+            data = self._http("/all_leagues.php", {}, trace)
+            leagues = [L for L in (data.get("leagues") or []) if (L.get("strSport") or "").lower() == "soccer"]
+        except Exception as e:
+            trace.append({"step": "tsdb_leagues_error", "error": str(e)})
         name = args.get("name")
         country = args.get("country")
-        if name:
-            leagues = [L for L in leagues if name.lower() in (L.get("strLeague") or "").lower()]
-        if country:
-            leagues = [L for L in leagues if (L.get("strCountry") or "").lower() == str(country).lower()]
-        return {"leagues": leagues}, args
+        if leagues:
+            if name:
+                leagues = [L for L in leagues if name.lower() in (L.get("strLeague") or "").lower()]
+            if country:
+                leagues = [L for L in leagues if (L.get("strCountry") or "").lower() == str(country).lower()]
+        # Fallback to AllSports API if TheSportsDB provided no leagues
+        if not leagues and allsports_client:
+            try:
+                resp = allsports_client.leagues()
+                if isinstance(resp, dict) and resp.get("success") == 1:
+                    leagues = [
+                        {
+                            "idLeague": str(L.get("league_key")),
+                            "strLeague": L.get("league_name"),
+                            "strCountry": L.get("country_name"),
+                        }
+                        for L in (resp.get("result") or [])
+                    ]
+                    if name:
+                        leagues = [L for L in leagues if name.lower() in (L.get("strLeague") or "").lower()]
+                    if country:
+                        leagues = [L for L in leagues if (L.get("strCountry") or "").lower() == str(country).lower()]
+                    trace.append({"step": "allsports_leagues", "count": len(leagues)})
+            except Exception as e:
+                trace.append({"step": "allsports_leagues_error", "error": str(e)})
+        return {"leagues": leagues, "count": len(leagues)}, args
 
     def _cap_league_get(self, args, trace):
         league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
@@ -327,9 +363,28 @@ class CollectorAgentV2:
         """
         # 1) Direct team search by name
         if args.get("teamName"):
-            data = self._http("/searchteams.php", {"t": args["teamName"]}, trace)
-            teams = data.get("teams") or []
-            return {"teams": teams}, {"teamName": args["teamName"]}
+            teams: List[Dict[str, Any]] = []
+            try:
+                data = self._http("/searchteams.php", {"t": args["teamName"]}, trace)
+                teams = data.get("teams") or []
+            except Exception as e:
+                trace.append({"step": "tsdb_team_search_error", "error": str(e)})
+            if not teams and allsports_client:
+                try:
+                    resp = allsports_client.teams(teamName=args["teamName"])
+                    if isinstance(resp, dict) and resp.get("success") == 1:
+                        teams = [
+                            {
+                                "idTeam": str(t.get("team_key")),
+                                "strTeam": t.get("team_name"),
+                                "strTeamBadge": t.get("team_logo"),
+                            }
+                            for t in (resp.get("result") or [])
+                        ]
+                        trace.append({"step": "allsports_team_search", "count": len(teams)})
+                except Exception as e:
+                    trace.append({"step": "allsports_team_search_error", "error": str(e)})
+            return {"teams": teams, "count": len(teams)}, {"teamName": args["teamName"]}
 
         # 2) Resolve a league name, then use search_all_teams.php?l={strLeague}&s=Soccer
         league_name = (args.get("leagueName") or "").strip()
@@ -341,11 +396,16 @@ class CollectorAgentV2:
             # Prefer name-based lookup. Some responses can occasionally be non-JSON (HTML splash).
             # Try with sport filter first; if it fails, retry without it.
             params_primary = {"l": league_name, "s": "Soccer"}
+            teams: List[Dict[str, Any]] = []
             try:
                 data = self._http("/search_all_teams.php", params_primary, trace)
+                teams = data.get("teams") or []
             except Exception:
-                data = self._http("/search_all_teams.php", {"l": league_name}, trace)
-            teams = data.get("teams") or []
+                try:
+                    data = self._http("/search_all_teams.php", {"l": league_name}, trace)
+                    teams = data.get("teams") or []
+                except Exception as e:
+                    trace.append({"step": "tsdb_league_team_error", "error": str(e)})
 
             # If the name-based search returned no teams but we have a league_id,
             # Regardless of name-based results, if a league_id is present attempt
@@ -372,14 +432,51 @@ class CollectorAgentV2:
                     # record failure but don't fail the whole intent
                     trace.append({"step": "lookup_all_teams_failed", "error": str(e)})
                     # leave teams as-is (could be empty or name-based results)
+            # Fallback to AllSports if still empty
+            if not teams and allsports_client:
+                try:
+                    resp = allsports_client.teams(leagueId=str(league_id) if league_id else None)
+                    if isinstance(resp, dict) and resp.get("success") == 1:
+                        teams = [
+                            {
+                                "idTeam": str(t.get("team_key")),
+                                "strTeam": t.get("team_name"),
+                                "strAlternate": t.get("team_name", None),
+                                "strTeamBadge": t.get("team_logo"),
+                            }
+                            for t in (resp.get("result") or [])
+                        ]
+                        trace.append({"step": "allsports_league_teams", "count": len(teams)})
+                except Exception as e:
+                    trace.append({"step": "allsports_league_teams_error", "error": str(e)})
 
-            return {"teams": teams}, {"leagueName": league_name}
+            return {"teams": teams, "count": len(teams)}, {"leagueName": league_name}
 
         # 3) Country search (still via search_all_teams)
         if args.get("country"):
-            data = self._http("/search_all_teams.php", {"c": args["country"], "s": "Soccer"}, trace)
-            teams = data.get("teams") or []
-            return {"teams": teams}, {"country": args["country"]}
+            teams: List[Dict[str, Any]] = []
+            try:
+                data = self._http("/search_all_teams.php", {"c": args["country"], "s": "Soccer"}, trace)
+                teams = data.get("teams") or []
+            except Exception as e:
+                trace.append({"step": "tsdb_country_team_error", "error": str(e)})
+            if not teams and allsports_client:
+                try:
+                    resp = allsports_client.teams()
+                    if isinstance(resp, dict) and resp.get("success") == 1:
+                        raw = [t for t in (resp.get("result") or []) if (t.get("team_country") or "").lower() == str(args["country"]).lower()]
+                        teams = [
+                            {
+                                "idTeam": str(t.get("team_key")),
+                                "strTeam": t.get("team_name"),
+                                "strTeamBadge": t.get("team_logo"),
+                            }
+                            for t in raw
+                        ]
+                        trace.append({"step": "allsports_country_teams", "count": len(teams)})
+                except Exception as e:
+                    trace.append({"step": "allsports_country_teams_error", "error": str(e)})
+            return {"teams": teams, "count": len(teams)}, {"country": args["country"]}
 
         raise CollectorError("MISSING_ARG", "Need teamName | leagueId/leagueName | country")
 
@@ -406,8 +503,28 @@ class CollectorAgentV2:
 
     def _cap_players_list(self, args, trace):
         if args.get("playerName"):
-            data = self._http("/searchplayers.php", {"p": args["playerName"]}, trace)
-            return {"players": data.get("player") or []}, {"playerName": args["playerName"]}
+            players: List[Dict[str, Any]] = []
+            try:
+                data = self._http("/searchplayers.php", {"p": args["playerName"]}, trace)
+                players = data.get("player") or []
+            except Exception as e:
+                trace.append({"step": "tsdb_player_search_error", "error": str(e)})
+            if not players and allsports_client:
+                try:
+                    resp = allsports_client.players(playerName=args["playerName"])
+                    if isinstance(resp, dict) and resp.get("success") == 1:
+                        players = [
+                            {
+                                "idPlayer": str(p.get("player_key")),
+                                "strPlayer": p.get("player_name"),
+                                "strTeam": p.get("team_name"),
+                            }
+                            for p in (resp.get("result") or [])
+                        ]
+                        trace.append({"step": "allsports_player_search", "count": len(players)})
+                except Exception as e:
+                    trace.append({"step": "allsports_player_search_error", "error": str(e)})
+            return {"players": players, "count": len(players)}, {"playerName": args["playerName"]}
         team_id = args.get("teamId")
         if args.get("teamName") and not team_id:
             team_id = self._resolve_team_id(
@@ -417,8 +534,27 @@ class CollectorAgentV2:
                 leagueId=(str(args.get("leagueId")) if args.get("leagueId") else None),
             )
         if team_id:
-            data = self._http("/lookup_all_players.php", {"id": team_id}, trace)
-            return {"players": data.get("player") or []}, {"teamId": team_id}
+            players: List[Dict[str, Any]] = []
+            try:
+                data = self._http("/lookup_all_players.php", {"id": team_id}, trace)
+                players = data.get("player") or []
+            except Exception as e:
+                trace.append({"step": "tsdb_team_players_error", "error": str(e)})
+            if not players and allsports_client:
+                try:
+                    resp = allsports_client.players(teamId=str(team_id))
+                    if isinstance(resp, dict) and resp.get("success") == 1:
+                        players = [
+                            {
+                                "idPlayer": str(p.get("player_key")),
+                                "strPlayer": p.get("player_name"),
+                            }
+                            for p in (resp.get("result") or [])
+                        ]
+                        trace.append({"step": "allsports_team_players", "count": len(players)})
+                except Exception as e:
+                    trace.append({"step": "allsports_team_players_error", "error": str(e)})
+            return {"players": players, "count": len(players)}, {"teamId": team_id}
         raise CollectorError("MISSING_ARG", "Need teamId/teamName or playerName")
 
     def _cap_player_get(self, args, trace):
