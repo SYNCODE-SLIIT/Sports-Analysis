@@ -981,7 +981,11 @@
             }catch(e){ console.debug('[allsports] poll error', e.message); }
         }
 
+<<<<<<< HEAD
         // --- Logo filtering to avoid console net::ERR_FAILED / 404 spam for missing images ---
+=======
+        // --- Logo filtering to avoid console net::ERR_FAILED spam for missing images ---
+>>>>>>> ea249cea392a426cf2565ecc4803b4823b1e56ac
         const BAD_LOGO_IDS = new Set(['24755','8104','12186']); // extend as observed
         function filterLogo(url){
             // Only filter explicit known-broken IDs. Allow hosts like apiv2.allsportsapi.com so
@@ -1403,6 +1407,7 @@
             const url = new URL(API_BASE + path);
             Object.entries(params||{}).forEach(([k,v])=>{ if(v!==undefined && v!==null && v!=='') url.searchParams.set(k,v); });
             try{ const r = await fetch(url.toString()); return await r.json(); }catch(e){ console.warn('[allsports] fetch fail', path, e); return null; }
+<<<<<<< HEAD
         }
 
         // Fetch videos for a given eventId via backend passthrough
@@ -1434,6 +1439,8 @@
                        `</div><div class="video-details"><div class="video-meta">Source: AllSports</div></div></div>`;
             }).join('');
             container.innerHTML = `<div class="videos-grid">${html}</div>`;
+=======
+>>>>>>> ea249cea392a426cf2565ecc4803b4823b1e56ac
         }
 
         function renderAllSportsTab(analytics, game){
