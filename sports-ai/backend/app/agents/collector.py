@@ -1,5 +1,5 @@
 from typing import Any, Dict, Tuple
-from ..utils.http_client import get_json   # go up one level, then into utils
+from ..utils.http_client import get_json 
 # -----------------------
 # Errors
 # -----------------------
@@ -137,15 +137,72 @@ class CollectorAgentV2:
             raise NotFoundError("NOT_FOUND", f"No league name found for id '{league_id}'")
         return name
 
-    def _resolve_team_id(self, name: str, trace: list[Dict[str, Any]]) -> str:
+    def _resolve_team_id(
+        self,
+        name: str,
+        trace: list[Dict[str, Any]],
+        *,
+        leagueName: str | None = None,
+        leagueId: str | None = None,
+    ) -> str:
+        """
+        Resolve a team by name, optionally constrained by league.
+        Strategy:
+          1) /searchteams.php?t={name}
+             - prefer exact strTeam match
+             - if leagueName/leagueId provided, prefer candidates that match that league
+          2) If still ambiguous and leagueName is given, query
+             /search_all_teams.php?l={leagueName} and pick exact strTeam
+        """
+        if not name:
+            raise CollectorError("MISSING_ARG", "Provide teamName or teamId")
+
+        # Normalize leagueName if only leagueId provided
+        if leagueId and not leagueName:
+            try:
+                leagueName = self._resolve_league_name(str(leagueId), trace)
+            except Exception:
+                leagueName = None
+
+        # 1) search by team name
         data = self._http("/searchteams.php", {"t": name}, trace)
-        teams = data.get("teams") or []
-        if not teams:
+        candidates = data.get("teams") or []
+        if not candidates:
             raise NotFoundError("NOT_FOUND", f"No team found for '{name}'")
-        exact, allc = self._first_exact_or_single(teams, "strTeam", name)
-        pick = exact or (allc[0] if len(allc) == 1 else None)
-        if not pick:
-            raise AmbiguousError("AMBIGUOUS", f"Multiple teams match '{name}'", {"choices": allc})
+
+        name_l = (name or "").strip().lower()
+        exact_name = [t for t in candidates if (t.get("strTeam") or "").strip().lower() == name_l]
+
+        # Apply league filter if available
+        def match_league(t: dict) -> bool:
+            if leagueName and (t.get("strLeague") or "").strip().lower() == leagueName.strip().lower():
+                return True
+            if leagueId and str(t.get("idLeague") or "").strip() == str(leagueId):
+                return True
+            return False
+
+        filtered = [t for t in (exact_name or candidates) if (match_league(t) if (leagueName or leagueId) else True)]
+
+        if len(filtered) == 1:
+            return str(filtered[0].get("idTeam"))
+
+        # 2) fallback: search within league roster by name
+        if leagueName:
+            try:
+                data2 = self._http("/search_all_teams.php", {"l": leagueName, "s": "Soccer"}, trace)
+            except Exception:
+                data2 = self._http("/search_all_teams.php", {"l": leagueName}, trace)
+            teams_in_league = data2.get("teams") or []
+            league_exact = [t for t in teams_in_league if (t.get("strTeam") or "").strip().lower() == name_l]
+            if len(league_exact) == 1:
+                return str(league_exact[0].get("idTeam"))
+
+        # If multiple remain, raise Ambiguous with choices
+        if filtered:
+            raise AmbiguousError("AMBIGUOUS", f"Multiple teams match '{name}'", {"choices": filtered})
+
+        # Otherwise, pick the first exact-name candidate if exists, else first candidate
+        pick = (exact_name[0] if exact_name else candidates[0])
         return str(pick.get("idTeam"))
 
     def _resolve_player_id(self, name: str, trace: list[Dict[str, Any]]) -> str:
@@ -158,6 +215,60 @@ class CollectorAgentV2:
         if not pick:
             raise AmbiguousError("AMBIGUOUS", f"Multiple players match '{name}'", {"choices": allc})
         return str(pick.get("idPlayer"))
+
+    def _select_event_candidate(
+        self,
+        candidates: list[dict],
+        *,
+        eventId: str | None = None,
+        dateEvent: str | None = None,
+        season: str | None = None,
+    ) -> tuple[dict | None, dict]:
+        """Choose the most plausible event from a list based on optional constraints.
+        Returns (picked_event_or_none, resolution_metadata).
+        The resolution has keys: {"reason": str, "candidates": int, "matched": {..}}.
+        """
+        res = {"reason": "none", "candidates": len(candidates), "matched": {}}
+        if not candidates:
+            return None, res
+
+        # 1) If an exact id is provided, prefer it
+        if eventId:
+            for ev in candidates:
+                if str(ev.get("idEvent") or "").strip() == str(eventId):
+                    res["reason"] = "id_match"
+                    res["matched"] = {"idEvent": eventId}
+                    return ev, res
+
+        # 2) If date and/or season are provided, try to match both
+        def fits(ev: dict) -> int:
+            score = 0
+            if dateEvent and (ev.get("dateEvent") == dateEvent or ev.get("dateEventLocal") == dateEvent):
+                score += 1
+            if season and (ev.get("strSeason") == season):
+                score += 1
+            return score
+
+        if dateEvent or season:
+            best = None
+            best_score = -1
+            for ev in candidates:
+                sc = fits(ev)
+                if sc > best_score:
+                    best, best_score = ev, sc
+            if best is not None and best_score > 0:
+                res["reason"] = "date_season_match"
+                res["matched"] = {k: v for k, v in {"dateEvent": dateEvent, "strSeason": season}.items() if v}
+                return best, res
+
+        # 3) Fallback: if only one candidate, take it
+        if len(candidates) == 1:
+            res["reason"] = "single_candidate"
+            return candidates[0], res
+
+        # 4) Otherwise, no deterministic choice
+        res["reason"] = "ambiguous"
+        return None, res
 
     # -----------------------
     # Capabilities (raw JSON)
@@ -214,9 +325,25 @@ class CollectorAgentV2:
         raise CollectorError("MISSING_ARG", "Need teamName | leagueId/leagueName | country")
 
     def _cap_team_get(self, args, trace):
-        team_id = args.get("teamId") or self._resolve_team_id(args.get("teamName"), trace)
+        team_id = args.get("teamId")
+        if not team_id and args.get("teamName"):
+            team_id = self._resolve_team_id(
+                args["teamName"],
+                trace,
+                leagueName=args.get("leagueName"),
+                leagueId=(str(args.get("leagueId")) if args.get("leagueId") else None),
+            )
+        if not team_id:
+            raise CollectorError("MISSING_ARG", "Need teamId or teamName")
         data = self._http("/lookupteam.php", {"id": team_id}, trace)
-        return {"team": (data.get("teams") or [None])[0]}, {"teamId": team_id}
+        resolved = {"teamId": str(team_id)}
+        if args.get("teamName"):
+            resolved["teamName"] = args["teamName"]
+        if args.get("leagueName"):
+            resolved["leagueName"] = args["leagueName"]
+        if args.get("leagueId"):
+            resolved["leagueId"] = str(args["leagueId"])
+        return {"team": (data.get("teams") or [None])[0]}, resolved
 
     def _cap_players_list(self, args, trace):
         if args.get("playerName"):
@@ -224,7 +351,12 @@ class CollectorAgentV2:
             return {"players": data.get("player") or []}, {"playerName": args["playerName"]}
         team_id = args.get("teamId")
         if args.get("teamName") and not team_id:
-            team_id = self._resolve_team_id(args["teamName"], trace)
+            team_id = self._resolve_team_id(
+                args["teamName"],
+                trace,
+                leagueName=args.get("leagueName"),
+                leagueId=(str(args.get("leagueId")) if args.get("leagueId") else None),
+            )
         if team_id:
             data = self._http("/lookup_all_players.php", {"id": team_id}, trace)
             return {"players": data.get("player") or []}, {"teamId": team_id}
@@ -239,6 +371,9 @@ class CollectorAgentV2:
         if args.get("date"):
             data = self._http("/eventsday.php", {"d": args["date"], "s": "Soccer"}, trace)
             return {"events": data.get("events") or []}, {"date": args["date"]}
+        if args.get("eventName"):
+            data = self._http("/searchevents.php", {"e": args["eventName"]}, trace)
+            return {"events": data.get("event") or []}, {"eventName": args["eventName"]}
         league_id = args.get("leagueId")
         if args.get("leagueName") and not league_id:
             league_id = self._resolve_league_id(args["leagueName"], trace)
@@ -263,23 +398,78 @@ class CollectorAgentV2:
         raise CollectorError("MISSING_ARG", "Need date | leagueId/leagueName | teamId/teamName")
 
     def _cap_event_get(self, args, trace):
-        if not args.get("eventId"):
-            raise CollectorError("MISSING_ARG", "Need eventId")
-        event_id = args["eventId"]
-        detail = self._http("/lookupevent.php", {"id": event_id}, trace)
-        ev = (detail.get("events") or [None])[0] or {}
-        out = {"event": ev}
+        """Fetch event details using **name-based** search, with optional ID filtering.
+        Behaviors:
+          • If only eventName is provided: search via /searchevents.php and return candidates. If exactly one, include detail (+expansions).
+          • If eventName and eventId are provided: search by name, then **filter candidates by idEvent == eventId**. If that yields one, return it (+expansions). Always include the full candidate list as well.
+          • If only eventId is provided: fall back to lookupevent.php for compatibility.
+        Expand supports {"timeline","stats","lineup"} when a concrete id is selected.
+        """
         expand = args.get("expand") or []
-        if "timeline" in expand:
-            tl = self._http("/lookuptimeline.php", {"id": event_id}, trace)
-            out["timeline"] = tl.get("timeline") or []
-        if "stats" in expand:
-            st = self._http("/lookupeventstats.php", {"id": event_id}, trace)
-            out["stats"] = st.get("eventstats") or []
-        if "lineup" in expand:
-            lu = self._http("/lookuplineup.php", {"id": event_id}, trace)
-            out["lineup"] = lu.get("lineup") or []
-        return out, {"eventId": event_id, "expand": expand}
+        event_name = (args.get("eventName") or "").strip()
+        event_id = (args.get("eventId") or "").strip() or None
+
+        def _attach_expansions(out: dict, chosen_id: str):
+            if not chosen_id:
+                return out
+            if "timeline" in expand:
+                tl = self._http("/lookuptimeline.php", {"id": chosen_id}, trace)
+                out["timeline"] = tl.get("timeline") or []
+            if "stats" in expand:
+                st = self._http("/lookupeventstats.php", {"id": chosen_id}, trace)
+                out["stats"] = st.get("eventstats") or []
+            if "lineup" in expand:
+                lu = self._http("/lookuplineup.php", {"id": chosen_id}, trace)
+                out["lineup"] = lu.get("lineup") or []
+            return out
+
+        # --- NAME-FIRST PATH ---
+        if event_name:
+            data = self._http("/searchevents.php", {"e": event_name}, trace)
+            candidates = data.get("event") or []
+
+            picked = None
+            resolution = {"by": "name", "candidates": len(candidates)}
+
+            # If an ID is supplied as well, filter candidates by that ID
+            if event_id:
+                filtered = [ev for ev in candidates if str(ev.get("idEvent") or "").strip() == str(event_id)]
+                if len(filtered) == 1:
+                    picked = filtered[0]
+                    resolution = {"by": "name_id_filter", "candidates": len(candidates), "matched_id": str(event_id)}
+                else:
+                    # keep candidates; no unique pick
+                    resolution = {"by": "name_id_filter_ambiguous", "candidates": len(candidates), "matched_id": str(event_id)}
+            else:
+                # No ID filter: if there is exactly one candidate, pick it
+                if len(candidates) == 1:
+                    picked = candidates[0]
+                    resolution = {"by": "name_unique", "candidates": 1}
+
+            out: dict = {"candidates": candidates, "resolution": resolution}
+
+            # If we selected one, RETURN THE PICKED CANDIDATE (no extra lookupevent.php)
+            chosen_id = str(picked.get("idEvent")) if picked else None
+            if chosen_id:
+                out["event"] = picked  # keep original candidate to avoid incorrect fallback payloads
+                _attach_expansions(out, chosen_id)
+
+            resolved = {k: v for k, v in {
+                "eventName": event_name,
+                "eventId": (chosen_id or event_id),
+                "expand": expand,
+            }.items() if v}
+            return out, resolved
+
+        # --- ID-ONLY PATH DISABLED ---
+        # We intentionally do not call /lookupevent.php here due to upstream inconsistencies
+        # where the endpoint can return the wrong event payload. Require a name-based search.
+        if not event_id:
+            raise CollectorError("MISSING_ARG", "Need eventName or eventId")
+        raise CollectorError(
+            "UNSUPPORTED",
+            "ID-only event lookups are disabled. Provide eventName (optionally with eventId/date/season) so we can resolve via searchevents.php and then expand by the chosen id."
+        )
 
     def _cap_seasons_list(self, args, trace):
         league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
