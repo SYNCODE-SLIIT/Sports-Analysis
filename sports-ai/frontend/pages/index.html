@@ -359,7 +359,7 @@
       // sort by country then name for convenience
       leagues.sort((a,b) => ((a.strCountry||'').localeCompare(b.strCountry||'')) || (a.strLeague||'').localeCompare(b.strLeague||''));
       setOptions(selLeague, leagues, { valueKey: 'idLeague', labelKey: 'strLeague' });
-      $('#leagueMeta').textContent = leagues.length ? ${leagues.length} leagues : '0 leagues';
+      $('#leagueMeta').textContent = leagues.length ? `${leagues.length} leagues` : '0 leagues';
       // Clear downstream selects
       setOptions(selSeason, [], { valueKey: 'strSeason', labelKey: 'strSeason' });
       setOptions(selTeam, [], { valueKey: 'idTeam', labelKey: 'strTeam' });

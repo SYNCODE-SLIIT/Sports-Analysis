@@ -8,7 +8,27 @@ except Exception:  # noqa: blanket ok here
         from backend.app.utils.http_client import get_json  # type: ignore
     except Exception as _e:  # final fallback
         raise ImportError("Cannot import get_json from utils.http_client") from _e
-from ..models.schemas import Team
+from dataclasses import dataclass
+
+@dataclass
+class Team:
+    """Lightweight Team model (avoids separate schemas module).
+
+    Only fields actually used by _norm_team / list_teams_in_league are defined.
+    """
+    id: str | None = None
+    name: str | None = None
+    alt_name: str | None = None
+    league: str | None = None
+    country: str | None = None
+    formed_year: int = 0
+    stadium: str | None = None
+    stadium_thumb: str | None = None
+    website: str | None = None
+    badge: str | None = None
+    banner: str | None = None
+    jersey: str | None = None
+    description: str | None = None
 
 # -----------------------
 # Errors
