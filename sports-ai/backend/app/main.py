@@ -16,7 +16,7 @@ app = FastAPI(title="Sports Collector HM", version="0.1.0")
 # Mount static directory for highlight shorts
 # app.mount("/highlight_shorts", StaticFiles(directory="highlight_shorts", html=True), name="highlight_shorts")  # Disabled to prevent error if directory does not exist
 
-# --- Frontend static mount (serves /frontend/pages/football-analytics-final.html) ---
+# --- Frontend static mount (serves /frontend/pages/index.html) ---
 try:
     # main.py lives at sports-ai/backend/app/main.py -> go up three levels to sports-ai root
     _SPORTS_ROOT = Path(__file__).resolve().parent.parent.parent
