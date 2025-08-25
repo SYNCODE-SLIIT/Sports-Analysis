@@ -10,13 +10,16 @@ Comments are added for each step.
 import requests
 import os
 import json
+import time
 from datetime import datetime
 import re
+from typing import Any, Optional
 
 API_KEY = os.environ.get("API_KEY")
 BASE_URL = os.environ.get("BASE_URL")
 ALLSPORTS_API_KEY = os.environ.get("ALLSPORTS_API_KEY")
-ALLSPORTS_BASE_URL = os.environ.get("ALLSPORTS_BASE_URL", "https://apiv2.allsportsapi.com/football/")
+# Normalize (strip trailing slash) so client builds clean query URLs
+ALLSPORTS_BASE_URL = os.environ.get("ALLSPORTS_BASE_URL", "https://apiv2.allsportsapi.com/football/").rstrip('/')
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '../cache')
 if not os.path.exists(CACHE_DIR):  # create lazily if missing
     try:
@@ -24,6 +27,108 @@ if not os.path.exists(CACHE_DIR):  # create lazily if missing
     except Exception:
         # If creation fails we will operate without cache silently.
         CACHE_DIR = None
+
+# ---------------- Merged: AllSportsAPIClient (previously in providers/allsports_api.py) ---------------- #
+class AllSportsAPIClient:
+    """Thin client around AllSportsAPI Football v2.1 endpoints.
+
+    (Merged into game_analytics_agent.py to simplify single-point access.)
+
+    Provides convenience wrappers + basic in-memory TTL caching so the backend
+    doesn't hammer upstream APIs. Methods map 1:1 to the provider's 'met' values.
+    """
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 20):
+        self.api_key = api_key or ALLSPORTS_API_KEY
+        self.timeout = timeout
+        self._cache: dict[str, tuple[float, Any]] = {}
+        self.default_ttl = 60  # seconds (can be tuned per method)
+
+    # --------------- internal helpers ---------------
+    def _cache_get(self, key: str):
+        item = self._cache.get(key)
+        if not item:
+            return None
+        exp, value = item
+        if exp < time.time():
+            self._cache.pop(key, None)
+            return None
+        return value
+
+    def _cache_set(self, key: str, value: Any, ttl: int | None = None):
+        ttl = ttl or self.default_ttl
+        self._cache[key] = (time.time() + ttl, value)
+
+    def clear_cache_for(self, met: str):
+        """Invalidate cached entries for a given 'met' value."""
+        remove_keys = [k for k in self._cache.keys() if k.startswith('["'+met+'"')]
+        for k in remove_keys:
+            self._cache.pop(k, None)
+
+    def _request(self, met: str, ttl: int | None = None, **params):
+        if not self.api_key:
+            raise RuntimeError("ALLSPORTS_API_KEY not configured")
+        q = {"met": met, "APIkey": self.api_key}
+        q.update({k: v for k, v in params.items() if v is not None})
+        cache_key = json.dumps([met, sorted(q.items())])
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
+        resp = requests.get(ALLSPORTS_BASE_URL, params=q, timeout=self.timeout)
+        try:
+            data: Any = resp.json()
+        except Exception:
+            data = {"success": 0, "raw": resp.text, "status_code": resp.status_code}
+        if isinstance(data, dict) and data.get("success") == 1:
+            self._cache_set(cache_key, data, ttl=ttl)
+        return data
+
+    # --------------- endpoint wrappers ---------------
+    def countries(self):
+        return self._request("Countries", ttl=86400)
+
+    def leagues(self, countryId: str | None = None):
+        return self._request("Leagues", countryId=countryId, ttl=3600)
+
+    def fixtures(self, from_date: str, to_date: str, **filters):
+        params = {"from": from_date, "to": to_date}
+        params.update(filters)
+        return self._request("Fixtures", **params)
+
+    def h2h(self, firstTeamId: str, secondTeamId: str, timezone: str | None = None):
+        return self._request("H2H", firstTeamId=firstTeamId, secondTeamId=secondTeamId, timezone=timezone, ttl=900)
+
+    def livescore(self, **filters):
+        return self._request("Livescore", ttl=15, **filters)
+
+    def standings(self, leagueId: str):
+        return self._request("Standings", leagueId=leagueId, ttl=300)
+
+    def topscorers(self, leagueId: str):
+        return self._request("Topscorers", leagueId=leagueId, ttl=900)
+
+    def teams(self, leagueId: str | None = None, teamId: str | None = None, teamName: str | None = None):
+        return self._request("Teams", leagueId=leagueId, teamId=teamId, teamName=teamName, ttl=1800)
+
+    def players(self, playerId: str | None = None, playerName: str | None = None, leagueId: str | None = None, teamId: str | None = None):
+        return self._request("Players", playerId=playerId, playerName=playerName, leagueId=leagueId, teamId=teamId, ttl=600)
+
+    def videos(self, eventId: str):
+        return self._request("Videos", eventId=eventId, ttl=600)
+
+    def odds(self, **filters):
+        return self._request("Odds", **filters)
+
+    def probabilities(self, **filters):
+        return self._request("Probabilities", **filters)
+
+    def odds_live(self, **filters):
+        return self._request("OddsLive", **filters)
+
+    def full_odds(self, **filters):
+        return self._request("FullOdds", **filters)
+
+# Convenience singleton for callers that previously imported from providers.allsports_api
+allsports_client = AllSportsAPIClient()
 
 class GameAnalyticsAgent:
     """Unified game analytics pulling from multiple providers.
@@ -42,18 +147,18 @@ class GameAnalyticsAgent:
         self.game_id = game_id
         self.tsdb_event_id = tsdb_event_id  # optional matching TheSportsDB event id (if known from merge step)
         self.allsports_event_id = allsports_event_id  # AllSportsApi event key
-        self.providers = [p for p in (providers or ["api_football", "thesportsdb"]) if p in self.SUPPORTED_PROVIDERS]
+        # Default order now prefers AllSports for richer unified payload when available
+        default_order = ["allsportsapi", "api_football", "thesportsdb"]
+        provided = providers or default_order
+        cleaned = [p for p in provided if p in self.SUPPORTED_PROVIDERS]
+        self.providers = cleaned if cleaned else default_order
         if not self.providers:
             self.providers = ["api_football"]
-        # Support two possible backends depending on BASE_URL
         self.is_fd_org = bool(BASE_URL and "football-data.org" in BASE_URL)
         if self.is_fd_org:
-            # Football-Data.org uses X-Auth-Token
             self.headers = {"X-Auth-Token": os.getenv("API_KEY", API_KEY)}
         else:
-            # API-Football compatibility
             self.headers = {"x-apisports-key": os.getenv("API_FOOTBALL_KEY", API_KEY)}
-        # Ensure cache directory exists
         try:
             os.makedirs(CACHE_DIR, exist_ok=True)
         except Exception:
@@ -748,58 +853,95 @@ class GameAnalyticsAgent:
             }
           }
         """
-        out: dict[str, any] = {"sources_used": []}
+        out = {"sources_used": []}
 
-        if "api_football" in self.providers and self.game_id and not self.is_fd_org:
-            out["game_info"] = self.get_game_info()
-            out["season_statistics"] = self.get_season_statistics()
-            out["injury_report"] = self.get_injury_report()
-            out["highlight_moments"] = self.get_highlight_moments()
-            out["sources_used"].append("api_football")
+        # Iterate through providers in the priority order chosen during init
+        for prov in self.providers:
+            if prov == "allsportsapi" and self.allsports_event_id:
+                try:
+                    as_details = self.get_allsports_match_details()
+                    if as_details:
+                        out["allsportsapi"] = as_details
+                        out["sources_used"].append("allsportsapi")
+                        # Build synthetic game_info if none yet
+                        if "game_info" not in out:
+                            raw = as_details.get("raw") or {}
+                            out["game_info"] = {
+                                "fixture_id": raw.get("event_key"),
+                                "league": raw.get("league_name"),
+                                "league_id": raw.get("league_key"),
+                                "season": raw.get("league_season"),
+                                "round": raw.get("league_round"),
+                                "date": raw.get("event_date"),
+                                "time": raw.get("event_time"),
+                                "timestamp": None,
+                                "status_short": raw.get("event_status"),
+                                "status_long": raw.get("event_status"),
+                                "venue": raw.get("event_stadium"),
+                                "referee": raw.get("event_referee"),
+                                "home_team": {
+                                    "id": raw.get("home_team_key"),
+                                    "name": raw.get("event_home_team"),
+                                    "logo": raw.get("home_team_logo")
+                                },
+                                "away_team": {
+                                    "id": raw.get("away_team_key"),
+                                    "name": raw.get("event_away_team"),
+                                    "logo": raw.get("away_team_logo")
+                                },
+                                "goals": {
+                                    "home": (raw.get("event_final_result") or "").split('-')[0].strip() if raw.get("event_final_result") else None,
+                                    "away": (raw.get("event_final_result") or "").split('-')[1].strip() if raw.get("event_final_result") and '-' in raw.get("event_final_result") else None
+                                }
+                            }
+                        # Populate highlight_moments if still empty
+                        if not out.get("highlight_moments"):
+                            goals = as_details.get("goalscorers") or []
+                            cards = as_details.get("cards") or []
+                            out["highlight_moments"] = {"goals": goals, "cards": cards, "assists": []}
+                        vids = self.get_allsports_videos(self.allsports_event_id)
+                        if vids:
+                            out["videos"] = vids
+                except Exception as e:  # noqa: broad
+                    out.setdefault("errors", []).append({"provider": "allsportsapi", "error": str(e)})
 
-        if self.is_fd_org and self.game_id:
-            # Provide basic game_info for Football-Data matches
-            out["game_info"] = self.get_game_info()
-            out.setdefault("sources_used", []).append("football-data")
+            elif prov == "api_football" and self.game_id:
+                try:
+                    if self.is_fd_org:
+                        # Football-Data.org basic match info only
+                        gi = self.get_game_info()
+                        if gi and "game_info" not in out:
+                            out["game_info"] = gi
+                        out["sources_used"].append("football-data")
+                    else:
+                        gi = self.get_game_info()
+                        if gi and "game_info" not in out:
+                            out["game_info"] = gi
+                        # Always attempt these (cache will protect)
+                        if "season_statistics" not in out:
+                            out["season_statistics"] = self.get_season_statistics()
+                        if "injury_report" not in out:
+                            out["injury_report"] = self.get_injury_report()
+                        if "highlight_moments" not in out:
+                            out["highlight_moments"] = self.get_highlight_moments()
+                        out["sources_used"].append("api_football")
+                except Exception as e:  # noqa: broad
+                    out.setdefault("errors", []).append({"provider": "api_football", "error": str(e)})
 
-        # Attempt TheSportsDB enrichment if requested & event id known (or resolvable later)
-        if "thesportsdb" in self.providers and self.tsdb_event_id:
-            try:
-                tsdb = self._fetch_tsdb_event_bundle(self.tsdb_event_id)
-                if tsdb:
-                    out["thesportsdb"] = tsdb
-                    out["sources_used"].append("thesportsdb")
-                    # Fill missing referee / venue if absent in primary
-                    if "game_info" in out:
-                        gi = out["game_info"]
-                        ev = tsdb.get("event") or {}
-                        gi.setdefault("referee", ev.get("strReferee"))
-                        gi.setdefault("venue", ev.get("strVenue"))
-            except Exception as e:  # noqa: broad - enrichment is best-effort
-                out.setdefault("errors", []).append({"provider": "thesportsdb", "error": str(e)})
+            elif prov == "thesportsdb" and self.tsdb_event_id:
+                try:
+                    tsdb = self._fetch_tsdb_event_bundle(self.tsdb_event_id)
+                    if tsdb:
+                        out["thesportsdb"] = tsdb
+                        out["sources_used"].append("thesportsdb")
+                        if "game_info" in out:
+                            gi = out["game_info"]
+                            ev = tsdb.get("event") or {}
+                            gi.setdefault("referee", ev.get("strReferee"))
+                            gi.setdefault("venue", ev.get("strVenue"))
+                except Exception as e:  # noqa: broad
+                    out.setdefault("errors", []).append({"provider": "thesportsdb", "error": str(e)})
 
-        # AllSportsApi enrichment (details + videos)
-        if "allsportsapi" in self.providers and self.allsports_event_id:
-            try:
-                as_details = self.get_allsports_match_details()
-                if as_details:
-                    out["allsportsapi"] = as_details
-                    out["sources_used"].append("allsportsapi")
-                    # Populate highlight_moments if empty
-                    if not out.get("highlight_moments"):
-                        goals = as_details.get("goalscorers") or []
-                        cards = as_details.get("cards") or []
-                        out["highlight_moments"] = {
-                            "goals": goals,
-                            "cards": cards,
-                            "assists": []
-                        }
-                    # Videos
-                    vids = self.get_allsports_videos(self.allsports_event_id)
-                    if vids:
-                        out["videos"] = vids
-            except Exception as e:
-                out.setdefault("errors", []).append({"provider": "allsportsapi", "error": str(e)})
         return out
 
     def get_allsports_videos(self, event_id: str):
