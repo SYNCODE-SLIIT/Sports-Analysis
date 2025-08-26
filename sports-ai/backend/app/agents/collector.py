@@ -19,27 +19,6 @@ except Exception:  # noqa: blanket ok here
     except Exception:  # If even this fails we operate without the fallback.
         allsports_client = None
 
-from dataclasses import dataclass
-
-@dataclass
-class Team:
-    """Lightweight Team model (avoids separate schemas module).
-
-    Only fields actually used by _norm_team / list_teams_in_league are defined.
-    """
-    id: str | None = None
-    name: str | None = None
-    alt_name: str | None = None
-    league: str | None = None
-    country: str | None = None
-    formed_year: int = 0
-    stadium: str | None = None
-    stadium_thumb: str | None = None
-    website: str | None = None
-    badge: str | None = None
-    banner: str | None = None
-    jersey: str | None = None
-    description: str | None = None
 
 # -----------------------
 # Errors
@@ -78,12 +57,30 @@ class CollectorAgentV2:
 
             if intent == "leagues.list":
                 data, resolved = self._cap_leagues_list(args, trace)
+            elif intent == "countries.list":
+                data, resolved = self._cap_countries_list(args, trace)
+            elif intent == "sports.list":
+                data, resolved = self._cap_sports_list(args, trace)
             elif intent == "league.get":
                 data, resolved = self._cap_league_get(args, trace)
+            elif intent == "league.table":
+                data, resolved = self._cap_league_table(args, trace)
             elif intent == "teams.list":
                 data, resolved = self._cap_teams_list(args, trace)
             elif intent == "team.get":
                 data, resolved = self._cap_team_get(args, trace)
+            elif intent == "team.equipment":
+                data, resolved = self._cap_team_equipment(args, trace)
+            elif intent == "player.honours":
+                data, resolved = self._cap_player_honours(args, trace)
+            elif intent == "player.former_teams":
+                data, resolved = self._cap_player_former_teams(args, trace)
+            elif intent == "player.milestones":
+                data, resolved = self._cap_player_milestones(args, trace)
+            elif intent == "player.contracts":
+                data, resolved = self._cap_player_contracts(args, trace)
+            elif intent == "player.results":
+                data, resolved = self._cap_player_results(args, trace)
             elif intent == "players.list":
                 data, resolved = self._cap_players_list(args, trace)
             elif intent == "player.get":
@@ -92,6 +89,14 @@ class CollectorAgentV2:
                 data, resolved = self._cap_events_list(args, trace)
             elif intent == "event.get":
                 data, resolved = self._cap_event_get(args, trace)
+            elif intent == "event.results":
+                data, resolved = self._cap_event_results(args, trace)
+            elif intent == "event.tv":
+                data, resolved = self._cap_event_tv(args, trace)
+            elif intent == "video.highlights":
+                data, resolved = self._cap_video_highlights(args, trace)
+            elif intent == "venue.get":
+                data, resolved = self._cap_venue_get(args, trace)
             elif intent == "seasons.list":
                 data, resolved = self._cap_seasons_list(args, trace)
             else:
@@ -186,15 +191,7 @@ class CollectorAgentV2:
         leagueName: str | None = None,
         leagueId: str | None = None,
     ) -> str:
-        """
-        Resolve a team by name, optionally constrained by league.
-        Strategy:
-          1) /searchteams.php?t={name}
-             - prefer exact strTeam match
-             - if leagueName/leagueId provided, prefer candidates that match that league
-          2) If still ambiguous and leagueName is given, query
-             /search_all_teams.php?l={leagueName} and pick exact strTeam
-        """
+
         if not name:
             raise CollectorError("MISSING_ARG", "Provide teamName or teamId")
 
@@ -351,10 +348,35 @@ class CollectorAgentV2:
                 trace.append({"step": "allsports_leagues_error", "error": str(e)})
         return {"leagues": leagues, "count": len(leagues)}, args
 
+    def _cap_countries_list(self, args, trace):
+        """Return the raw countries payload from TheSportsDB (no normalization).
+        Endpoint: /all_countries.php
+        Args are ignored; we simply proxy the response as-is.
+        """
+        data = self._http("/all_countries.php", {}, trace)
+        # Keep raw shape; some responses use key 'countries'
+        countries = data.get("countries") if isinstance(data, dict) else None
+        # If the upstream ever returns a different top-level structure, just pass it through
+        if countries is None:
+            return {"raw": data}, args
+        return {"countries": countries}, args
+
     def _cap_league_get(self, args, trace):
         league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
         data = self._http("/lookupleague.php", {"id": league_id}, trace)
         return {"league": (data.get("leagues") or [None])[0]}, {"leagueId": league_id}
+
+    def _cap_league_table(self, args, trace):
+        """Return raw league standings for a given league + season.
+        Endpoint: /lookuptable.php
+        Accepts: leagueId | leagueName, and required `season` (e.g., "2014-2015").
+        """
+        league_id = args.get("leagueId") or self._resolve_league_id(args.get("leagueName"), trace)
+        season = args.get("season")
+        if not season:
+            raise CollectorError("MISSING_ARG", "Provide season for league.table")
+        data = self._http("/lookuptable.php", {"l": league_id, "s": season}, trace)
+        return {"table": data.get("table") or []}, {"leagueId": str(league_id), "season": season}
 
     def _cap_teams_list(self, args, trace):
         """List teams by teamName | leagueName/leagueId | country.
@@ -421,10 +443,10 @@ class CollectorAgentV2:
                     raw = self.list_teams_in_league(str(resolved_league_id), league_name)
                     teams_from_lookup = [
                         {
-                            "idTeam": t.id,
-                            "strTeam": t.name,
-                            "strAlternate": t.alt_name,
-                            "strTeamBadge": t.badge,
+                            "idTeam": t.get("idTeam"),
+                            "strTeam": t.get("strTeam"),
+                            "strAlternate": t.get("strAlternate"),
+                            "strTeamBadge": (t.get("strTeamBadge") or t.get("strBadge")),
                         }
                         for t in raw
                     ]
@@ -506,6 +528,32 @@ class CollectorAgentV2:
         if args.get("leagueId"):
             resolved["leagueId"] = str(args["leagueId"])
         return {"team": (data.get("teams") or [None])[0]}, resolved
+
+    def _cap_team_equipment(self, args, trace):
+
+        team_id = args.get("teamId")
+        if not team_id and args.get("teamName"):
+            team_id = self._resolve_team_id(
+                args["teamName"],
+                trace,
+                leagueName=args.get("leagueName"),
+                leagueId=(str(args.get("leagueId")) if args.get("leagueId") else None),
+            )
+        if not team_id:
+            raise CollectorError("MISSING_ARG", "Need teamId or teamName for team.equipment")
+
+        data = self._http("/lookupequipment.php", {"id": team_id}, trace)
+        equipment = data.get("equipment") or []
+
+        resolved = {"teamId": str(team_id)}
+        if args.get("teamName"):
+            resolved["teamName"] = args["teamName"]
+        if args.get("leagueName"):
+            resolved["leagueName"] = args["leagueName"]
+        if args.get("leagueId"):
+            resolved["leagueId"] = str(args["leagueId"])
+
+        return {"equipment": equipment, "count": len(equipment)}, resolved
 
     def _cap_players_list(self, args, trace):
         if args.get("playerName"):
@@ -599,13 +647,7 @@ class CollectorAgentV2:
         raise CollectorError("MISSING_ARG", "Need date | leagueId/leagueName | teamId/teamName")
 
     def _cap_event_get(self, args, trace):
-        """Fetch event details using **name-based** search, with optional ID filtering.
-        Behaviors:
-          • If only eventName is provided: search via /searchevents.php and return candidates. If exactly one, include detail (+expansions).
-          • If eventName and eventId are provided: search by name, then **filter candidates by idEvent == eventId**. If that yields one, return it (+expansions). Always include the full candidate list as well.
-          • If only eventId is provided: fall back to lookupevent.php for compatibility.
-        Expand supports {"timeline","stats","lineup"} when a concrete id is selected.
-        """
+
         expand = args.get("expand") or []
         event_name = (args.get("eventName") or "").strip()
         event_id = (args.get("eventId") or "").strip() or None
@@ -677,30 +719,144 @@ class CollectorAgentV2:
         data = self._http("/search_all_seasons.php", {"id": league_id}, trace)
         return {"seasons": data.get("seasons") or []}, {"leagueId": league_id}
 
-    def list_teams_in_league(self, league_id: str, league_name: str = None) -> List[Team]:
-        """Return teams for a given league id by calling lookup_all_teams.php."""
-        data = get_json("lookup_all_teams.php", {"id": league_id}) or {}
+    def list_teams_in_league(
+        self,
+        league_id: str,
+        league_name: str | None = None,
+        trace: List[Dict[str, Any]] | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Return RAW teams for a given league id via /lookup_all_teams.php (no normalization).
+        Uses _http so calls are cache-busted and traced.
+        """
+        t = trace if trace is not None else []
+        data = self._http("/lookup_all_teams.php", {"id": league_id}, t) or {}
         raw = data.get("teams") or []
         self._sleep()
-        return [self._norm_team(x) for x in raw]
+        return raw
 
     def _sleep(self):
         import time
         time.sleep(1)  # Polite pause to avoid rate limits
 
-    def _norm_team(self, raw_team: dict) -> Team:
-        return Team(
-            id=raw_team.get("idTeam"),
-            name=raw_team.get("strTeam"),
-            alt_name=raw_team.get("strAlternate"),
-            league=raw_team.get("strLeague"),
-            country=raw_team.get("strCountry"),
-            formed_year=int(raw_team.get("intFormedYear") or 0),
-            stadium=raw_team.get("strStadium"),
-            stadium_thumb=raw_team.get("strStadiumThumb"),
-            website=raw_team.get("strWebsite"),
-            badge=raw_team.get("strTeamBadge"),
-            banner=raw_team.get("strTeamBanner"),
-            jersey=raw_team.get("strTeamJersey"),
-            description=raw_team.get("strDescriptionEN"),
-        )
+    def _cap_sports_list(self, args, trace):
+        """Proxy /all_sports.php (raw)."""
+        data = self._http("/all_sports.php", {}, trace)
+        sports = data.get("sports") if isinstance(data, dict) else None
+        if sports is None:
+            return {"raw": data}, args
+        return {"sports": sports, "count": len(sports)}, args
+
+    def _cap_player_honours(self, args, trace):
+        pid = args.get("playerId") or self._resolve_player_id(args.get("playerName"), trace)
+        data = self._http("/lookuphonours.php", {"id": pid}, trace)
+        return {"honours": data.get("honours") or [], "count": len(data.get("honours") or [])}, {"playerId": str(pid)}
+
+    def _cap_player_former_teams(self, args, trace):
+        pid = args.get("playerId") or self._resolve_player_id(args.get("playerName"), trace)
+        data = self._http("/lookupformerteams.php", {"id": pid}, trace)
+        return {"formerteams": data.get("formerteams") or [], "count": len(data.get("formerteams") or [])}, {"playerId": str(pid)}
+
+    def _cap_player_milestones(self, args, trace):
+        pid = args.get("playerId") or self._resolve_player_id(args.get("playerName"), trace)
+        data = self._http("/lookupmilestones.php", {"id": pid}, trace)
+        return {"milestones": data.get("milestones") or [], "count": len(data.get("milestones") or [])}, {"playerId": str(pid)}
+
+    def _cap_player_contracts(self, args, trace):
+        pid = args.get("playerId") or self._resolve_player_id(args.get("playerName"), trace)
+        data = self._http("/lookupcontracts.php", {"id": pid}, trace)
+        return {"contracts": data.get("contracts") or [], "count": len(data.get("contracts") or [])}, {"playerId": str(pid)}
+
+    def _cap_player_results(self, args, trace):
+        pid = args.get("playerId") or self._resolve_player_id(args.get("playerName"), trace)
+        data = self._http("/playerresults.php", {"id": pid}, trace)
+        return {"results": data.get("results") or [], "count": len(data.get("results") or [])}, {"playerId": str(pid)}
+
+    def _cap_event_results(self, args, trace):
+        """Return past events for a league or a team (raw)."""
+        league_id = args.get("leagueId")
+        team_id = args.get("teamId")
+
+        if args.get("leagueName") and not league_id:
+            league_id = self._resolve_league_id(args.get("leagueName"), trace)
+        if args.get("teamName") and not team_id:
+            team_id = self._resolve_team_id(args.get("teamName"), trace)
+
+        if league_id:
+            data = self._http("/eventspastleague.php", {"id": league_id}, trace)
+            return {"events": data.get("events") or []}, {"leagueId": str(league_id)}
+        if team_id:
+            data = self._http("/eventslast.php", {"id": team_id}, trace)
+            return {"events": data.get("results") or []}, {"teamId": str(team_id)}
+
+        raise CollectorError("MISSING_ARG", "Need leagueId/leagueName or teamId/teamName for event.results")
+
+    def _cap_event_tv(self, args, trace):
+
+        event_name = (args.get("eventName") or "").strip()
+        event_id = (args.get("eventId") or "").strip() or None
+
+        chosen_id = None
+        candidates = []
+
+        if event_name:
+            data = self._http("/searchevents.php", {"e": event_name}, trace)
+            candidates = data.get("event") or []
+            if event_id:
+                filt = [ev for ev in candidates if str(ev.get("idEvent") or "").strip() == str(event_id)]
+                if len(filt) == 1:
+                    chosen_id = str(filt[0].get("idEvent"))
+                # if ambiguous, leave chosen_id None and just return candidates
+            elif len(candidates) == 1:
+                chosen_id = str(candidates[0].get("idEvent"))
+        else:
+            chosen_id = event_id  # fallback support
+
+        out = {"candidates": candidates}
+        if chosen_id:
+            tv = self._http("/lookuptv.php", {"id": chosen_id}, trace)
+            out["tv"] = tv.get("tvchannels") or tv.get("tv") or []
+
+        resolved = {}
+        if event_name:
+            resolved["eventName"] = event_name
+        if event_id or chosen_id:
+            resolved["eventId"] = chosen_id or event_id
+        return out, resolved
+
+    def _cap_video_highlights(self, args, trace):
+        """Search YouTube/highlights metadata for an event by name, optional eventId filter.
+        Endpoint: /searcheventsvideos.php?e={name}
+        """
+        event_name = (args.get("eventName") or "").strip()
+        event_id = (args.get("eventId") or "").strip() or None
+        if not event_name:
+            raise CollectorError("MISSING_ARG", "Provide eventName for video.highlights")
+
+        data = self._http("/searcheventsvideos.php", {"e": event_name}, trace)
+        videos = data.get("event") or []
+        if event_id:
+            videos = [v for v in videos if str(v.get("idEvent") or "").strip() == str(event_id)]
+        return {"videos": videos, "count": len(videos)}, {"eventName": event_name, **({"eventId": event_id} if event_id else {})}
+
+    def _cap_venue_get(self, args, trace):
+        """Return venue details by venueId, or resolve from an event name (+optional eventId)."""
+        venue_id = args.get("venueId")
+        if venue_id:
+            data = self._http("/lookupvenue.php", {"id": venue_id}, trace)
+            return {"venue": (data.get("venues") or [None])[0]}, {"venueId": str(venue_id)}
+
+        event_name = (args.get("eventName") or "").strip()
+        event_id = (args.get("eventId") or "").strip() or None
+        if not event_name:
+            raise CollectorError("MISSING_ARG", "Provide venueId or eventName (+optional eventId) for venue.get")
+
+        data = self._http("/searchevents.php", {"e": event_name}, trace)
+        candidates = data.get("event") or []
+        picked, _res = self._select_event_candidate(candidates, eventId=event_id)
+        if not picked:
+            raise AmbiguousError("AMBIGUOUS", f"Multiple or zero events for '{event_name}'", {"candidates": candidates[:10]})
+        v_id = picked.get("idVenue")
+        if not v_id:
+            return {"venue": None}, {"eventName": event_name, **({"eventId": event_id} if event_id else {})}
+        v = self._http("/lookupvenue.php", {"id": v_id}, trace)
+        return {"venue": (v.get("venues") or [None])[0]}, {"venueId": str(v_id), "eventName": event_name}
