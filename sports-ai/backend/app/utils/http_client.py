@@ -1,27 +1,34 @@
-from __future__ import annotations
-import time
-import httpx
-from .config import BASE_URL, TIMEOUT_S, RETRY_BACKOFFS
+"""Lightweight HTTP helper for TheSportsDB requests.
 
-def get_json(path: str, params: dict | None = None) -> dict | list:
-    """GET JSON with retries/backoff + empty-payload guard."""
-    url = f"{BASE_URL}/{path.lstrip('/')}"
-    last_err = None
-    for backoff in [0.0] + RETRY_BACKOFFS:
-        if backoff:
-            time.sleep(backoff)
-        try:
-            r = httpx.get(url, params=params, timeout=TIMEOUT_S)
-            if r.status_code in (429, 500, 502, 503, 504):
-                last_err = RuntimeError(f"{r.status_code} {url}")
-                continue
-            r.raise_for_status()
-            data = r.json()
-            # TheSportsDB returns {"key": null} for empty responses
-            if isinstance(data, dict) and data and all(v is None for v in data.values()):
+Provides get_json(path, params) used by CollectorAgentV2.
+Auto-injects the base URL and API key (public test key by default).
+"""
+from __future__ import annotations
+import os, requests
+from typing import Any, Dict
+
+# Public demo key (TheSportsDB) can be overridden with environment variable.
+THESPORTSDB_API_KEY = os.getenv("THESPORTSDB_API_KEY", "3").strip()
+BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{THESPORTSDB_API_KEY}"
+
+def get_json(path: str, params: Dict[str, Any] | None = None, timeout: int = 15) -> Dict[str, Any]:
+    """Perform a GET request to TheSportsDB and return JSON (or {}).
+
+    path: may start with '/' or be relative. Example: '/eventsday.php'
+    params: query string dict (optional)
+    timeout: request timeout seconds
+    """
+    if not path:
+        return {}
+    url = BASE_URL + (path if path.startswith('/') else '/' + path)
+    try:
+        resp = requests.get(url, params=params or {}, timeout=timeout)
+        if resp.status_code == 200:
+            try:
+                return resp.json() or {}
+            except Exception:
                 return {}
-            return data
-        except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as e:
-            last_err = e
-            continue
-    raise RuntimeError(f"HTTP failed after retries: {last_err}")
+        # Non-200 -> return minimal structure so caller can handle gracefully
+        return {"error": f"status_{resp.status_code}"}
+    except requests.RequestException as e:
+        return {"error": str(e)}

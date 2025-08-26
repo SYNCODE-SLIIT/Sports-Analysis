@@ -194,7 +194,7 @@ Note: Endpoints return slightly different key names in JSON (`events`, `results`
 ### Example usage (synchronous)
 
 ```python
-from sports_ai.backend.app.agents.collector import SportsDBCollector
+from sports-ai.backend.app.agents.collector import SportsDBCollector
 
 c = SportsDBCollector()
 leagues = c.list_leagues(sport="Soccer", country="England")
