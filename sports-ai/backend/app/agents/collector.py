@@ -397,23 +397,28 @@ class CollectorAgentV2:
             # Try with sport filter first; if it fails, retry without it.
             params_primary = {"l": league_name, "s": "Soccer"}
             teams: List[Dict[str, Any]] = []
+            resolved_league_id: str | None = None
             try:
                 data = self._http("/search_all_teams.php", params_primary, trace)
                 teams = data.get("teams") or []
-            except Exception:
+                trace.append({"step": "search_all_teams_name", "count": len(teams)})
+            except Exception as e:
+                trace.append({"step": "tsdb_league_team_error_primary", "error": str(e)})
+
+            if not teams:
                 try:
                     data = self._http("/search_all_teams.php", {"l": league_name}, trace)
                     teams = data.get("teams") or []
+                    trace.append({"step": "search_all_teams_name_nosport", "count": len(teams)})
                 except Exception as e:
-                    trace.append({"step": "tsdb_league_team_error", "error": str(e)})
+                    trace.append({"step": "tsdb_league_team_error_secondary", "error": str(e)})
 
-            # If the name-based search returned no teams but we have a league_id,
-            # Regardless of name-based results, if a league_id is present attempt
-            # lookup by id (lookup_all_teams.php) as an additional fallback/source.
-            if league_id:
-                trace.append({"step": "attempt_lookup_all_teams_by_id", "league_id": league_id})
+            # If name-based lookup produced nothing, derive leagueId from name and fall back to ID lookup
+            if not teams:
                 try:
-                    raw = self.list_teams_in_league(str(league_id), league_name)
+                    resolved_league_id = self._resolve_league_id(league_name, trace)
+                    trace.append({"step": "resolved_league_id_from_name", "league_id": resolved_league_id})
+                    raw = self.list_teams_in_league(str(resolved_league_id), league_name)
                     teams_from_lookup = [
                         {
                             "idTeam": t.id,
@@ -423,19 +428,15 @@ class CollectorAgentV2:
                         }
                         for t in raw
                     ]
-                    # prefer name-based teams if present, otherwise use lookup results
-                    if not teams:
-                        teams = teams_from_lookup
-                    # record what we got
-                    trace.append({"step": "lookup_all_teams_result", "count": len(teams_from_lookup)})
+                    teams = teams_from_lookup
+                    trace.append({"step": "lookup_all_teams_via_id_fallback", "count": len(teams_from_lookup)})
                 except Exception as e:
-                    # record failure but don't fail the whole intent
-                    trace.append({"step": "lookup_all_teams_failed", "error": str(e)})
-                    # leave teams as-is (could be empty or name-based results)
+                    trace.append({"step": "league_id_fallback_failed", "error": str(e)})
+
             # Fallback to AllSports if still empty
             if not teams and allsports_client:
                 try:
-                    resp = allsports_client.teams(leagueId=str(league_id) if league_id else None)
+                    resp = allsports_client.teams(leagueId=str(resolved_league_id) if resolved_league_id else None)
                     if isinstance(resp, dict) and resp.get("success") == 1:
                         teams = [
                             {
@@ -450,7 +451,12 @@ class CollectorAgentV2:
                 except Exception as e:
                     trace.append({"step": "allsports_league_teams_error", "error": str(e)})
 
-            return {"teams": teams, "count": len(teams)}, {"leagueName": league_name}
+            resolved = {"leagueName": league_name}
+            if league_id:
+                resolved["leagueId"] = str(league_id)
+            if resolved_league_id and not league_id:
+                resolved["leagueId"] = str(resolved_league_id)
+            return {"teams": teams, "count": len(teams)}, resolved
 
         # 3) Country search (still via search_all_teams)
         if args.get("country"):

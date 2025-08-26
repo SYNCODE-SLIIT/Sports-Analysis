@@ -147,7 +147,6 @@
                 <select id="selTeam"></select>
                 <button class="btn" id="btnLoadTeams">Fetch</button>
               </div>
-              <div class="tiny muted" id="teamMeta"></div>
             </div>
             <div>
               <label>Players in Team</label>
@@ -393,7 +392,6 @@
       setOptions(selTeamForEvents, teams, { valueKey: 'idTeam', labelKey: 'strTeam' });
       // reset players list
       setOptions(selPlayer, [], { valueKey: 'idPlayer', labelKey: 'strPlayer' });
-      $('#teamMeta').textContent = resp?.data?.count ? `${resp.data.count} teams` : `${teams.length} teams`;
     });
 
     // Step 1d: Players for selected team
