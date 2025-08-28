@@ -320,12 +320,11 @@ class CollectorAgentV2:
         except Exception as e:
             trace.append({"step": "tsdb_leagues_error", "error": str(e)})
         name = args.get("name")
-        country = args.get("country")
+        if "country" in args:
+            trace.append({"step": "leagues_country_filter_ignored", "reason": "TSDB all_leagues lacks reliable per-league country"})
         if leagues:
             if name:
                 leagues = [L for L in leagues if name.lower() in (L.get("strLeague") or "").lower()]
-            if country:
-                leagues = [L for L in leagues if (L.get("strCountry") or "").lower() == str(country).lower()]
         # Fallback to AllSports API if TheSportsDB provided no leagues
         if not leagues and allsports_client:
             try:
@@ -341,8 +340,8 @@ class CollectorAgentV2:
                     ]
                     if name:
                         leagues = [L for L in leagues if name.lower() in (L.get("strLeague") or "").lower()]
-                    if country:
-                        leagues = [L for L in leagues if (L.get("strCountry") or "").lower() == str(country).lower()]
+                    if "country" in args:
+                        trace.append({"step": "leagues_country_filter_ignored", "reason": "TSDB all_leagues lacks reliable per-league country"})
                     trace.append({"step": "allsports_leagues", "count": len(leagues)})
             except Exception as e:
                 trace.append({"step": "allsports_leagues_error", "error": str(e)})
@@ -509,25 +508,133 @@ class CollectorAgentV2:
         raise CollectorError("MISSING_ARG", "Need teamName | leagueId/leagueName | country")
 
     def _cap_team_get(self, args, trace):
-        team_id = args.get("teamId")
-        if not team_id and args.get("teamName"):
-            team_id = self._resolve_team_id(
-                args["teamName"],
+        """
+        Team detail (RAW). Prefer lookup by id, but guard against upstream cache issues
+        where /lookupteam.php may return the wrong team payload (e.g., always Arsenal).
+        If the lookup result's id does not match the requested id, fall back to:
+          1) searchteams.php?t={teamName} and pick the candidate with the requested id (or exact name)
+          2) if league is known, fetch teams in league and select by id/name
+        """
+        requested_team_id = args.get("teamId")
+        team_name = (args.get("teamName") or "").strip() or None
+
+        # Resolve id from name if needed
+        if not requested_team_id and team_name:
+            requested_team_id = self._resolve_team_id(
+                team_name,
                 trace,
                 leagueName=args.get("leagueName"),
                 leagueId=(str(args.get("leagueId")) if args.get("leagueId") else None),
             )
-        if not team_id:
+
+        if not requested_team_id and not team_name:
             raise CollectorError("MISSING_ARG", "Need teamId or teamName")
-        data = self._http("/lookupteam.php", {"id": team_id}, trace)
-        resolved = {"teamId": str(team_id)}
-        if args.get("teamName"):
-            resolved["teamName"] = args["teamName"]
+
+        requested_team_id = str(requested_team_id) if requested_team_id is not None else None
+
+        # --- Primary: lookup by id ---
+        team_payload = None
+        lookup_ok = False
+        if requested_team_id:
+            data = self._http("/lookupteam.php", {"id": requested_team_id}, trace)
+            team_payload = (data.get("teams") or [None])[0]
+            returned_id = str(team_payload.get("idTeam")) if team_payload else None
+            if team_payload and requested_team_id and returned_id == requested_team_id:
+                lookup_ok = True
+            else:
+                trace.append({
+                    "step": "lookupteam_mismatch",
+                    "requested_id": requested_team_id,
+                    "returned_id": returned_id,
+                    "note": "Falling back to name/league search due to upstream inconsistency"
+                })
+
+        # --- Fallback A: name search and pick matching id / exact name ---
+        if not lookup_ok and team_name:
+            try:
+                s = self._http("/searchteams.php", {"t": team_name}, trace)
+                cand = s.get("teams") or []
+                # 1) prefer exact id match if we have an id
+                if requested_team_id:
+                    picks = [t for t in cand if str(t.get("idTeam") or "").strip() == requested_team_id]
+                    if len(picks) == 1:
+                        team_payload = picks[0]
+                        lookup_ok = True
+                # 2) else prefer exact name match
+                if not lookup_ok:
+                    name_l = team_name.lower()
+                    exact = [t for t in cand if (t.get("strTeam") or "").strip().lower() == name_l]
+                    if len(exact) == 1:
+                        team_payload = exact[0]
+                        lookup_ok = True
+                    elif cand:
+                        # last resort: first candidate
+                        team_payload = cand[0]
+                        lookup_ok = True
+            except Exception as e:
+                trace.append({"step": "team_name_fallback_error", "error": str(e)})
+
+        # --- Fallback B: search within league roster when league known ---
+        if not lookup_ok and (args.get("leagueName") or args.get("leagueId")):
+            # normalize leagueName if only id provided
+            league_name = (args.get("leagueName") or "").strip()
+            league_id = args.get("leagueId")
+            if league_id and not league_name:
+                try:
+                    league_name = self._resolve_league_name(str(league_id), trace)
+                except Exception:
+                    league_name = None
+            # try name-based league listing, then id-based
+            roster = []
+            try:
+                if league_name:
+                    try:
+                        d1 = self._http("/search_all_teams.php", {"l": league_name, "s": "Soccer"}, trace)
+                    except Exception:
+                        d1 = self._http("/search_all_teams.php", {"l": league_name}, trace)
+                    roster = d1.get("teams") or []
+                    trace.append({"step": "league_roster_name", "count": len(roster)})
+                if not roster and league_id:
+                    raw = self.list_teams_in_league(str(league_id), league_name, trace)
+                    roster = raw or []
+                    trace.append({"step": "league_roster_id", "count": len(roster)})
+            except Exception as e:
+                trace.append({"step": "league_roster_error", "error": str(e)})
+
+            if roster:
+                # Match by id first, then by exact name
+                if requested_team_id:
+                    by_id = [t for t in roster if str(t.get("idTeam") or "").strip() == requested_team_id]
+                    if len(by_id) == 1:
+                        team_payload = by_id[0]
+                        lookup_ok = True
+                if not lookup_ok and team_name:
+                    name_l = team_name.lower()
+                    by_name = [t for t in roster if (t.get("strTeam") or "").strip().lower() == name_l]
+                    if len(by_name) == 1:
+                        team_payload = by_name[0]
+                        lookup_ok = True
+                if not lookup_ok:
+                    # take first as last resort
+                    team_payload = roster[0]
+                    lookup_ok = True
+
+        # As a final guard, if nothing worked but we at least have something from the primary call, return it.
+        if not lookup_ok and team_payload is None and requested_team_id:
+            data = self._http("/lookupteam.php", {"id": requested_team_id}, trace)
+            team_payload = (data.get("teams") or [None])[0]
+
+        resolved = {}
+        if requested_team_id:
+            resolved["teamId"] = str(requested_team_id)
+        if team_name:
+            resolved["teamName"] = team_name
         if args.get("leagueName"):
             resolved["leagueName"] = args["leagueName"]
         if args.get("leagueId"):
             resolved["leagueId"] = str(args["leagueId"])
-        return {"team": (data.get("teams") or [None])[0]}, resolved
+
+        return {"team": team_payload}, resolved
 
     def _cap_team_equipment(self, args, trace):
 

@@ -1,14 +1,12 @@
 import os
-import requests
 from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
-from .agents.collector import CollectorAgentV2
-from .agents.game_analytics_agent import AllSportsCollectorAgent
+from .routers.router_collector import RouterCollector
 
-app = FastAPI(title="Sports Collector HM", version="0.2.0-min")
+app = FastAPI(title="Sports Collector HM (Unified)", version="0.3.0")
 
 # --- Optional Frontend static mount (serves /frontend/pages/index.html) ---
 try:
@@ -32,19 +30,13 @@ app.add_middleware(
 )
 
 # --- Agents ---
-collector_agent = CollectorAgentV2()              # TheSportsDB-focused JSON agent
-allsports_agent = AllSportsCollectorAgent()       # AllSports API JSON agent
+router = RouterCollector()                        # unified router over TSDB + AllSports
 
 # --- JSON entrypoints (minimal surface) ---
 @app.post("/collect")
 def collect(request: dict = Body(...)):
-    """CollectorAgentV2 entrypoint: pass {"intent":..., "args":{...}}"""
-    return collector_agent.handle(request)
-
-@app.post("/allsports")
-def allsports_collect(request: dict = Body(...)):
-    """AllSportsCollectorAgent entrypoint: pass {"intent":..., "args":{...}}"""
-    return allsports_agent.handle(request)
+    """Unified entrypoint: pass {"intent":..., "args":{...}}; routes between TSDB and AllSports."""
+    return router.handle(request)
 
 # --- Health ---
 @app.get("/health")

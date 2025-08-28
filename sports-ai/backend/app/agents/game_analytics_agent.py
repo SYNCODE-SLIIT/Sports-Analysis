@@ -288,6 +288,14 @@ class AllSportsRawAgent:
             if pick and pick.get("team_key"):
                 a["teamId"] = pick["team_key"]
 
+        # Trace when teamName could not be resolved to an id (helps router fallback decisions)
+        if a.get("teamName") and not a.get("teamId"):
+            trace.append({
+                "step": "asapi_team_resolve_failed",
+                "teamName": a.get("teamName"),
+                "leagueId": a.get("leagueId")
+            })
+
         # playerName: native support exists — we leave it in place.
         return a
 
