@@ -1,480 +1,500 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Sports Collector Agent Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sports Collector HM — Test UI</title>
   <style>
     :root {
-      --primary-color: #2563eb;
-      --secondary-color: #1e40af;
-      --background-color: #f8fafc;
-      --text-color: #1e293b;
-      --border-color: #e2e8f0;
+      --bg: #0b0d12;
+      --panel: #121621;
+      --muted: #a9b1c3;
+      --text: #e9eef9;
+      --accent: #6ea8fe;
+      --border: #222938;
+      --green: #35c46a;
+      --red: #ff6b6b;
+      --orange: #ffb86c;
     }
-    
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
+    * { box-sizing: border-box }
+    html, body { height: 100% }
     body {
-      font-family: 'Inter', system-ui, sans-serif;
-      line-height: 1.5;
-      background-color: var(--background-color);
-      color: var(--text-color);
-      padding: 2rem;
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      background: linear-gradient(180deg, #0a0d14 0%, #0b0d12 20%, #0b0d12 100%);
+      color: var(--text);
     }
-    
-    h1 {
-      color: var(--primary-color);
-      font-size: 2.5rem;
-      margin-bottom: 1.5rem;
-      border-bottom: 2px solid var(--border-color);
-      padding-bottom: 1rem;
+
+    /* Layout */
+    header {
+      position: sticky; top: 0; z-index: 10;
+      backdrop-filter: saturate(160%) blur(8px);
+      background: rgba(9, 12, 18, 0.7);
+      border-bottom: 1px solid var(--border);
     }
-    
-    h2 {
-      color: var(--text-color);
-      font-size: 1.5rem;
-      margin: 2rem 0 1rem;
+    header .bar {
+      max-width: 1400px; margin: 0 auto; padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
-    
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
+    header .bar .title { font-weight: 700; letter-spacing: .2px; }
+    header input[type="text"] { width: 360px }
+
+    .main {
+      max-width: 1400px; margin: 0 auto; padding: 16px; display: grid;
+      grid-template-columns: 1.05fr 1.2fr; gap: 16px; min-height: calc(100vh - 64px);
     }
-    
-    .section {
-      background: white;
-      border-radius: 10px;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset, 0 10px 30px rgba(0,0,0,.30);
     }
-    
-    .row {
-      display: flex;
-      gap: 1rem;
-      align-items: center;
-      flex-wrap: wrap;
-      margin-bottom: 1rem;
+
+    .left { display: grid; gap: 16px; align-content: start }
+    .right { position: sticky; top: 76px; height: calc(100vh - 92px) }
+
+    .card .head { padding: 12px 14px; border-bottom: 1px solid var(--border); display:flex; align-items:center; gap:8px }
+    .card .head h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
+    .card .body { padding: 14px }
+
+    /* Controls */
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px }
+    .row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr }
+    .row-3 { display: grid; gap: 10px; grid-template-columns: 1fr 1fr 1fr }
+
+    select, input[type="text"], textarea {
+      width: 100%;
+      background: #0f1320; border: 1px solid var(--border); color: var(--text);
+      padding: 10px 12px; border-radius: 10px; outline: none;
     }
-    
-    select {
-      padding: 0.5rem 1rem;
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      background-color: white;
-      font-size: 0.95rem;
-      min-width: 200px;
+    textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px }
+
+    .btn {
+      appearance: none; border: 1px solid var(--border); background: #0f1422; color: var(--text);
+      padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 600;
     }
-    
-    button {
-      padding: 0.5rem 1rem;
-      background-color: var(--primary-color);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: background-color 0.2s;
+    .btn:hover { border-color: #2b3347 }
+    .btn.primary { background: linear-gradient(180deg, #2b63f7, #2947ca); border: none }
+    .btn.success { background: linear-gradient(180deg, #2ca86d, #238c5b); border: none }
+    .btn.warn { background: linear-gradient(180deg, #e08a31, #c06c1d); border: none }
+
+    .muted { color: var(--muted) }
+    .small { font-size: 12px }
+    .tiny { font-size: 11px }
+
+    /* Output */
+    .output-panel { height: 100%; display: flex; flex-direction: column }
+    .output-toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border) }
+    .output-toolbar .spacer { flex: 1 }
+    .output pre {
+      margin: 0; padding: 14px; height: 100%; overflow: auto; white-space: pre-wrap; word-break: break-word;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0b0f1a;
     }
-    
-    button:hover {
-      background-color: var(--secondary-color);
-    }
-    
-    pre {
-      background: #f1f5f9;
-      padding: 1rem;
-      border-radius: 6px;
-      max-height: 300px;
-      overflow: auto;
-      font-size: 0.9rem;
-      margin-top: 1rem;
-      border: 1px solid var(--border-color);
-    }
-    
-    .note {
-      background-color: #fef3c7;
-      border-left: 4px solid #f59e0b;
-      padding: 1rem;
-      border-radius: 6px;
-      margin: 1rem 0;
-      font-size: 0.95rem;
-    }
-    
-    span[id$="Count"] {
-      color: #64748b;
-      font-size: 0.9rem;
-    }
-    
-    label {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-      font-weight: 500;
-    }
+
+    details.trace { border-top: 1px dashed var(--border) }
+    details.trace[open] { border-top-style: solid }
+    details.trace summary { cursor: pointer; padding: 10px 12px }
+    details.trace pre { background: #0e1422 }
+
+    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius: 999px; background:#0e1320; border:1px solid var(--border) }
+    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; background: #0e1422; border:1px solid #1b2131; padding:2px 6px; border-radius: 6px }
+
+    .hint { padding: 10px 12px; background: #0d1220; border:1px dashed var(--border); border-radius: 10px }
   </style>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="container">
-    <h1>Sports Data Explorer</h1>
-    
-    <div class="note">
-      <strong>Note:</strong> On TheSportsDB free tier, <em>teams</em> and <em>players</em> are not season-specific (current rosters).
-      Season selection mainly affects <em>events</em>.
-    </div>
-
-    <!-- Leagues -->
-    <div class="section">
-      <h2>1. League Selection</h2>
-      <div class="row">
-        <button onclick="loadLeagues()">Fetch Leagues</button>
-        <label>
-          <span>League:</span>
-          <select id="leagueSelect" onchange="onLeagueSelectChange()"></select>
-        </label>
-        <button onclick="showLeague()">Show League Details</button>
-        <span id="leagueCount"></span>
+  <header>
+    <div class="bar">
+      <div class="title">⚽ Sports Collector HM — <span class="muted">Test UI</span></div>
+      <div class="pill">
+        <span class="muted tiny">Backend URL</span>
+        <input id="baseUrl" type="text" value="http://localhost:8000" placeholder="http://localhost:8000" />
       </div>
-      <pre id="leagueInfo"></pre>
+      <button class="btn" id="btnPing">Health Check</button>
+      <span id="pingState" class="tiny muted"></span>
+      <span class="spacer"></span>
+      <span class="tiny muted">Tip: press <span class="kbd">⌘</span>/<span class="kbd">Ctrl</span> + <span class="kbd">Enter</span> to run Custom Request</span>
     </div>
+  </header>
 
-    <!-- Seasons -->
-    <div class="section">
-      <h2>2. Season Selection</h2>
-      <div class="row">
-        <button onclick="loadSeasons()">Fetch Seasons</button>
-        <label>
-          <span>Season:</span>
-          <select id="seasonSelect" onchange="onSeasonSelectChange()"></select>
-        </label>
-        <span id="seasonCount"></span>
+  <main class="main">
+    <section class="left">
+      <!-- Step 1: Leagues & Seasons -->
+      <div class="card">
+        <div class="head"><h3>1) Browse Leagues → Seasons</h3></div>
+        <div class="body">
+          <div class="row">
+            <div>
+              <label>Leagues (Soccer)</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <select id="selLeague"></select>
+                <button class="btn" id="btnLoadLeagues">Fetch</button>
+              </div>
+              <div class="tiny muted" id="leagueMeta"></div>
+            </div>
+            <div>
+              <label>Seasons for League</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <select id="selSeason"></select>
+                <button class="btn" id="btnLoadSeasons">Fetch</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 12px" class="row">
+            <div>
+              <label>Teams in League</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <select id="selTeam"></select>
+                <button class="btn" id="btnLoadTeams">Fetch</button>
+              </div>
+            </div>
+            <div>
+              <label>Players in Team</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <select id="selPlayer"></select>
+                <button class="btn" id="btnLoadPlayers">Fetch</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="hint" style="margin-top: 12px;">
+            This follows your agent intents exactly: <code>leagues.list → seasons.list → teams.list → players.list</code>.
+            Each fetch also prints the raw JSON and the <em>trace</em> on the right.
+          </div>
+        </div>
       </div>
-      <pre id="seasonInfo"></pre>
-    </div>
 
-    <!-- Teams -->
-    <div class="section">
-      <h2>3. Team Selection</h2>
-      <div class="row">
-        <button onclick="loadTeams()">Fetch Teams</button>
-        <label>
-          <span>Team:</span>
-          <select id="teamSelect" onchange="onTeamSelectChange()"></select>
-        </label>
-        <button onclick="showTeam()">Show Team Details</button>
-        <span id="teamCount"></span>
+      <!-- Step 2: Events -->
+      <div class="card">
+        <div class="head"><h3>2) Events</h3></div>
+        <div class="body">
+          <div class="row-3">
+            <div>
+              <label>By League + Season</label>
+              <button class="btn" id="btnEventsBySeason">Fetch Events</button>
+            </div>
+            <div>
+              <label>By Team (Last / Next)</label>
+              <div class="row" style="grid-template-columns: 1fr 1fr auto; gap: 8px;">
+                <select id="selEventKind">
+                  <option value="last">last</option>
+                  <option value="next">next</option>
+                </select>
+                <select id="selTeamForEvents"></select>
+                <button class="btn" id="btnEventsByTeam">Fetch</button>
+              </div>
+            </div>
+            <div>
+              <label>By Date (YYYY-MM-DD)</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <input id="inDate" type="text" placeholder="2024-05-20" />
+                <button class="btn" id="btnEventsByDate">Fetch</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 12px">
+            <label>Search Event by Name (optionally expand)</label>
+            <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+              <input id="inEventName" type="text" placeholder="Liverpool vs Swansea" />
+              <button class="btn" id="btnEventByName">Search</button>
+            </div>
+            <div style="margin-top:8px; display:flex; gap:12px; align-items:center">
+              <span class="tiny muted">Expand:</span>
+              <label class="tiny"><input type="checkbox" id="cbTimeline"> timeline</label>
+              <label class="tiny"><input type="checkbox" id="cbStats"> stats</label>
+              <label class="tiny"><input type="checkbox" id="cbLineup"> lineup</label>
+            </div>
+          </div>
+        </div>
       </div>
-      <pre id="teamInfo"></pre>
-    </div>
 
-    <!-- Players -->
-    <div class="section">
-      <h2>4. Player Selection</h2>
-      <div class="row">
-        <label>
-          <span>Player:</span>
-          <select id="playerSelect" onchange="onPlayerSelectChange()"></select>
-        </label>
-        <button onclick="showPlayer()">Show Player Details</button>
-        <span id="playerCount"></span>
+      <!-- Step 3: Direct Lookup Helpers -->
+      <div class="card">
+        <div class="head"><h3>3) Direct Lookups</h3></div>
+        <div class="body">
+          <div class="row-3">
+            <div>
+              <label>Get League (by ID or Name)</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <input id="inLeagueId" type="text" placeholder="id or name" />
+                <button class="btn" id="btnLeagueGet">Run</button>
+              </div>
+            </div>
+            <div>
+              <label>Get Team (by ID or Name)</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <input id="inTeam" type="text" placeholder="id or name" />
+                <button class="btn" id="btnTeamGet">Run</button>
+              </div>
+            </div>
+            <div>
+              <label>Get Player (by ID or Name)</label>
+              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
+                <input id="inPlayer" type="text" placeholder="id or name" />
+                <button class="btn" id="btnPlayerGet">Run</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <pre id="playerInfo"></pre>
-    </div>
 
-    <!-- Shorts Generation removed -->
-
-    <!-- Events -->
-    <div class="section">
-      <h2>5. Events / Matches</h2>
-      <div class="row">
-        <button onclick="loadEvents()">Fetch Events</button>
-        <label>
-          <span>Event:</span>
-          <select id="eventSelect" onchange="onEventSelectChange()"></select>
-        </label>
-        <button onclick="showEvent()">Show Event Details</button>
-        <span id="eventCount"></span>
+      <!-- Step 4: Custom JSON Request -->
+      <div class="card">
+        <div class="head"><h3>4) Custom Request</h3></div>
+        <div class="body">
+          <label>POST /collect body</label>
+          <textarea id="customBody">{
+  "intent": "leagues.list",
+  "args": {}
+}</textarea>
+          <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+            <button class="btn primary" id="btnRunCustom">Run (⌘/Ctrl + Enter)</button>
+            <button class="btn" id="btnPretty">Prettify JSON</button>
+            <span class="tiny muted">Safe: request must be an object with <code>intent</code> and <code>args</code>.</span>
+          </div>
+        </div>
       </div>
-      <pre id="eventInfo"></pre>
-    </div>
-  </div>
+
+    </section>
+
+    <section class="right">
+      <div class="card output-panel">
+        <div class="output-toolbar">
+          <strong>Output</strong>
+          <span class="spacer"></span>
+          <button class="btn" id="btnCopy">Copy JSON</button>
+          <button class="btn warn" id="btnClear">Clear</button>
+        </div>
+        <div class="output" style="flex:1; overflow:auto">
+          <pre id="out">Ready.</pre>
+          <details class="trace" id="traceBox">
+            <summary class="tiny muted">HTTP Trace</summary>
+            <pre id="tracePre">(none)</pre>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script>
-    // Track latest request tokens so late responses can't overwrite new ones
-    const latest = { team: 0, event: 0 };
-    function nextToken(kind) { latest[kind] = (latest[kind] || 0) + 1; return latest[kind]; }
-    function isCurrent(kind, token) { return latest[kind] === token; }
-    const API = "http://127.0.0.1:8030/collect";
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-    // ---------- helpers ----------
-    function setText(id, text) { document.getElementById(id).textContent = text; }
-    function setJSON(id, obj) { document.getElementById(id).textContent = JSON.stringify(obj || {}, null, 2); }
-    function clearJSON(...ids){ ids.forEach(id => setJSON(id, {})); }
-    function clearSelect(id, placeholder = "") {
-      const sel = document.getElementById(id);
-      if (!sel) {
-        console.warn(`Element with id '${id}' not found.`);
-        return;
-      }
-      sel.innerHTML = "";
-      if (placeholder) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = placeholder;
-        sel.appendChild(opt);
-      }
-    }
-    function fillSelect(id, rows, valueKey, labelKey) {
-      const sel = document.getElementById(id);
-      sel.innerHTML = "";
-      rows.forEach(r => {
-        const opt = document.createElement("option");
-        opt.value = r[valueKey] || "";
-        opt.textContent = r[labelKey] || r[valueKey] || "";
-        sel.appendChild(opt);
+    const baseUrlEl = $('#baseUrl');
+    const outPre = $('#out');
+    const traceBox = $('#traceBox');
+    const tracePre = $('#tracePre');
+    const pingState = $('#pingState');
+
+    const selLeague = $('#selLeague');
+    const selSeason = $('#selSeason');
+    const selTeam = $('#selTeam');
+    const selPlayer = $('#selPlayer');
+    const selTeamForEvents = $('#selTeamForEvents');
+
+    const btnLoadLeagues = $('#btnLoadLeagues');
+    const btnLoadSeasons = $('#btnLoadSeasons');
+    const btnLoadTeams = $('#btnLoadTeams');
+    const btnLoadPlayers = $('#btnLoadPlayers');
+
+    async function apiCollect(body) {
+      const res = await fetch(new URL('/collect', baseUrlEl.value).toString(), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
+      const json = await res.json();
+      return json;
     }
 
-    async function callAgent(intent, args = {}) {
+    function render(json) {
+      outPre.textContent = JSON.stringify(json, null, 2);
+      const trace = json?.meta?.trace || [];
+      if (trace.length) {
+        tracePre.textContent = JSON.stringify(trace, null, 2);
+        traceBox.open = true;
+      } else {
+        tracePre.textContent = '(none)';
+        traceBox.open = false;
+      }
+      // Scroll output to top so newest response is immediately visible
+      outPre.parentElement.scrollTop = 0;
+    }
+
+    function setOptions(select, items, { valueKey, labelKey }) {
+      select.innerHTML = '';
+      for (const it of items) {
+        const opt = document.createElement('option');
+        opt.value = (it[valueKey] ?? '').toString();
+        opt.textContent = it[labelKey] ?? it[valueKey] ?? '';
+        // stash full object for later (for leagueName, etc.)
+        opt.dataset.payload = JSON.stringify(it);
+        select.appendChild(opt);
+      }
+    }
+
+    function getSelectedPayload(select) {
+      const opt = select.options[select.selectedIndex];
+      if (!opt) return {};
+      try { return JSON.parse(opt.dataset.payload || '{}'); } catch { return {}; }
+    }
+
+    // Health check
+    $('#btnPing').addEventListener('click', async () => {
+      pingState.textContent = '…';
       try {
-        console.log("%c→ calling", "color:#999", intent, args);
-        const res = await fetch(API, {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({intent, args}),
-        });
-
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-
+        const res = await fetch(new URL('/health', baseUrlEl.value).toString());
         const json = await res.json();
-        console.log("%c← response", "color:#0a0", intent, json);
-
-        if (!json.ok) {
-          alert(`Agent error [${intent}]: ${json.error?.message || "Unknown error"}`);
-        }
-
-        return json;
-      } catch (err) {
-        console.error("Fetch failed for", intent, err);
-        alert(`Network/Fetch error for ${intent}: ${err.message || err}`);
-        return {ok: false, error: {message: String(err)}};
+        pingState.textContent = json.ok ? 'Healthy ✅' : 'Unhealthy ❌';
+      } catch (e) {
+        pingState.textContent = 'Error connecting ❌';
       }
+      setTimeout(() => pingState.textContent = '', 4000);
+    });
+
+    // Step 1: Leagues
+    btnLoadLeagues.addEventListener('click', async () => {
+      const resp = await apiCollect({ intent: 'leagues.list', args: {} });
+      render(resp);
+      const leagues = resp?.data?.leagues || [];
+      // sort by country then name for convenience
+      leagues.sort((a,b) => ((a.strCountry||'').localeCompare(b.strCountry||'')) || (a.strLeague||'').localeCompare(b.strLeague||''));
+      setOptions(selLeague, leagues, { valueKey: 'idLeague', labelKey: 'strLeague' });
+      $('#leagueMeta').textContent = leagues.length ? `${leagues.length} leagues` : '0 leagues';
+      // Clear downstream selects
+      setOptions(selSeason, [], { valueKey: 'strSeason', labelKey: 'strSeason' });
+      setOptions(selTeam, [], { valueKey: 'idTeam', labelKey: 'strTeam' });
+      setOptions(selPlayer, [], { valueKey: 'idPlayer', labelKey: 'strPlayer' });
+      setOptions(selTeamForEvents, [], { valueKey: 'idTeam', labelKey: 'strTeam' });
+    });
+
+    // Step 1b: Seasons for selected league
+    btnLoadSeasons.addEventListener('click', async () => {
+      const leagueId = selLeague.value;
+      if (!leagueId) return alert('Select a league first.');
+      const resp = await apiCollect({ intent: 'seasons.list', args: { leagueId } });
+      render(resp);
+      const seasons = (resp?.data?.seasons || []).map(s => ({ strSeason: s.strSeason }));
+      // Sort desc (latest first)
+      seasons.sort((a,b) => (b.strSeason||'').localeCompare(a.strSeason||''));
+      setOptions(selSeason, seasons, { valueKey: 'strSeason', labelKey: 'strSeason' });
+    });
+
+    // Step 1c: Teams in selected league
+    btnLoadTeams.addEventListener('click', async () => {
+      const leaguePayload = getSelectedPayload(selLeague);
+      const leagueName = leaguePayload?.strLeague;
+      if (!leagueName) return alert('Fetch and select a league first.');
+      const resp = await apiCollect({ intent: 'teams.list', args: { leagueName } });
+      render(resp);
+      const teams = resp?.data?.teams || [];
+      teams.sort((a,b) => (a.strTeam||'').localeCompare(b.strTeam||''));
+      setOptions(selTeam, teams, { valueKey: 'idTeam', labelKey: 'strTeam' });
+      setOptions(selTeamForEvents, teams, { valueKey: 'idTeam', labelKey: 'strTeam' });
+      // reset players list
+      setOptions(selPlayer, [], { valueKey: 'idPlayer', labelKey: 'strPlayer' });
+    });
+
+    // Step 1d: Players for selected team
+    btnLoadPlayers.addEventListener('click', async () => {
+      const teamId = selTeam.value;
+      if (!teamId) return alert('Select a team first.');
+      const resp = await apiCollect({ intent: 'players.list', args: { teamId } });
+      render(resp);
+      const players = resp?.data?.players || [];
+      players.sort((a,b) => (a.strPlayer||'').localeCompare(b.strPlayer||''));
+      setOptions(selPlayer, players, { valueKey: 'idPlayer', labelKey: 'strPlayer' });
+    });
+
+    // Step 2a: Events by league + season
+    $('#btnEventsBySeason').addEventListener('click', async () => {
+      const leagueId = selLeague.value;
+      const season = selSeason.value;
+      if (!leagueId || !season) return alert('Select league and season first.');
+      const resp = await apiCollect({ intent: 'events.list', args: { leagueId, season } });
+      render(resp);
+    });
+
+    // Step 2b: Events by team last/next
+    $('#btnEventsByTeam').addEventListener('click', async () => {
+      const teamId = selTeamForEvents.value;
+      const kind = $('#selEventKind').value;
+      if (!teamId) return alert('Select a team first.');
+      const resp = await apiCollect({ intent: 'events.list', args: { teamId, kind } });
+      render(resp);
+    });
+
+    // Step 2c: Events by date
+    $('#btnEventsByDate').addEventListener('click', async () => {
+      const d = $('#inDate').value.trim();
+      if (!d) return alert('Provide a date (YYYY-MM-DD).');
+      const resp = await apiCollect({ intent: 'events.list', args: { date: d } });
+      render(resp);
+    });
+
+    // Step 2d: Event search by name (with optional expansions)
+    $('#btnEventByName').addEventListener('click', async () => {
+      const eName = $('#inEventName').value.trim();
+      if (!eName) return alert('Provide an event name.');
+      const expand = [];
+      if ($('#cbTimeline').checked) expand.push('timeline');
+      if ($('#cbStats').checked) expand.push('stats');
+      if ($('#cbLineup').checked) expand.push('lineup');
+      const resp = await apiCollect({ intent: 'event.get', args: { eventName: eName, expand } });
+      render(resp);
+    });
+
+    // Step 3: Direct lookups
+    $('#btnLeagueGet').addEventListener('click', async () => {
+      const v = $('#inLeagueId').value.trim();
+      if (!v) return alert('Provide league id or name.');
+      // try id first, otherwise name
+      const isId = /^\d+$/.test(v);
+      const args = isId ? { leagueId: v } : { leagueName: v };
+      const resp = await apiCollect({ intent: 'league.get', args });
+      render(resp);
+    });
+
+    $('#btnTeamGet').addEventListener('click', async () => {
+      const v = $('#inTeam').value.trim();
+      if (!v) return alert('Provide team id or name.');
+      const isId = /^\d+$/.test(v);
+      const args = isId ? { teamId: v } : { teamName: v };
+      const resp = await apiCollect({ intent: 'team.get', args });
+      render(resp);
+    });
+
+    $('#btnPlayerGet').addEventListener('click', async () => {
+      const v = $('#inPlayer').value.trim();
+      if (!v) return alert('Provide player id or name.');
+      const isId = /^\d+$/.test(v);
+      const args = isId ? { playerId: v } : { playerName: v };
+      const resp = await apiCollect({ intent: 'player.get', args });
+      render(resp);
+    });
+
+    // Step 4: Custom JSON
+    $('#btnPretty').addEventListener('click', () => {
+      try { const o = JSON.parse($('#customBody').value); $('#customBody').value = JSON.stringify(o, null, 2); } catch {}
+    });
+    function runCustom() {
+      let bodyText = $('#customBody').value;
+      try { var payload = JSON.parse(bodyText); } catch (e) {
+        alert('Invalid JSON'); return; }
+      apiCollect(payload).then(render).catch(err => { outPre.textContent = String(err); });
     }
+    $('#btnRunCustom').addEventListener('click', runCustom);
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runCustom(); }
+    });
 
-    // ---------- select change effects (no fetch) ----------
-    function onLeagueSelectChange() {
-      // When league changes, just clear dependent UI (no API calls)
-      clearSelect("seasonSelect", "Select season"); setText("seasonCount", "");
-      clearSelect("teamSelect", "Select team"); setText("teamCount", "");
-      clearSelect("playerSelect", "Select player"); setText("playerCount", "");
-      clearSelect("eventSelect", "Select event"); setText("eventCount", "");
-      clearJSON("seasonInfo", "teamInfo", "playerInfo", "eventInfo");
-    }
-    function onSeasonSelectChange() {
-      // Season affects events only; we only clear events (no API calls)
-      clearSelect("eventSelect", "Select event"); setText("eventCount", "");
-      clearJSON("eventInfo");
-    }
-    function onTeamSelectChange() {
-      // Team affects players; just clear players pane (no API calls)
-  clearSelect("playerSelect", "Select player"); setText("playerCount", "");
-  clearJSON("playerInfo");
-  // Automatically load players for the selected team
-  // (If no team is selected this will be a no-op)
-  loadPlayers();
-    }
-    function onPlayerSelectChange() {
-      // No fetch on change; user clicks "Show Player Details" to fetch details
-    }
-    function onEventSelectChange() {
-      // No fetch on change; user clicks "Show Event Details" to fetch details
-    }
+    // Output actions
+    $('#btnCopy').addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(outPre.textContent); } catch {}
+    });
+    $('#btnClear').addEventListener('click', () => { outPre.textContent = 'Ready.'; tracePre.textContent='(none)'; traceBox.open=false; });
 
-    // ---------- leagues ----------
-    async function loadLeagues() {
-      const data = await callAgent("leagues.list");
-      if (!data.ok) return;
-      const leagues = (data.data && data.data.leagues) || [];
-      fillSelect("leagueSelect", leagues, "idLeague", "strLeague");
-      setText("leagueCount", `(${leagues.length})`);
-      setJSON("leagueInfo", leagues[0] || {});
-      onLeagueSelectChange(); // clear downstream; no auto-fetch
-    }
-
-    async function showLeague() {
-      const lid = document.getElementById("leagueSelect").value;
-      if (!lid) { alert("Select a league first"); return; }
-      const data = await callAgent("league.get", {leagueId: lid});
-      if (!data.ok) return;
-      setJSON("leagueInfo", data.data?.league || {});
-    }
-
-    // ---------- seasons ----------
-    async function loadSeasons() {
-      const lid = document.getElementById("leagueSelect").value;
-      if (!lid) { alert("Select a league first"); return; }
-      const data = await callAgent("seasons.list", {leagueId: lid});
-      if (!data.ok) return;
-      const seasons = (data.data && data.data.seasons) || [];
-      fillSelect("seasonSelect", seasons, "strSeason", "strSeason");
-      setText("seasonCount", `(${seasons.length})`);
-      setJSON("seasonInfo", seasons[0] || {});
-      // No auto events fetch
-    }
-
-    // ---------- teams ----------
-    async function loadTeams() {
-      const lid = document.getElementById("leagueSelect").value;
-      const leagueName = document.getElementById("leagueSelect").selectedOptions[0]?.text;
-      if (!lid) {
-        console.warn("League ID is missing.");
-        return;
-      }
-
-      console.log("Fetching teams for league:", { leagueId: lid, leagueName });
-
-      const data = await callAgent("teams.list", { leagueId: lid, leagueName });
-      console.log("Teams response:", data);
-
-      if (!data.ok) return;
-
-      const teams = (data.data && data.data.teams) || [];
-      console.log("Processed teams:", teams);
-
-      if ((!teams || teams.length === 0) && lid) {
-        // Fallback: try league matches endpoint and extract teams
-        try {
-          console.log("teams.list empty — falling back to /games?league_id={leagueId}");
-          const today = new Date().toISOString().split('T')[0];
-          const resp = await fetch(`http://127.0.0.1:8030/games?date=${today}&league_id=${lid}`);
-          const json = await resp.json();
-          const games = json.games || [];
-          const seen = new Map();
-          games.forEach(g => {
-            const h = g.home_team || g.home_team_name || g.home_team;
-            const a = g.away_team || g.away_team_name || g.away_team;
-            const hid = g.home_team_id || g.home_team || `h_${h}`;
-            const aid = g.away_team_id || g.away_team || `a_${a}`;
-            if (h && !seen.has(h)) seen.set(h, { id: hid, name: h });
-            if (a && !seen.has(a)) seen.set(a, { id: aid, name: a });
-          });
-          const fallbackTeams = Array.from(seen.values()).map((t, i) => ({ idTeam: t.name, strTeam: t.name }));
-          console.log("Fallback teams from matches:", fallbackTeams);
-          if (fallbackTeams.length) {
-            fillSelect("teamSelect", fallbackTeams, "idTeam", "strTeam");
-            setText("teamCount", `(${fallbackTeams.length})`);
-            setJSON("teamInfo", {});
-            return;
-          }
-        } catch (err) {
-          console.warn("Fallback matches fetch failed", err);
-        }
-      }
-
-      fillSelect("teamSelect", teams, "idTeam", "strTeam");
-      setText("teamCount", `(${teams.length})`);
-      setJSON("teamInfo", {});
-    }
-
-    async function showTeam() {
-      const tid = document.getElementById("teamSelect").value;
-      if (!tid) { alert("Select a team first"); return; }
-    
-      const token = nextToken("team");
-      // If the selected value looks like a numeric id, pass as teamId; otherwise pass as teamName
-      const numeric = /^[0-9]+$/.test(tid);
-      const data = numeric ? await callAgent("team.get", { teamId: tid }) : await callAgent("team.get", { teamName: tid });
-    
-      // Ignore late responses
-      if (!isCurrent("team", token)) {
-        console.log("Ignoring stale team.get response");
-        return;
-      }
-    
-      // Also verify we’re still looking at the same selected item
-      if (document.getElementById("teamSelect").value !== tid) {
-        console.log("Selection changed; skipping update");
-        return;
-      }
-    
-      if (!data.ok) return;
-      setJSON("teamInfo", data.data?.team || {});
-    }
-
-    // ---------- players ----------
-    async function loadPlayers() {
-      const tid = document.getElementById("teamSelect").value;
-      if (!tid) { 
-        // nothing selected — ensure players select is empty
-        clearSelect("playerSelect", "Select player"); setText("playerCount", ""); setJSON("playerInfo", {});
-        return;
-      }
-  console.log("loadPlayers: selected team value=", tid);
-      // Pass teamId if numeric, otherwise pass teamName so backend can resolve it
-      const numeric = /^[0-9]+$/.test(tid);
-      const data = numeric ? await callAgent("players.list", { teamId: tid }) : await callAgent("players.list", { teamName: tid });
-  console.log("players.list response:", data);
-      if (!data.ok) return;
-      const players = (data.data && data.data.players) || [];
-      fillSelect("playerSelect", players, "idPlayer", "strPlayer");
-      setText("playerCount", `(${players.length})`);
-      setJSON("playerInfo", players[0] || {});
-    }
-
-    async function showPlayer() {
-      const pid = document.getElementById("playerSelect").value;
-      if (!pid) { alert("Select a player first"); return; }
-  console.log("showPlayer: selected player id=", pid);
-      const data = await callAgent("player.get", {playerId: pid});
-      if (!data.ok) return;
-      setJSON("playerInfo", data.data?.player || {});
-    }
-
-    // ---------- events ----------
-    async function loadEvents() {
-      const lid = document.getElementById("leagueSelect").value;
-      const season = document.getElementById("seasonSelect").value;
-      if (!lid || !season) return;
-    
-      const data = await callAgent("events.list", { leagueId: lid, season });
-      if (!data.ok) return;
-    
-      const events = (data.data && data.data.events) || [];
-      fillSelect("eventSelect", events, "idEvent", "strEvent");
-      setText("eventCount", `(${events.length})`);
-      // Show nothing until the user explicitly clicks "Show Event Details"
-      setJSON("eventInfo", {});
-    }
-
-    async function showEvent() {
-      const eid = document.getElementById("eventSelect").value;
-      if (!eid) { alert("Select an event first"); return; }
-
-      const token = nextToken("event");
-      const data = await callAgent("event.get", { eventId: eid, expand: ["timeline","stats","lineup"] });
-
-      // Ignore late responses
-      if (!isCurrent("event", token)) {
-        console.log("Ignoring stale event.get response");
-        return;
-      }
-
-      // Verify selection didn’t change while fetching
-      if (document.getElementById("eventSelect").value !== eid) {
-        console.log("Selection changed; skipping update");
-        return;
-      }
-
-      if (!data.ok) return;
-      setJSON("eventInfo", data.data || {});
-    }
+    // Auto-load leagues on start for convenience
+    window.addEventListener('load', () => btnLoadLeagues.click());
   </script>
 </body>
 </html>

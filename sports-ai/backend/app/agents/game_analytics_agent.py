@@ -1,356 +1,306 @@
 """
-Game Analytics Agent (API-Football)
-Fetches live analytics data for a selected game using API-Football.
-Features:
-- Lists available games for user selection
-- Fetches game info, statistics, injury report, and highlight moments
-Comments are added for each step.
+AllSports RAW agent — zero normalization, zero filtering.
+
+This module exposes a tiny pass-through client and an agent that mirrors a broad
+set of AllSportsAPI Football endpoints. It ALWAYS returns the provider's raw
+JSON object under "data" (including keys like "success", "result", "error", etc.).
+No schema shaping, no field picking, no client-side filtering.
+
+Supported intents (pass-through):
+  - countries.list           -> met=Countries
+  - leagues.list             -> met=Leagues (optional: countryId)
+  - fixtures.list            -> met=Fixtures (supports provider params as-is)
+  - events.list              -> alias to fixtures.list
+  - events.live              -> met=Livescore
+  - livescore.list           -> alias to events.live
+  - event.get                -> met=Fixtures (matchId=eventId)
+  - teams.list               -> met=Teams
+  - team.get                 -> met=Teams (same as list; no picking)
+  - players.list             -> met=Players
+  - player.get               -> met=Players (same as list; no picking)
+  - league.table             -> met=Standings
+  - video.highlights         -> met=Videos
+  - odds.list                -> met=Odds
+  - odds.live                -> met=OddsLive
+  - probabilities.list       -> met=Probabilities
+  - comments.list            -> met=Comments
+  - seasons.list             -> met=Leagues (raw; caller may filter by leagueId/Name if desired)
+  - Name-based args supported: countryName -> countryId, leagueName -> leagueId, teamName (native), playerName (native).
+
+Design notes:
+  • Absolutely no normalization. We just add `APIkey` and forward `args` as query params.
+  • We return *everything the provider returns* under response["data"].
+  • Minimal tracing is included for debugging (last request meta).
 """
 
-import requests
+from __future__ import annotations
+
 import os
-import json
-from datetime import datetime
+import time
+from typing import Any, Dict, Optional
 
-API_KEY = "579c329ce5eb86ebad5e69f0eaceae06"
-BASE_URL = "https://v3.football.api-sports.io/"
-CACHE_DIR = os.path.join(os.path.dirname(__file__), '../cache')
-if not os.path.exists(CACHE_DIR):  # create lazily if missing
+import requests
+
+
+# -----------------------
+# Config
+# -----------------------
+
+ALLSPORTS_API_KEY = os.environ.get("ALLSPORTS_API_KEY")
+ALLSPORTS_BASE_URL = (os.environ.get("ALLSPORTS_BASE_URL") or "https://apiv2.allsportsapi.com/football/").rstrip("/")
+
+
+# -----------------------
+# Errors
+# -----------------------
+
+class CollectorError(Exception):
+    def __init__(self, code: str, message: str, details: Dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+
+# -----------------------
+# Raw HTTP helper
+# -----------------------
+
+def _raw_get(params: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
+    """Perform a GET to AllSports with the given params (plus APIkey + cache-buster).
+    Returns: a dict with keys {ok, status, data, text_head} where `data` is the parsed JSON or None.
+    """
+    q = dict(params or {})
+    q["APIkey"] = ALLSPORTS_API_KEY or ""  # allow empty for clearer errors
+    q["_ts"] = str(time.time())
     try:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-    except Exception:
-        # If creation fails we will operate without cache silently.
-        CACHE_DIR = None
-
-class GameAnalyticsAgent:
-    def __init__(self, game_id=None):
-        self.game_id = game_id
-        self.headers = {"x-apisports-key": API_KEY}
-        # Ensure cache directory exists
+        r = requests.get(ALLSPORTS_BASE_URL, params=q, timeout=timeout)
+        head = (r.text or "")[:200]
         try:
-            os.makedirs(CACHE_DIR, exist_ok=True)
+            data = r.json()
         except Exception:
-            # Fallback: disable caching if we cannot create directory
-            pass
+            data = None
+        return {"ok": r.status_code == 200, "status": r.status_code, "data": data, "text_head": head, "sent": q}
+    except Exception as e:
+        return {"ok": False, "status": 0, "data": None, "text_head": f"exc: {e}", "sent": q}
 
-    def _cache_path(self, key):
-        return os.path.join(CACHE_DIR, key)
 
-    def list_games(self, date=None, league_id=None):
-        """Return merged list of games for a date from BOTH API-Football & TheSportsDB.
-        Dedupe by (home_team, away_team, date-only) while keeping richer API-Football
-        data when overlap exists. Always attempts both sources (no fallback) so the
-        user sees the most complete picture.
-        """
-        date = date or datetime.utcnow().strftime('%Y-%m-%d')
-        cache_file = self._cache_path(f"fixtures_{date}.json") if CACHE_DIR else None
+# -----------------------
+# Agent (pass-through)
+# -----------------------
 
-        today = datetime.utcnow().strftime('%Y-%m-%d')
-        use_cache = date != today and cache_file and os.path.exists(cache_file)
-        if use_cache:
-            try:
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                pass
+class AllSportsRawAgent:
+    """JSON-only, pass-through agent for AllSportsAPI football endpoints."""
 
-        merged: dict[str, dict] = {}
-
-        def key_fn(home: str | None, away: str | None, iso_ts: str | None):
-            if not home or not away:
-                return None
-            # Extract date portion if iso_ts contains time
-            d = (iso_ts or date)[:10]
-            return f"{home.strip().lower()}__{away.strip().lower()}__{d}"
-
-        # 1. API-Football fixtures (primary richness)
+    def handle(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        trace: list[Dict[str, Any]] = []
         try:
-            params = {"date": date}
-            if league_id:
-                params["league"] = league_id
-            resp = requests.get(BASE_URL + "fixtures", headers=self.headers, params=params, timeout=10)
-            if resp.status_code == 200:
-                for fix in resp.json().get("response", []) or []:
-                    f = fix.get("fixture", {})
-                    l = fix.get("league", {})
-                    t = fix.get("teams", {})
-                    g = fix.get("goals", {})
-                    s = f.get("status", {})
-                    record = {
-                        "providers": ["api_football"],
-                        "primary_provider": "api_football",
-                        "game_id": f.get("id"),
-                        "date": f.get("date"),
-                        "timestamp": f.get("timestamp"),
-                        "timezone": f.get("timezone"),
-                        "referee": f.get("referee"),
-                        "venue": (f.get("venue") or {}).get("name"),
-                        "venue_city": (f.get("venue") or {}).get("city"),
-                        "status_short": s.get("short"),
-                        "status_long": s.get("long"),
-                        "elapsed": s.get("elapsed"),
-                        "league_id": l.get("id"),
-                        "league": l.get("name"),
-                        "league_country": l.get("country"),
-                        "league_logo": l.get("logo"),
-                        "league_flag": l.get("flag"),
-                        "season": l.get("season"),
-                        "round": l.get("round"),
-                        "home_team_id": (t.get("home") or {}).get("id"),
-                        "home_team": (t.get("home") or {}).get("name"),
-                        "home_logo": (t.get("home") or {}).get("logo"),
-                        "home_winner": (t.get("home") or {}).get("winner"),
-                        "away_team_id": (t.get("away") or {}).get("id"),
-                        "away_team": (t.get("away") or {}).get("name"),
-                        "away_logo": (t.get("away") or {}).get("logo"),
-                        "away_winner": (t.get("away") or {}).get("winner"),
-                        "home_score": g.get("home"),
-                        "away_score": g.get("away"),
-                        "score": fix.get("score", {}),
-                        # placeholders for TheSportsDB extras
-                        "spectators": None,
-                        "tsdb_event_id": None,
-                    }
-                    k = key_fn(record.get("home_team"), record.get("away_team"), record.get("date"))
-                    if k:
-                        merged[k] = record
-        except Exception as e:
-            print(f"API-Football error: {e}")
+            if not isinstance(request, dict):
+                raise CollectorError("BAD_REQUEST", "Request must be a JSON object")
+            intent = request.get("intent")
+            raw_args = request.get("args") or {}
+            # Best-effort: augment args with IDs when only names were provided
+            args = self._ensure_ids_from_names(raw_args, trace)
+            if not intent or not isinstance(intent, str):
+                raise CollectorError("BAD_REQUEST", "Missing 'intent' (string)")
+            if not isinstance(args, dict):
+                raise CollectorError("BAD_REQUEST", "'args' must be an object")
+            if not ALLSPORTS_API_KEY:
+                raise CollectorError("NO_API_KEY", "ALLSPORTS_API_KEY is not configured")
 
-        # 2. TheSportsDB events for the same date
-        try:
-            from .collector import CollectorAgentV2
-            collector = CollectorAgentV2()
-            result = collector.handle({
-                "intent": "events.list",
-                "args": {"date": date}
-            })
-            events = (result.get("data") or {}).get("events") or []
-            for ev in events:
-                home = ev.get("strHomeTeam")
-                away = ev.get("strAwayTeam")
-                # Compose ISO-ish date
-                iso = None
-                d_part = ev.get("dateEvent")
-                t_part = ev.get("strTime") or "00:00:00"
-                if d_part:
-                    iso = f"{d_part}T{t_part}"
-                k = key_fn(home, away, iso)
-                base_ev = {
-                    "providers": ["thesportsdb"],
-                    "primary_provider": "thesportsdb",
-                    "game_id": ev.get("idEvent"),
-                    "tsdb_event_id": ev.get("idEvent"),
-                    "date": iso,
-                    "timestamp": None,
-                    "timezone": None,
-                    "referee": ev.get("strReferee"),
-                    "venue": ev.get("strVenue"),
-                    "venue_city": None,
-                    "status_short": ev.get("strStatus"),
-                    "status_long": ev.get("strProgress") or ev.get("strStatus"),
-                    "elapsed": ev.get("intTime"),
-                    "league_id": ev.get("idLeague"),
-                    "league": ev.get("strLeague"),
-                    "league_country": ev.get("strCountry"),
-                    "league_logo": None,
-                    "league_flag": None,
-                    "season": ev.get("strSeason"),
-                    "round": ev.get("intRound") or ev.get("strRound"),
-                    "home_team_id": ev.get("idHomeTeam"),
-                    "home_team": home,
-                    "home_logo": None,
-                    "home_winner": None,
-                    "away_team_id": ev.get("idAwayTeam"),
-                    "away_team": away,
-                    "away_logo": None,
-                    "away_winner": None,
-                    "home_score": ev.get("intHomeScore"),
-                    "away_score": ev.get("intAwayScore"),
-                    "score": {
-                        "halftime": ev.get("strHTScore"),
-                        "fulltime": ev.get("strFTScore"),
-                        "extratime": ev.get("strETScore"),
-                        "penalty": ev.get("strPSScore"),
-                    },
-                    "spectators": ev.get("intAttendance"),
-                }
-                if k and k in merged:
-                    # merge augmenting existing API-Football record
-                    existing = merged[k]
-                    existing["providers"].append("thesportsdb")
-                    existing.setdefault("spectators", base_ev.get("spectators"))
-                    # fill missing season/round if absent
-                    if not existing.get("season") and base_ev.get("season"):
-                        existing["season"] = base_ev["season"]
-                    if not existing.get("round") and base_ev.get("round"):
-                        existing["round"] = base_ev["round"]
-                    if not existing.get("referee") and base_ev.get("referee"):
-                        existing["referee"] = base_ev["referee"]
-                    existing["tsdb_event_id"] = base_ev.get("tsdb_event_id")
-                else:
-                    if k:
-                        merged[k] = base_ev
-        except Exception as e:
-            print(f"TheSportsDB merge error: {e}")
+            # Route → provider method + passthrough args
+            if intent == "countries.list":
+                meta, data = self._call("Countries", args, trace)
 
-        games = list(merged.values())
+            elif intent == "leagues.list":
+                # Optional passthrough: countryId
+                meta, data = self._call("Leagues", args, trace)
 
-        # 3. Demo fallback if absolutely nothing
-        if not games:
-            from datetime import timedelta
-            now = datetime.utcnow()
-            games = [
-                {
-                    "providers": ["demo"],
-                    "primary_provider": "demo",
-                    "game_id": "demo_1",
-                    "date": (now + timedelta(hours=2)).isoformat(),
-                    "timestamp": int((now + timedelta(hours=2)).timestamp()),
-                    "home_team": "Arsenal",
-                    "away_team": "Chelsea",
-                    "league": "Premier League",
-                    "venue": "Emirates Stadium",
-                    "status_short": "NS",
-                    "status_long": "Not Started",
-                    "home_score": None,
-                    "away_score": None
-                }
-            ]
+            elif intent in ("fixtures.list", "events.list"):
+                # Provider params we simply pass through if present:
+                # from, to, date, timezone, countryId, leagueId, matchId, teamId, leagueGroup, withPlayerStats
+                meta, data = self._call("Fixtures", args, trace)
 
-        # Sort: live first, then upcoming by time, then finished
-        def sort_key(g):
-            status = (g.get("status_short") or g.get("status_long") or "").upper()
-            live_flag = 0
-            if status in {"1H","2H","HT"} or status.endswith("'"):
-                live_flag = -1
-            elif status in {"NS","TBD"}:
-                live_flag = 0
+            elif intent in ("events.live", "livescore.list"):
+                # Optional: timezone, countryId, leagueId, matchId, withPlayerStats
+                meta, data = self._call("Livescore", args, trace)
+
+            elif intent == "event.get":
+                # Expect eventId -> matchId
+                a = dict(args)
+                if a.get("eventId") and not a.get("matchId"):
+                    a["matchId"] = a["eventId"]
+                meta, data = self._call("Fixtures", a, trace)
+
+            elif intent == "teams.list":
+                # Accept leagueId, teamId, teamName
+                meta, data = self._call("Teams", args, trace)
+
+            elif intent == "team.get":
+                # Same as list, no picking — caller decides
+                meta, data = self._call("Teams", args, trace)
+
+            elif intent == "players.list":
+                # Accept playerId, playerName, leagueId, teamId
+                meta, data = self._call("Players", args, trace)
+
+            elif intent == "player.get":
+                # Same as list
+                meta, data = self._call("Players", args, trace)
+
+            elif intent == "league.table":
+                # Accept leagueId (+ optional league_season/season)
+                # If 'season' was provided, map to provider's 'league_season' transparently.
+                a = dict(args)
+                if a.get("season") and not a.get("league_season"):
+                    a["league_season"] = a["season"]
+                meta, data = self._call("Standings", a, trace)
+
+            elif intent == "video.highlights":
+                # Requires eventId
+                a = dict(args)
+                if a.get("eventId"):
+                    a.setdefault("matchId", a["eventId"])  # provider sometimes accepts either
+                meta, data = self._call("Videos", a, trace)
+
+            elif intent == "odds.list":
+                # from, to, countryId, leagueId, matchId
+                meta, data = self._call("Odds", args, trace)
+
+            elif intent == "odds.live":
+                meta, data = self._call("OddsLive", args, trace)
+
+            elif intent == "probabilities.list":
+                meta, data = self._call("Probabilities", args, trace)
+
+            elif intent == "comments.list":
+                # from, to, live, countryId, leagueId, matchId, timezone
+                meta, data = self._call("Comments", args, trace)
+
+            elif intent == "seasons.list":
+                # No dedicated endpoint; return raw Leagues so caller can inspect seasons.
+                meta, data = self._call("Leagues", args, trace)
+
             else:
-                live_flag = 1
-            ts = g.get("timestamp") or 0
-            return (live_flag, ts)
-        games.sort(key=sort_key)
+                raise CollectorError("UNKNOWN_INTENT", f"Unsupported intent '{intent}'")
 
-        # Cache (not for today)
-        if cache_file and date != today:
-            try:
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(games, f)
-            except Exception:
-                pass
-        return games
-
-    def get_game_info(self):
-        """
-        Fetch game information from API-Football. Caches per fixture.
-        """
-        cache_file = self._cache_path(f"info_{self.game_id}.json")
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception:
-                pass
-        resp = requests.get(BASE_URL + f"fixtures?id={self.game_id}", headers=self.headers)
-        info = {}
-        if resp.status_code == 200:
-            fix = (resp.json().get("response") or [{}])[0]
-            info = {
-                "league": fix.get("league", {}).get("name"),
-                "venue": fix.get("fixture", {}).get("venue", {}).get("name"),
-                "forecast": "N/A"
+            return {
+                "ok": True,
+                "intent": intent,
+                "args_resolved": args,
+                "data": data,                 # RAW provider body
+                "meta": {"trace": trace, "base_url": ALLSPORTS_BASE_URL},
             }
-            try:
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(info, f)
-            except Exception:
-                pass
-        return info
 
-    def get_season_statistics(self):
-        """
-        Fetch statistics for both teams from API-Football. Caches per fixture.
-        """
-        cache_file = self._cache_path(f"stats_{self.game_id}.json")
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        resp = requests.get(BASE_URL + f"fixtures/statistics?fixture={self.game_id}", headers=self.headers)
-        stats = {}
-        if resp.status_code == 200:
-            for team_stats in resp.json().get("response", []) or []:
-                team = team_stats["team"]["name"]
-                stats[team] = team_stats["statistics"]
-            try:
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(stats, f)
-            except Exception:
-                pass
-        return stats
+        except CollectorError as e:
+            return {
+                "ok": False,
+                "error": {"code": e.code, "message": e.message, "details": e.details},
+                "meta": {"trace": trace, "base_url": ALLSPORTS_BASE_URL},
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": {"code": "INTERNAL", "message": str(e)},
+                "meta": {"trace": trace, "base_url": ALLSPORTS_BASE_URL},
+            }
 
-    def get_injury_report(self):
-        """
-        Fetch injury report for both teams from API-Football. Caches per fixture.
-        """
-        cache_file = self._cache_path(f"injury_{self.game_id}.json")
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        resp = requests.get(BASE_URL + f"injuries?fixture={self.game_id}", headers=self.headers)
-        injuries = {}
-        if resp.status_code == 200:
-            for injury in resp.json().get("response", []) or []:
-                team = injury["team"]["name"]
-                if team not in injuries:
-                    injuries[team] = []
-                injuries[team].append({
-                    "name": injury["player"]["name"],
-                    "position": injury["player"]["pos"],
-                    "status": "Out",
-                    "reason": injury["reason"]
-                })
-            try:
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(injuries, f)
-            except Exception:
-                pass
-        return injuries
+    # ------------- internals -------------
 
-    def get_highlight_moments(self):
-        """
-        Fetch highlight moments (goals, assists, cards) from API-Football. Caches per fixture.
-        """
-        cache_file = self._cache_path(f"highlights_{self.game_id}.json")
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        resp = requests.get(BASE_URL + f"fixtures/events?fixture={self.game_id}", headers=self.headers)
-        highlights = {"goals": [], "assists": [], "cards": []}
-        if resp.status_code == 200:
-            for event in resp.json().get("response", []) or []:
-                if event["type"] == "Goal":
-                    highlights["goals"].append(event)
-                elif event["type"] == "Card":
-                    highlights["cards"].append(event)
-                elif event["type"] == "Assist":
-                    highlights["assists"].append(event)
-            try:
-                with open(cache_file, 'w', encoding='utf-8') as f:
-                    json.dump(highlights, f)
-            except Exception:
-                pass
-        return highlights
+    def _call(self, met: str, args: Dict[str, Any], trace: list[Dict[str, Any]]):
+        params = dict(args or {})
+        params["met"] = met
+        res = _raw_get(params)
+        trace.append({
+            "step": "allsports_call",
+            "met": met,
+            "status": res.get("status"),
+            "sent": {k: v for k, v in (res.get("sent") or {}).items() if k != "APIkey"},
+            "ok": res.get("ok"),
+        })
+        # Return the provider body exactly under "data"
+        return {"met": met, "status": res.get("status")}, (res.get("data") if res else None)
 
-    def get_all_analytics(self):
-        """
-        Return all analytics data for the selected game (live from API-Football).
-        """
-        return {
-            "game_info": self.get_game_info(),
-            "season_statistics": self.get_season_statistics(),
-            "injury_report": self.get_injury_report(),
-            "highlight_moments": self.get_highlight_moments()
-        }
+    # -----------------------
+    # Name resolvers (zero normalization — just ID lookup)
+    # -----------------------
+    def _resolve_country_id(self, country_name: str, trace: list[dict]) -> str | None:
+        if not country_name:
+            return None
+        meta, data = self._call("Countries", {}, trace)
+        countries = (data or {}).get("result") or []
+        name_l = country_name.strip().lower()
+        # prefer exact match, fallback to contains
+        exact = [c for c in countries if (c.get("country_name") or "").strip().lower() == name_l]
+        cand = exact or [c for c in countries if name_l in (c.get("country_name") or "").strip().lower()]
+        return (cand[0].get("country_key") if cand and cand[0].get("country_key") else None)
 
-# Comments added for each step above. Now uses API-Football.
+    def _resolve_league_id(self, league_name: str, trace: list[dict], *, countryId: str | None = None) -> str | None:
+        if not league_name:
+            return None
+        args = {}
+        if countryId:
+            args["countryId"] = countryId
+        meta, data = self._call("Leagues", args, trace)
+        leagues = (data or {}).get("result") or []
+        name_l = league_name.strip().lower()
+        exact = [l for l in leagues if (l.get("league_name") or "").strip().lower() == name_l]
+        cand = exact or [l for l in leagues if name_l in (l.get("league_name") or "").strip().lower()]
+        return (cand[0].get("league_key") if cand and cand[0].get("league_key") else None)
+
+    def _ensure_ids_from_names(self, args: Dict[str, Any], trace: list[dict]) -> Dict[str, Any]:
+        """
+        Best-effort: if caller provided *Name fields, resolve to corresponding IDs for AllSports.
+        Does not remove the name fields; just augments with IDs so provider can filter.
+        Supported:
+          - countryName -> countryId
+          - leagueName  -> leagueId   (optionally uses countryId if available)
+          - teamName    -> teamId     (native endpoint supports it; we leave it as-is but also try resolving to a specific teamId when useful)
+          - playerName  -> playerId   (left as-is; endpoint supports it)
+          - eventId is also mirrored into matchId where appropriate elsewhere.
+        """
+        a = dict(args or {})
+
+        # countryName → countryId
+        if a.get("countryName") and not a.get("countryId"):
+            cid = self._resolve_country_id(a["countryName"], trace)
+            if cid:
+                a["countryId"] = cid
+
+        # leagueName → leagueId (optionally scoped by countryId if we have it)
+        if a.get("leagueName") and not a.get("leagueId"):
+            lid = self._resolve_league_id(a["leagueName"], trace, countryId=str(a.get("countryId")) if a.get("countryId") else None)
+            if lid:
+                a["leagueId"] = lid
+
+        # teamName: AllSports Teams/Players endpoints already accept teamName,
+        # but for Fixtures/Livescore it requires teamId. We'll try to resolve to teamId using Teams.
+        if a.get("teamName") and not a.get("teamId"):
+            # Try Teams with teamName (+ optional leagueId) to find a precise id
+            q = {"teamName": a["teamName"]}
+            if a.get("leagueId"):
+                q["leagueId"] = a["leagueId"]
+            meta, data = self._call("Teams", q, trace)
+            teams = (data or {}).get("result") or []
+            name_l = a["teamName"].strip().lower()
+            exact = [t for t in teams if (t.get("team_name") or "").strip().lower() == name_l]
+            pick = (exact[0] if exact else (teams[0] if teams else None))
+            if pick and pick.get("team_key"):
+                a["teamId"] = pick["team_key"]
+
+        # Trace when teamName could not be resolved to an id (helps router fallback decisions)
+        if a.get("teamName") and not a.get("teamId"):
+            trace.append({
+                "step": "asapi_team_resolve_failed",
+                "teamName": a.get("teamName"),
+                "leagueId": a.get("leagueId")
+            })
+
+        # playerName: native support exists — we leave it in place.
+        return a
+
+
+# Backwards-compat export names (if other modules import these)
+AllSportsClient = None            # not needed in RAW version
+allsports_client = None           # no global client in RAW version
+AllSportsCollectorAgent = AllSportsRawAgent
