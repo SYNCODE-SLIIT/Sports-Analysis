@@ -27,7 +27,8 @@
   async function load(){
     const days = parseInt(daysInput.value,10) || 7;
     const end = endDate.value || '';
-  const endpoints = ['/matches/history_dual','/history_dual','/matches/history','/history','/matches/history/','/matches/historical','/matches/historical/'];
+    // try the raw flat history first, then fall back to dual/single provider endpoints
+    const endpoints = ['/matches/history_raw','/history_raw','/matches/history_dual','/history_dual','/matches/history','/history','/matches/history/','/matches/historical','/matches/historical/'];
     statusEl.textContent = 'Loading...';
     let lastErr = null;
     for(const ep of endpoints){
@@ -39,6 +40,26 @@
         if(!r.ok){ lastErr = new Error('HTTP '+r.status+' '+ep); continue; }
         const data = await r.json();
         console.log('[history] success via', ep);
+        // If backend returned a flat 'matches' array (raw mode), convert into the
+        // grouped-by-league/date shape the renderer expects so the UI shows all games.
+        if(data && Array.isArray(data.matches)){
+          const matches = data.matches;
+          const dateMap = {};
+          matches.forEach(m => {
+            const d = m.event_date || m.dateEvent || m.date || '';
+            (dateMap[d] = dateMap[d] || []).push(m);
+          });
+          const orderedDates = Object.keys(dateMap).sort((a,b)=> b.localeCompare(a)).map(d=>{
+            const arr = dateMap[d];
+            arr.sort((a,b)=> (b.event_time||b.strTime||'').localeCompare(a.event_time||a.strTime||''));
+            return {date: d, matches: arr, count: arr.length};
+          });
+          const league = {league_name: 'All Matches', league_key: '__ALL__', country_name:'', dates: orderedDates, total_matches: matches.length};
+          const summary = {ok:true, end_date: data.end_date || end, days: data.days || days, dates: Object.keys(dateMap), leagues: [league], league_count: 1, match_count: matches.length};
+          render(summary);
+          statusEl.textContent = `Loaded ${summary.match_count} matches.`;
+          return;
+        }
         render(data);
         statusEl.textContent = `Loaded ${data.match_count} matches across ${data.league_count} leagues.`;
         return;

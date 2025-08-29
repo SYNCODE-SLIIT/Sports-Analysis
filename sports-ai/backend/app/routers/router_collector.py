@@ -425,3 +425,79 @@ class RouterCollector:
             'match_count': sum(l['total_matches'] for l in league_list),
             'meta': {'trace': trace},
         }
+
+    def get_history_raw(self, *, days: int = 7, to_date: str | None = None) -> Dict[str, Any]:
+        """Return a flat, merged list of all matches from BOTH providers across the date range.
+        This intentionally does no league grouping or filtering — it simply collects events from
+        TSDB and AllSports per day, merges them (dedup by event key) and returns the flat list
+        ordered newest -> oldest.
+        """
+        from datetime import datetime, timedelta, timezone
+        if days < 1:
+            days = 1
+        days = min(days, 31)
+        end_dt = datetime.strptime(to_date, '%Y-%m-%d') if to_date else datetime.now(timezone.utc)
+        end_date = end_dt.strftime('%Y-%m-%d')
+        date_list = [(end_dt - timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days)]
+        date_list = list(dict.fromkeys(date_list))
+
+        trace: list[Dict[str, Any]] = []
+        combined: Dict[str, Dict[str, Any]] = {}
+        per_day_counts: list[Dict[str, Any]] = []
+
+        def extract_events(provider_resp: Dict[str, Any]) -> list[Dict[str, Any]]:
+            if not provider_resp:
+                return []
+            data = provider_resp.get('data') or {}
+            return (
+                data.get('events') or
+                data.get('result') or
+                data.get('results') or []
+            )
+
+        def add_events(ev_list: list[Dict[str, Any]], source: str):
+            for ev in ev_list:
+                ek = str(ev.get('event_key') or ev.get('idEvent') or ev.get('id') or '')
+                if not ek:
+                    ek = f"{ev.get('event_date')}-{ev.get('event_time')}-{ev.get('event_home_team')}-{ev.get('event_away_team')}"
+                if ek not in combined:
+                    ev_copy = dict(ev)
+                    ev_copy['_sources'] = [source]
+                    combined[ek] = ev_copy
+                else:
+                    if source not in combined[ek].get('_sources', []):
+                        combined[ek]['_sources'].append(source)
+
+        for d in date_list:
+            tsdb_resp = self._call_tsdb('events.list', {'date': d})
+            as_resp = self._call_allsports('events.list', {'date': d})
+            trace.append({"step": "history_raw_fetch", "date": d, "tsdb_ok": bool(tsdb_resp.get('ok')), "allsports_ok": bool(as_resp.get('ok'))})
+
+            ts_events = extract_events(tsdb_resp)
+            as_events = extract_events(as_resp)
+
+            per_day_counts.append({'date': d, 'tsdb': len(ts_events), 'allsports': len(as_events)})
+
+            add_events(ts_events, 'tsdb')
+            add_events(as_events, 'allsports')
+
+        # Build flat list ordered by date desc then time desc
+        matches = list(combined.values())
+        def dt_key(m: Dict[str, Any]):
+            d = m.get('event_date') or m.get('dateEvent') or ''
+            t = m.get('event_time') or m.get('strTime') or ''
+            return f"{d} {t}".strip()
+
+        matches.sort(key=dt_key, reverse=True)
+
+        return {
+            'ok': True,
+            'mode': 'raw',
+            'end_date': end_date,
+            'days': days,
+            'dates': date_list,
+            'matches': matches,
+            'match_count': len(matches),
+            'per_day_counts': per_day_counts,
+            'meta': {'trace': trace},
+        }

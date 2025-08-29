@@ -160,6 +160,16 @@ def matches_history_debug(days: int = 7, end_date: str | None = None):  # pragma
 
     return {"ok": True, "debug": {"dual": dual, "per_day": per_day}}
 
+
+@app.get('/matches/history_raw')
+def matches_history_raw(days: int = 7, end_date: str | None = None):
+    return router.get_history_raw(days=days, to_date=end_date)
+
+
+@app.get('/history_raw')
+def history_raw_flat(days: int = 7, end_date: str | None = None):
+    return router.get_history_raw(days=days, to_date=end_date)
+
 @matches_router.get("/debug_list", name="matches_debug_list")
 def matches_debug_list():  # pragma: no cover
     return {"ok": True, "paths": sorted({r.path for r in app.routes if '/matches' in r.path})}
