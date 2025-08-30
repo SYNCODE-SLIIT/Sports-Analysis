@@ -1,221 +1,274 @@
+/* History matches dashboard logic */
 (function(){
-  const loc = window.location; let apiBase = loc.origin; if(loc.port && loc.port!=='8000'){ apiBase = loc.protocol+'//'+loc.hostname+':8000'; }
+  // Determine backend base: if served from a static server (e.g. 5500) assume FastAPI on 8000 same host.
+  const loc = window.location;
+  let apiBase = loc.origin;
+  if(loc.port && loc.port !== '8000'){
+    apiBase = loc.protocol + '//' + loc.hostname + ':8000';
+  }
+
+  const contentEl = document.getElementById('content');
   const daysInput = document.getElementById('daysInput');
-  const endDate = document.getElementById('endDate');
-  const loadBtn = document.getElementById('loadBtn');
+  const endDateInput = document.getElementById('endDate');
   const leagueSelect = document.getElementById('leagueSelect');
   const fetchLeagueBtn = document.getElementById('fetchLeagueBtn');
+  const loadBtn = document.getElementById('loadBtn');
   const statusEl = document.getElementById('status');
-  const content = document.getElementById('content');
 
-  const leagueTpl = document.getElementById('leagueTemplate');
-  const dateTpl = document.getElementById('dateTemplate');
-  const matchTpl = document.getElementById('matchRowTemplate');
-  let leaguesCatalogLoaded = false;
+  const leagueTemplate = document.getElementById('leagueTemplate');
+  const dateTemplate = document.getElementById('dateTemplate');
+  const matchRowTemplate = document.getElementById('matchRowTemplate');
 
-  function clear(el){ while(el.firstChild) el.removeChild(el.firstChild); }
+  let allLeagues = [];
 
-  function matchLabel(m){
-    const time = (m.event_time || m.strTime || '').padStart(5,'0');
-    const home = m.event_home_team || m.strHomeTeam || '?';
-    const away = m.event_away_team || m.strAwayTeam || '?';
-    const score = m.event_final_result || m.event_ft_result || m.event_halftime_result || m.score || '';
-    const status = m.event_status || m.status || '';
-    return `${time}  ${home} ${score?(' '+score+' '):' vs '} ${away}  ${status}`.trim();
+  // Set default end date to today
+  endDateInput.value = new Date().toISOString().split('T')[0];
+
+  // Load leagues on page load
+  loadLeagues();
+
+  loadBtn.addEventListener('click', loadHistoryMatches);
+  fetchLeagueBtn.addEventListener('click', fetchLeagueMatches);
+
+  function setStatus(text, isError = false) {
+    statusEl.textContent = text;
+    statusEl.className = isError ? 'status error' : 'status';
   }
 
-  async function load(){
-    const days = parseInt(daysInput.value,10) || 7;
-    const end = endDate.value || '';
-    // try the raw flat history first, then fall back to dual/single provider endpoints
-    const endpoints = ['/matches/history_raw','/history_raw','/matches/history_dual','/history_dual','/matches/history','/history','/matches/history/','/matches/historical','/matches/historical/'];
-    statusEl.textContent = 'Loading...';
-    let lastErr = null;
-    for(const ep of endpoints){
-      try{
-        const url = new URL(apiBase + ep);
-        url.searchParams.set('days', days);
-        if(end) url.searchParams.set('end_date', end);
-        const r = await fetch(url.toString());
-        if(!r.ok){ lastErr = new Error('HTTP '+r.status+' '+ep); continue; }
-        const data = await r.json();
-        console.log('[history] success via', ep);
-        // If backend returned a flat 'matches' array (raw mode), convert into the
-        // grouped-by-league/date shape the renderer expects so the UI shows all games.
-        if(data && Array.isArray(data.matches)){
-          const matches = data.matches;
-          const dateMap = {};
-          matches.forEach(m => {
-            const d = m.event_date || m.dateEvent || m.date || '';
-            (dateMap[d] = dateMap[d] || []).push(m);
-          });
-          const orderedDates = Object.keys(dateMap).sort((a,b)=> b.localeCompare(a)).map(d=>{
-            const arr = dateMap[d];
-            arr.sort((a,b)=> (b.event_time||b.strTime||'').localeCompare(a.event_time||a.strTime||''));
-            return {date: d, matches: arr, count: arr.length};
-          });
-          const league = {league_name: 'All Matches', league_key: '__ALL__', country_name:'', dates: orderedDates, total_matches: matches.length};
-          const summary = {ok:true, end_date: data.end_date || end, days: data.days || days, dates: Object.keys(dateMap), leagues: [league], league_count: 1, match_count: matches.length};
-          render(summary);
-          statusEl.textContent = `Loaded ${summary.match_count} matches.`;
-          return;
-        }
-        render(data);
-        statusEl.textContent = `Loaded ${data.match_count} matches across ${data.league_count} leagues.`;
-        return;
-      }catch(e){ lastErr = e; }
-    }
-    console.warn('[history] backend history endpoints unavailable, falling back to client aggregation');
-    await fallbackClientAggregate(days, end);
-  }
-
-  async function fallbackClientAggregate(days, end){
-    try{
-      const today = end ? new Date(end) : new Date();
-      const dateList = [];
-      for(let i=0;i<days;i++){
-        const d = new Date(today.getTime() - i*86400000);
-        dateList.push(d.toISOString().slice(0,10));
+  async function loadLeagues() {
+    try {
+      setStatus('Loading leagues...');
+      const response = await fetch(`${apiBase}/leagues`);
+      const data = await response.json();
+      
+      if (data.ok && data.data && data.data.result) {
+        allLeagues = data.data.result;
+        populateLeagueDropdown();
+        setStatus(`Loaded ${allLeagues.length} leagues`);
+      } else {
+        throw new Error('Failed to load leagues');
       }
-      const leaguesMap = {}; // key -> {league_name, league_key, country_name, dates: {date: []}}
-      let matchCount = 0;
-      for(const d of dateList){
-        statusEl.textContent = `Fetching ${d} ...`;
-        const resp = await fetch(apiBase + '/collect', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({intent:'events.list', args:{date:d}})});
-        if(!resp.ok){ console.warn('Failed day', d, resp.status); continue; }
-        const body = await resp.json();
-        if(!body.ok) continue;
-        const data = body.data || {};
-        const events = data.events || data.result || data.results || [];
-        for(const ev of events){
-          const league_name = ev.league_name || ev.strLeague || 'Unknown League';
-          const league_key = ''+(ev.league_key || ev.idLeague || '');
-          const lid = league_key + '|' + league_name;
-          const bucket = leaguesMap[lid] || (leaguesMap[lid] = {league_name, league_key, country_name: ev.country_name || ev.strCountry, dates:{}});
-          (bucket.dates[d] = bucket.dates[d] || []).push(ev);
-          matchCount++;
-        }
-      }
-      // Transform to backend-like shape
-      const leagues = Object.values(leaguesMap).map(info => {
-        const ordered = Object.keys(info.dates).sort((a,b)=> b.localeCompare(a)).map(date => {
-          const matches = info.dates[date];
-          matches.sort((a,b)=> (b.event_time||b.strTime||'').localeCompare(a.event_time||a.strTime||''));
-          return {date, matches, count: matches.length};
-        });
-        const total = ordered.reduce((s,x)=>s+x.count,0);
-        return {league_name: info.league_name, league_key: info.league_key, country_name: info.country_name, dates: ordered, total_matches: total};
-      });
-      leagues.sort((a,b)=> b.total_matches - a.total_matches);
-      const summary = {ok:true,end_date: end || dateList[0], days, dates: dateList, leagues, league_count: leagues.length, match_count: matchCount};
-      render(summary);
-      statusEl.textContent = `Loaded (client) ${matchCount} matches across ${leagues.length} leagues.`;
-    }catch(e){
-      console.error(e); statusEl.textContent = 'Fallback error: '+ e.message;
+    } catch (error) {
+      console.error('Error loading leagues:', error);
+      setStatus('Error loading leagues: ' + error.message, true);
     }
   }
 
-  function render(summary){
-    clear(content);
-    // Populate league selector (keep existing selection if present)
-    const prev = leagueSelect.value;
-    const leagues = (summary.leagues||[]);
-    const seen = new Set();
-    while(leagueSelect.options.length>1) leagueSelect.remove(1);
-    leagues.forEach(l => {
-      if(seen.has(l.league_name)) return; seen.add(l.league_name);
-      const opt = document.createElement('option'); opt.value = l.league_name; opt.textContent = l.league_name + ` (${l.total_matches})`;
-      leagueSelect.appendChild(opt);
+  function populateLeagueDropdown() {
+    // Clear existing options except "All Leagues"
+    while (leagueSelect.children.length > 1) {
+      leagueSelect.removeChild(leagueSelect.lastChild);
+    }
+
+    // Sort leagues by name
+    const sortedLeagues = [...allLeagues].sort((a, b) => {
+      const nameA = (a.league_name || '').toLowerCase();
+      const nameB = (b.league_name || '').toLowerCase();
+      return nameA.localeCompare(nameB);
     });
-    if([...leagueSelect.options].some(o=>o.value===prev)) leagueSelect.value = prev;
-  // If only one league in aggregation, still fetch catalog (once) to allow user to pick others
-  if(!leaguesCatalogLoaded && leagues.length <= 1){ fetchLeaguesCatalog(); }
-    (summary.leagues||[]).forEach(league => {
-      const lnode = leagueTpl.content.firstElementChild.cloneNode(true);
-      lnode.querySelector('.leagueTitle').textContent = `${league.league_name} (${league.total_matches})`;
-      const datesDiv = lnode.querySelector('.dates');
-      league.dates.forEach(d => {
-        const dnode = dateTpl.content.firstElementChild.cloneNode(true);
-        dnode.querySelector('.dateHeading').textContent = `${d.date} (${d.count})`;
-        const matchesDiv = dnode.querySelector('.matches');
-        d.matches.forEach(m => {
-          const mnode = matchTpl.content.firstElementChild.cloneNode(true);
-          mnode.textContent = matchLabel(m);
-          matchesDiv.appendChild(mnode);
-        });
-        datesDiv.appendChild(dnode);
-      });
-      content.appendChild(lnode);
+
+    // Add league options
+    sortedLeagues.forEach(league => {
+      const option = document.createElement('option');
+      option.value = league.league_key || league.league_id || '';
+      option.textContent = league.league_name || 'Unknown League';
+      leagueSelect.appendChild(option);
     });
   }
 
-  loadBtn.addEventListener('click', load);
-  fetchLeagueBtn.addEventListener('click', ()=> fetchSpecificLeague());
-  const today = new Date().toISOString().slice(0,10); endDate.value = today;
-  load();
-
-  async function fetchSpecificLeague(){
-    const leagueName = leagueSelect.value;
-    if(!leagueName || leagueName==='__ALL__'){ load(); return; }
-    const days = parseInt(daysInput.value,10) || 7;
-    const end = endDate.value || '';
-    statusEl.textContent = 'Loading league '+leagueName+' ...';
-    try{
-      const today = end ? new Date(end) : new Date();
-      const dateList = [];
-      for(let i=0;i<days;i++){
-        const d = new Date(today.getTime() - i*86400000);
-        dateList.push(d.toISOString().slice(0,10));
+  async function loadHistoryMatches() {
+    try {
+      setStatus('Loading history matches...');
+      contentEl.innerHTML = '';
+      
+      const days = parseInt(daysInput.value) || 7;
+      const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
+      
+      const url = `${apiBase}/matches/history?days=${days}&end_date=${endDate}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.ok && data.data && data.data.leagues) {
+        displayHistoryMatches(data.data.leagues);
+        setStatus(`Loaded matches for ${Object.keys(data.data.leagues).length} leagues`);
+      } else {
+        throw new Error('Failed to load history matches');
       }
-      const leaguesMap = {}; let matchCount=0;
-      for(const d of dateList){
-        const resp = await fetch(apiBase + '/collect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intent:'events.list', args:{date:d, leagueName}})});
-        if(!resp.ok) continue; const body = await resp.json(); if(!body.ok) continue;
-        const data = body.data || {}; const events = data.events || data.result || data.results || [];
-        for(const ev of events){
-          const league_name = ev.league_name || ev.strLeague || leagueName;
-          const league_key = ''+(ev.league_key || ev.idLeague || '');
-          const lid = league_key + '|' + league_name;
-          const bucket = leaguesMap[lid] || (leaguesMap[lid] = {league_name, league_key, country_name: ev.country_name || ev.strCountry, dates:{}});
-          (bucket.dates[d] = bucket.dates[d] || []).push(ev);
-          matchCount++;
+    } catch (error) {
+      console.error('Error loading history matches:', error);
+      setStatus('Error loading matches: ' + error.message, true);
+    }
+  }
+
+  async function fetchLeagueMatches() {
+    const selectedLeague = leagueSelect.value;
+    if (selectedLeague === '__ALL__') {
+      loadHistoryMatches();
+      return;
+    }
+
+    try {
+      setStatus('Loading league matches...');
+      contentEl.innerHTML = '';
+      
+      const days = parseInt(daysInput.value) || 7;
+      const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
+      
+      // Calculate start date
+      const end = new Date(endDate);
+      const start = new Date(end);
+      start.setDate(start.getDate() - days + 1);
+      
+      const startDate = start.toISOString().split('T')[0];
+      
+      // Fetch matches for the specific league
+      const url = `${apiBase}/collect`;
+      const requestBody = {
+        intent: "fixtures.list",
+        args: {
+          leagueId: selectedLeague,
+          from: startDate,
+          to: endDate
         }
-      }
-      const leaguesOut = Object.values(leaguesMap).map(info => {
-        const ordered = Object.keys(info.dates).sort((a,b)=> b.localeCompare(a)).map(date => {
-          const matches = info.dates[date]; matches.sort((a,b)=> (b.event_time||'').localeCompare(a.event_time||''));
-          return {date, matches, count: matches.length};
-        });
-        const total = ordered.reduce((s,x)=>s+x.count,0);
-        return {league_name: info.league_name, league_key: info.league_key, country_name: info.country_name, dates: ordered, total_matches: total};
+      };
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
       });
-      const summary = {ok:true, mode:'single_league', end_date: end || dateList[0], days, dates: dateList, leagues: leaguesOut, league_count: leaguesOut.length, match_count: matchCount};
-      render(summary);
-      statusEl.textContent = `Loaded ${matchCount} matches for ${leagueName}.`;
-    }catch(e){ console.error(e); statusEl.textContent='Error: '+e.message; }
+      
+      const data = await response.json();
+      
+      if (data.ok && data.data && data.data.result) {
+        const matches = data.data.result;
+        const selectedLeagueName = leagueSelect.options[leagueSelect.selectedIndex].textContent;
+        displayLeagueMatches(matches, selectedLeagueName);
+        setStatus(`Loaded ${matches.length} matches for ${selectedLeagueName}`);
+      } else {
+        throw new Error('Failed to load league matches');
+      }
+    } catch (error) {
+      console.error('Error loading league matches:', error);
+      setStatus('Error loading league matches: ' + error.message, true);
+    }
   }
 
-  async function fetchLeaguesCatalog(){
-    try{
-      leaguesCatalogLoaded = true;
-      const resp = await fetch(apiBase + '/collect', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({intent:'leagues.list', args:{}})});
-      if(!resp.ok) return;
-      const body = await resp.json();
-      if(!body.ok) return;
-      const data = body.data || {};
-      const raw = data.leagues || data.result || [];
-      // Preserve existing selected value
-      const current = leagueSelect.value;
-      const existing = new Set([...leagueSelect.options].map(o=>o.value));
-      raw.forEach(l => {
-        const name = l.strLeague || l.league_name || l.name;
-        if(!name || existing.has(name)) return;
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        leagueSelect.appendChild(opt);
+  function displayHistoryMatches(leagues) {
+    contentEl.innerHTML = '';
+    
+    // Sort leagues by name
+    const sortedLeagueNames = Object.keys(leagues).sort();
+    
+    sortedLeagueNames.forEach(leagueName => {
+      const leagueData = leagues[leagueName];
+      const leagueSection = createLeagueSection(leagueName, leagueData);
+      contentEl.appendChild(leagueSection);
+    });
+  }
+
+  function displayLeagueMatches(matches, leagueName) {
+    contentEl.innerHTML = '';
+    
+    // Group matches by date
+    const matchesByDate = {};
+    matches.forEach(match => {
+      const date = match.event_date || match.dateEvent || 'Unknown Date';
+      if (!matchesByDate[date]) {
+        matchesByDate[date] = [];
+      }
+      matchesByDate[date].push(match);
+    });
+    
+    // Create league structure
+    const leagueData = { dates: matchesByDate };
+    const leagueSection = createLeagueSection(leagueName, leagueData);
+    contentEl.appendChild(leagueSection);
+  }
+
+  function createLeagueSection(leagueName, leagueData) {
+    const leagueNode = leagueTemplate.content.firstElementChild.cloneNode(true);
+    leagueNode.querySelector('.leagueTitle').textContent = leagueName;
+    
+    const datesContainer = leagueNode.querySelector('.dates');
+    
+    // Sort dates in descending order (newest first)
+    const sortedDates = Object.keys(leagueData.dates || {}).sort().reverse();
+    
+    sortedDates.forEach(date => {
+      const matches = leagueData.dates[date];
+      const dateSection = createDateSection(date, matches);
+      datesContainer.appendChild(dateSection);
+    });
+    
+    return leagueNode;
+  }
+
+  function createDateSection(date, matches) {
+    const dateNode = dateTemplate.content.firstElementChild.cloneNode(true);
+    dateNode.querySelector('.dateHeading').textContent = formatDate(date);
+    
+    const matchesContainer = dateNode.querySelector('.matches');
+    
+    matches.forEach(match => {
+      const matchRow = createMatchRow(match);
+      matchesContainer.appendChild(matchRow);
+    });
+    
+    return dateNode;
+  }
+
+  function createMatchRow(match) {
+    const matchNode = matchRowTemplate.content.firstElementChild.cloneNode(true);
+    
+    const homeTeam = match.event_home_team || match.strHomeTeam || 'Unknown';
+    const awayTeam = match.event_away_team || match.strAwayTeam || 'Unknown';
+    const time = match.event_time || match.strTime || '';
+    const status = match.event_status || match.status || '';
+    
+    // Format score
+    let score = '-';
+    if (match.event_final_result) {
+      score = match.event_final_result;
+    } else if (match.event_ft_result) {
+      score = match.event_ft_result;
+    } else if (match.home_score !== undefined && match.away_score !== undefined) {
+      score = `${match.home_score} - ${match.away_score}`;
+    } else if (match.event_home_result !== undefined && match.event_away_result !== undefined) {
+      score = `${match.event_home_result} - ${match.event_away_result}`;
+    }
+    
+    matchNode.innerHTML = `
+      <div class="match-info">
+        <div class="teams">
+          <span class="home-team">${homeTeam}</span>
+          <span class="vs">vs</span>
+          <span class="away-team">${awayTeam}</span>
+        </div>
+        <div class="match-details">
+          <span class="time">${time}</span>
+          <span class="score">${score}</span>
+          <span class="status">${status}</span>
+        </div>
+      </div>
+    `;
+    
+    return matchNode;
+  }
+
+  function formatDate(dateStr) {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
       });
-      if([...leagueSelect.options].some(o=>o.value===current)) leagueSelect.value = current;
-    }catch(e){ console.warn('league catalog fetch failed', e); }
+    } catch (error) {
+      return dateStr;
+    }
   }
 })();

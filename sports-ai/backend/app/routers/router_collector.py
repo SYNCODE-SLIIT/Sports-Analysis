@@ -124,13 +124,14 @@ class RouterCollector:
         Each tuple: (provider_name, call_fn)
         """
         tsdb_first = {
-            "leagues.list", "league.get", "seasons.list",
+            "league.get", "seasons.list",
             "teams.list", "team.get",
             "events.list", "event.get",
             "league.table",
             "venue.get", "event.results", "event.tv",
         }
         allsports_first = {
+            "leagues.list",  # Moved from tsdb_first to get all 975 leagues
             "players.list", "player.get",
             "odds.list", "odds.live",
             "probabilities.list",

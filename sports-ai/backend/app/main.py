@@ -170,6 +170,16 @@ def matches_history_raw(days: int = 7, end_date: str | None = None):
 def history_raw_flat(days: int = 7, end_date: str | None = None):
     return router.get_history_raw(days=days, to_date=end_date)
 
+@app.get("/leagues")
+def get_leagues():
+    """Get all leagues from AllSports API"""
+    return router.handle({"intent": "leagues.list", "args": {}})
+
+@app.get("/leagues/")
+def get_leagues_alias():
+    """Get all leagues from AllSports API (with trailing slash)"""
+    return router.handle({"intent": "leagues.list", "args": {}})
+
 @matches_router.get("/debug_list", name="matches_debug_list")
 def matches_debug_list():  # pragma: no cover
     return {"ok": True, "paths": sorted({r.path for r in app.routes if '/matches' in r.path})}
