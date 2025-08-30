@@ -32,17 +32,17 @@ app.add_middleware(
 # --- Agents ---
 router = RouterCollector()                        # unified router over TSDB + AllSports
 
-# --- Debug: list routes at startup (helps diagnose 404 during dev) ---
-@app.on_event("startup")
-async def _show_routes():
-    try:
-        paths = sorted({r.path for r in app.routes})
-        print("[startup] Registered paths (count=", len(paths), "):")
-        for p in paths:
-            if p.startswith('/matches'):  # highlight the relevant ones
-                print("   *", p)
-    except Exception as e:
-        print("[startup] Could not list routes:", e)
+# # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
+# @app.on_event("startup")
+# async def _show_routes():
+#     try:
+#         paths = sorted({r.path for r in app.routes})
+#         print("[startup] Registered paths (count=", len(paths), "):")
+#         for p in paths:
+#             if p.startswith('/matches'):  # highlight the relevant ones
+#                 print("   *", p)
+#     except Exception as e:
+#         print("[startup] Could not list routes:", e)
 
 # --- JSON entrypoints (minimal surface) ---
 @app.post("/collect")
@@ -169,6 +169,16 @@ def matches_history_raw(days: int = 7, end_date: str | None = None):
 @app.get('/history_raw')
 def history_raw_flat(days: int = 7, end_date: str | None = None):
     return router.get_history_raw(days=days, to_date=end_date)
+
+@app.get("/leagues")
+def get_leagues():
+    """Get all leagues from AllSports API"""
+    return router.handle({"intent": "leagues.list", "args": {}})
+
+@app.get("/leagues/")
+def get_leagues_alias():
+    """Get all leagues from AllSports API (with trailing slash)"""
+    return router.handle({"intent": "leagues.list", "args": {}})
 
 @matches_router.get("/debug_list", name="matches_debug_list")
 def matches_debug_list():  # pragma: no cover

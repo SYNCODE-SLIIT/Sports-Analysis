@@ -16,6 +16,10 @@ try:
 except Exception:
     # python-dotenv may not be installed in the active environment; fallback to no-op
     pass
+
+# Set AllSports API key if not already set
+os.environ.setdefault('ALLSPORTS_API_KEY', '7fa5fdc7782679128be269bc63d1038a36b8d1d657884cf2d91e6833e57d46a9')
+
 import uvicorn
 
 ROOT = pathlib.Path(__file__).parent.resolve()

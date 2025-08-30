@@ -25,6 +25,7 @@ Supported intents (pass-through):
   - probabilities.list       -> met=Probabilities
   - comments.list            -> met=Comments
   - seasons.list             -> met=Leagues (raw; caller may filter by leagueId/Name if desired)
+  - h2h                      -> met=H2H
   - Name-based args supported: countryName -> countryId, leagueName -> leagueId, teamName (native), playerName (native).
 
 Design notes:
@@ -176,6 +177,12 @@ class AllSportsRawAgent:
             elif intent == "comments.list":
                 # from, to, live, countryId, leagueId, matchId, timezone
                 meta, data = self._call("Comments", args, trace)
+
+            elif intent == "h2h":
+                # Head-to-head: requires firstTeamId and secondTeamId (or best-effort resolution of names)
+                # Forward to provider met=H2H and return raw response under data
+                a = dict(args or {})
+                meta, data = self._call("H2H", a, trace)
 
             elif intent == "seasons.list":
                 # No dedicated endpoint; return raw Leagues so caller can inspect seasons.
