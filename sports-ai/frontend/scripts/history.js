@@ -60,18 +60,93 @@
       leagueSelect.removeChild(leagueSelect.lastChild);
     }
 
-    // Sort leagues by name
+    // Define most popular leagues (in order of popularity)
+    const popularLeagues = [
+      'Premier League', 'English Premier League', 'EPL',
+      'UEFA Champions League', 'Champions League',
+      'La Liga', 'Spanish La Liga', 'LaLiga',
+      'Serie A', 'Italian Serie A',
+      'Bundesliga', 'German Bundesliga',
+      'Ligue 1', 'French Ligue 1',
+      'UEFA Europa League', 'Europa League',
+      'FIFA World Cup', 'World Cup',
+      'UEFA European Championship', 'Euro Championship', 'EURO',
+      'Copa America',
+      'FA Cup', 'English FA Cup',
+      'Copa del Rey',
+      'DFB-Pokal',
+      'Coppa Italia',
+      'Coupe de France',
+      'UEFA Conference League', 'Conference League',
+      'Premier League 2', 'Championship', 'EFL Championship',
+      'MLS', 'Major League Soccer',
+      'Brazilian Serie A', 'Brasileirão',
+      'Argentine Primera División', 'Primera División Argentina',
+      'Eredivisie', 'Dutch Eredivisie',
+      'Primeira Liga', 'Portuguese Liga',
+      'Turkish Super Lig', 'Süper Lig',
+      'Russian Premier League',
+      'Ukrainian Premier League',
+      'Belgian Pro League', 'Jupiler Pro League',
+      'Scottish Premiership',
+      'Austrian Bundesliga',
+      'Swiss Super League',
+      'Copa Libertadores', 'CONMEBOL Libertadores',
+      'Europa Conference League',
+      'Nations League', 'UEFA Nations League'
+    ];
+
+    // Function to get priority score for a league
+    function getLeaguePriority(leagueName) {
+      const name = leagueName.toLowerCase();
+      for (let i = 0; i < popularLeagues.length; i++) {
+        if (name.includes(popularLeagues[i].toLowerCase()) || 
+            popularLeagues[i].toLowerCase().includes(name)) {
+          return i; // Lower number = higher priority
+        }
+      }
+      return 1000; // Low priority for non-popular leagues
+    }
+
+    // Sort leagues: popular ones first, then alphabetically
     const sortedLeagues = [...allLeagues].sort((a, b) => {
-      const nameA = (a.league_name || '').toLowerCase();
-      const nameB = (b.league_name || '').toLowerCase();
-      return nameA.localeCompare(nameB);
+      const nameA = a.league_name || '';
+      const nameB = b.league_name || '';
+      
+      const priorityA = getLeaguePriority(nameA);
+      const priorityB = getLeaguePriority(nameB);
+      
+      // If both are popular or both are non-popular, sort alphabetically
+      if (priorityA === priorityB) {
+        return nameA.toLowerCase().localeCompare(nameB.toLowerCase());
+      }
+      
+      // Otherwise, sort by priority
+      return priorityA - priorityB;
     });
 
     // Add league options
-    sortedLeagues.forEach(league => {
+    sortedLeagues.forEach((league, index) => {
       const option = document.createElement('option');
       option.value = league.league_key || league.league_id || '';
       option.textContent = league.league_name || 'Unknown League';
+      
+      // Add visual separator after popular leagues
+      const priority = getLeaguePriority(league.league_name || '');
+      if (index > 0 && priority >= 1000) {
+        const prevLeague = sortedLeagues[index - 1];
+        const prevPriority = getLeaguePriority(prevLeague.league_name || '');
+        if (prevPriority < 1000) {
+          // Add a separator option
+          const separator = document.createElement('option');
+          separator.disabled = true;
+          separator.textContent = '─────────────────────';
+          separator.style.backgroundColor = '#2c3a46';
+          separator.style.color = '#6b7280';
+          leagueSelect.appendChild(separator);
+        }
+      }
+      
       leagueSelect.appendChild(option);
     });
   }
