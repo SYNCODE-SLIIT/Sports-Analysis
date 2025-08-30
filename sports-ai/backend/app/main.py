@@ -32,17 +32,17 @@ app.add_middleware(
 # --- Agents ---
 router = RouterCollector()                        # unified router over TSDB + AllSports
 
-# --- Debug: list routes at startup (helps diagnose 404 during dev) ---
-@app.on_event("startup")
-async def _show_routes():
-    try:
-        paths = sorted({r.path for r in app.routes})
-        print("[startup] Registered paths (count=", len(paths), "):")
-        for p in paths:
-            if p.startswith('/matches'):  # highlight the relevant ones
-                print("   *", p)
-    except Exception as e:
-        print("[startup] Could not list routes:", e)
+# # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
+# @app.on_event("startup")
+# async def _show_routes():
+#     try:
+#         paths = sorted({r.path for r in app.routes})
+#         print("[startup] Registered paths (count=", len(paths), "):")
+#         for p in paths:
+#             if p.startswith('/matches'):  # highlight the relevant ones
+#                 print("   *", p)
+#     except Exception as e:
+#         print("[startup] Could not list routes:", e)
 
 # --- JSON entrypoints (minimal surface) ---
 @app.post("/collect")
