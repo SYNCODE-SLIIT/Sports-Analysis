@@ -135,6 +135,7 @@ class RouterCollector:
             "odds.list", "odds.live",
             "probabilities.list",
             "comments.list",
+            "h2h",
             "events.live", "livescore.list",
             "video.highlights",
             # you can add "fixtures.list" here if you want ASAPI-by-date to be primary
