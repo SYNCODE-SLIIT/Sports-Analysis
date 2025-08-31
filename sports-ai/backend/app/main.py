@@ -32,6 +32,13 @@ app.add_middleware(
 # --- Agents ---
 router = RouterCollector()                        # unified router over TSDB + AllSports
 
+try:
+    from .agents import summarizer
+    app.mount("/summarizer", summarizer.app)
+    print("[startup] summarizer mounted at /summarizer")
+except Exception as e:
+    print(f"[startup] summarizer not mounted: {e}")
+
 # --- JSON entrypoints (minimal surface) ---
 @app.post("/collect")
 def collect(request: dict = Body(...)):
