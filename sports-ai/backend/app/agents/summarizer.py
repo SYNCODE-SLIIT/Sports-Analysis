@@ -1,41 +1,23 @@
-# FastAPI summarizer agent with LLM integration
-# - Pulls match details from a sports API by match_id
-# - Crafts a prompt and asks an LLM for a live or full-time summary
-# - No security features (per request)
-#
-# Usage (local):
-#   pip install fastapi uvicorn httpx pydantic openai
-#   export OPENAI_API_KEY=sk-...
-#   export OPENAI_MODEL=gpt-4o-mini  # or another chat model
-#   # Option A: Generic provider via URL template
-#   export SPORTS_API_PROVIDER=generic
-#   export SPORTS_API_URL_TEMPLATE="https://example.com/matches/{match_id}"  # returns JSON; mapping handled below
-#   # Option B: API-Football (example)
-#   # export SPORTS_API_PROVIDER=api_football
-#   # export APIFOOTBALL_BASE="https://v3.football.api-sports.io"
-#   # export APIFOOTBALL_KEY=your_key
-#   uvicorn agents.summarizer_llm.main:app --host 0.0.0.0 --port 8003 --reload
-#
-# Example GET:
-#   /summary/{match_id}?mode=live           -> short live snapshot
-#   /summary/{match_id}?mode=full           -> fuller post-match summary
-#   /debug/raw/{match_id}                   -> raw normalized payload
-
+# summarizer_service.py
 from __future__ import annotations
+
 import os
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
-from datetime import datetime
+import uuid
+import asyncio
+from typing import Any, Dict, List, Optional, Tuple
 
-import httpx
-from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel
-from dotenv import load_dotenv
-load_dotenv()
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 # -----------------------
+# Config / Env
+# -----------------------
+AGENT_MODE = os.getenv("AGENT_MODE", "local")  # "local" or "http"
+# If AGENT_MODE="http", set these to the microservice URLs for your agents
+TSDB_AGENT_URL = os.getenv("TSDB_AGENT_URL", "http://localhost:8000/agent")
+ALLSPORTS_AGENT_URL = os.getenv("ALLSPORTS_AGENT_URL", "http://localhost:8000/agent")
+
 # LLM (Groq)
-# -----------------------
 try:
     from groq import Groq
 except Exception:
@@ -43,442 +25,660 @@ except Exception:
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.35"))
+
+# Optional: import your agents for local mode (robust to different import roots)
+CollectorAgentV2 = None
+AllSportsRawAgent = None
+if AGENT_MODE == "local":
+    try:
+        # Prefer relative imports when running inside the package
+        from .collector import CollectorAgentV2 as _Collector
+        from .game_analytics_agent import AllSportsRawAgent as _Raw
+        CollectorAgentV2 = _Collector
+        AllSportsRawAgent = _Raw
+    except Exception:
+        try:
+            # Fallback to absolute package path
+            from backend.app.agents.collector import CollectorAgentV2 as _Collector2
+            from backend.app.agents.game_analytics_agent import AllSportsRawAgent as _Raw2
+            CollectorAgentV2 = _Collector2
+            AllSportsRawAgent = _Raw2
+        except Exception:
+            # Final fallback: leave as None so HTTP mode will be used
+            pass
+
+import httpx
+
+app = FastAPI(title="Summarizer Agent", version="2.0")
 
 
-class LLM:
-    def __init__(self):
-        if Groq is None:
-            raise RuntimeError("groq package not installed. `pip install groq`.\n")
-        if not GROQ_API_KEY:
-            raise RuntimeError("GROQ_API_KEY is not set.")
-        self.client = Groq(api_key=GROQ_API_KEY)
-        self.model = GROQ_MODEL
+# -----------------------
+# Models
+# -----------------------
+class SummarizeRequest(BaseModel):
+    # Identify the match
+    eventId: Optional[str] = None
+    eventName: Optional[str] = None
+    date: Optional[str] = None            # YYYY-MM-DD (optional disambiguation)
+    season: Optional[str] = None          # e.g., "2024-2025"
+    provider: str = Field(default="auto", pattern="^(auto|tsdb|allsports)$")
+    # Options
+    timezone: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    trace_id: Optional[str] = None
 
-    async def summarize(self, system: str, user: str, temperature: float = 0.3) -> str:
-        import asyncio
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._summarize_sync, system, user, temperature)
 
-    def _summarize_sync(self, system: str, user: str, temperature: float) -> str:
-        resp = self.client.chat.completions.create(
-            model=self.model,
-            temperature=temperature,
+class SummaryOut(BaseModel):
+    ok: bool
+    headline: str
+    one_paragraph: str
+    bullets: List[str]
+    key_events: List[Dict[str, Any]]
+    star_performers: List[Dict[str, Any]]
+    numbers: Dict[str, Any]
+    source_meta: Dict[str, Any]
+
+
+# -----------------------
+# Utilities
+# -----------------------
+def new_trace_id() -> str:
+    return f"tr_{uuid.uuid4().hex[:12]}"
+
+def _short(s: str | None, n: int = 120) -> str:
+    if not s:
+        return ""
+    return s if len(s) <= n else s[: n - 1] + "…"
+# ⬇️ ADD THESE HELPERS RIGHT AFTER _short(...)
+def word_count(s: str | None) -> int:
+    return len((s or "").strip().split())
+
+def _minute_of_first_goal(timeline: list[dict]) -> str | None:
+    mins = []
+    for ev in (timeline or []):
+        kind = (ev.get("type") or ev.get("event") or ev.get("card") or "").lower()
+        is_goal = (
+            "goal" in kind
+            or kind in {"g", "scorer", "score"}
+            or bool(ev.get("home_scorer"))
+            or bool(ev.get("away_scorer"))
+        )
+        if is_goal:
+            m = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
+            if m:
+                mins.append(str(m).strip("′ '"))
+    return mins[0] if mins else None
+
+def _minute_of_equalizer(score_home: int | None, score_away: int | None, timeline: list[dict]) -> str | None:
+    if score_home is None or score_away is None:
+        return None
+    h, a = 0, 0
+    for ev in (timeline or []):
+        kind = (ev.get("type") or ev.get("event") or "").lower()
+        is_goal = (
+            "goal" in kind
+            or kind in {"g", "scorer", "score"}
+            or bool(ev.get("home_scorer"))
+            or bool(ev.get("away_scorer"))
+        )
+        if is_goal:
+            side = (ev.get("team") or ev.get("side") or "").lower()
+            # Infer side for AllSports shapes
+            if not side:
+                if ev.get("home_scorer") or ev.get("home_fault"): side = "home"
+                elif ev.get("away_scorer") or ev.get("away_fault"): side = "away"
+            if not side and ev.get("score"):
+                try:
+                    parts = [int(x) for x in str(ev["score"]).replace("-", " ").split() if x.isdigit()]
+                    if len(parts) == 2:
+                        h, a = parts[0], parts[1]
+                except Exception:
+                    pass
+            else:
+                if "home" in side: h += 1
+                elif "away" in side: a += 1
+            if h == a and h > 0:
+                m = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
+                return str(m).strip("′ '") if m else None
+    return None
+
+
+def _is_live_status(status: str | None) -> bool | None:
+    s = (status or "").strip().lower()
+    if not s:
+        return None
+    # Finished keywords (TSDB/AllSports variants)
+    finished_keys = ["ft", "full", "finished", "match finished", "ended", "aet", "pen", "after extra time"]
+    if any(k in s for k in finished_keys):
+        return False
+    # AllSports often uses numeric minutes or HT, 1st Half, etc.
+    live_keys = ["live", "1st", "2nd", "half", "ht", "paused", "extra time", "stoppage"]
+    if any(k in s for k in live_keys):
+        return True
+    # Pure number like "89" -> in-progress minute
+    if s.isdigit():
+        try:
+            m = int(s)
+            if 0 < m <= 140:
+                return True
+        except Exception:
+            pass
+    # Not started / scheduled
+    ns_keys = ["ns", "not started", "scheduled", "postp", "postponed"]
+    if any(k in s for k in ns_keys):
+        return None
+    return None
+
+
+def _latest_minute(timeline: list[dict]) -> str | None:
+    for ev in reversed(timeline or []):
+        m = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
+        if m:
+            return str(m).strip("′ '")
+    return None
+
+
+# -----------------------
+# Low-level agent callers
+# -----------------------
+async def call_tsdb_agent(payload: Dict[str, Any], trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Call CollectorAgentV2 either locally or via HTTP."""
+    trace.append({"step": "call_tsdb_agent", "mode": AGENT_MODE, "intent": payload.get("intent")})
+    if AGENT_MODE == "local":
+        if not CollectorAgentV2:
+            return {"ok": False, "error": {"code": "NO_LOCAL_TSDB", "message": "CollectorAgentV2 not importable"}}
+        agent = CollectorAgentV2()
+        return agent.handle(payload)
+    else:
+        async with httpx.AsyncClient(timeout=25) as client:
+            r = await client.post(TSDB_AGENT_URL, json=payload)
+            return r.json()
+
+async def call_allsports_agent(payload: Dict[str, Any], trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Call AllSportsRawAgent either locally or via HTTP."""
+    trace.append({"step": "call_allsports_agent", "mode": AGENT_MODE, "intent": payload.get("intent")})
+    if AGENT_MODE == "local":
+        if not AllSportsRawAgent:
+            return {"ok": False, "error": {"code": "NO_LOCAL_ASRAW", "message": "AllSportsRawAgent not importable"}}
+        agent = AllSportsRawAgent()
+        return agent.handle(payload)
+    else:
+        async with httpx.AsyncClient(timeout=25) as client:
+            r = await client.post(ALLSPORTS_AGENT_URL, json=payload)
+            return r.json()
+
+
+# -----------------------
+# Normalizers (minimal, safe)
+# These convert TSDB/AllSports raw-ish payloads into a tiny internal shape
+# for prompting: teams, score, venue, date, competition, timeline, stats, lineup.
+# -----------------------
+def norm_tsdb_event(bundle: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    bundle = data from CollectorAgentV2 event.get:
+    {
+      "event": {...},                       # (picked candidate if uniquely resolved)
+      "candidates": [...],                  # for transparency
+      "timeline": [...], "stats": [...], "lineup": [...]
+    }
+    """
+    ev = (bundle or {}).get("event") or {}
+    # Basic keys often present in TSDB event objects
+    home = ev.get("strHomeTeam") or ev.get("strHomeTeamBadge") or ""
+    away = ev.get("strAwayTeam") or ev.get("strAwayTeamBadge") or ""
+    hs = ev.get("intHomeScore") or ev.get("intHomeScoreFT") or ev.get("intHomeGoal") or None
+    as_ = ev.get("intAwayScore") or ev.get("intAwayScoreFT") or ev.get("intAwayGoal") or None
+    comp = ev.get("strLeague") or ""
+    round_ = ev.get("intRound") or ev.get("strRound") or ""
+    venue = ev.get("strVenue") or ""
+    date = ev.get("dateEventLocal") or ev.get("dateEvent") or ev.get("strTimestamp") or ""
+    time_local = ev.get("strTimeLocal") or ev.get("strTime") or ""
+    status = ev.get("strStatus") or ev.get("strProgress") or ""
+
+    return {
+        "provider": "tsdb",
+        "teams": {"home": home, "away": away},
+        "score": {"home": _safe_int(hs), "away": _safe_int(as_)},
+        "competition": comp,
+        "round": round_,
+        "venue": venue,
+        "date": date,
+        "time_local": time_local,
+        "status": status,
+        "event_id": ev.get("idEvent"),
+        "timeline": (bundle or {}).get("timeline") or [],
+        "stats": (bundle or {}).get("stats") or [],
+        "lineup": (bundle or {}).get("lineup") or [],
+        "raw_event": ev,
+    }
+
+def norm_allsports_event(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    raw = AllSportsRawAgent event.get response:
+      {"data": { "success":1, "result":[{...match...}] }, ...}
+    We'll pick the first result if present.
+    """
+    body = (raw or {}).get("data") or {}
+    result = None
+    if isinstance(body, dict):
+        items = body.get("result") or body.get("result_prev") or []
+        if isinstance(items, list) and items:
+            result = items[0]
+    ev = result or {}
+
+    # AllSports field names (typical)
+    home = ev.get("event_home_team") or ev.get("home_team") or ""
+    away = ev.get("event_away_team") or ev.get("away_team") or ""
+    hs = ev.get("event_final_result", "").split("-")[0].strip() if ev.get("event_final_result") else ev.get("home_score")
+    as_ = ev.get("event_final_result", "").split("-")[1].strip() if ev.get("event_final_result") else ev.get("away_score")
+    comp = ev.get("league_name") or ""
+    # Venue appears under various keys across providers; check multiple
+    venue = (
+        ev.get("stadium")
+        or ev.get("venue")
+        or ev.get("event_stadium")
+        or ev.get("event_venue")
+        or ev.get("stadium_name")
+        or ev.get("venue_name")
+        or ev.get("match_stadium")
+        or ""
+    )
+    date = ev.get("event_date") or ev.get("event_date_start") or ev.get("match_date") or ""
+    time_local = ev.get("event_time") or ev.get("match_time") or ""
+    status = ev.get("event_status") or ev.get("match_status") or ""
+
+    # Best-effort timeline: provider sometimes returns goals/cards under events keys
+    # We'll check a few common places
+    timeline = ev.get("goalscorers") or ev.get("cards") or ev.get("substitutes") or []
+    # Some providers expose a flat timeline list under 'events' or 'timeline'
+    if not timeline:
+        timeline = ev.get("events") or ev.get("timeline") or []
+
+    return {
+        "provider": "allsports",
+        "teams": {"home": home, "away": away},
+        "score": {"home": _safe_int(hs), "away": _safe_int(as_)},
+        "competition": comp,
+        "round": ev.get("league_round") or ev.get("round") or "",
+        "venue": venue,
+        "date": date,
+        "time_local": time_local,
+        "status": status,
+        "event_id": ev.get("match_id") or ev.get("event_key") or ev.get("id"),
+        "timeline": timeline,
+        "stats": ev.get("statistics") or ev.get("match_statistics") or [],
+        "lineup": ev.get("lineups") or ev.get("lineup") or [],
+        "raw_event": ev,
+    }
+
+def _safe_int(x: Any) -> Optional[int]:
+    try:
+        if x is None or x == "":
+            return None
+        return int(str(x).strip())
+    except Exception:
+        return None
+
+
+# -----------------------
+# Orchestration
+# -----------------------
+async def fetch_event_bundle(req: SummarizeRequest, trace: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], str, Dict[str, Any]]:
+    """
+    Return (normalized, provider_used, raw_sources)
+    Strategy:
+      - If provider=="tsdb" → TSDB only
+      - If provider=="allsports" → AllSports only
+      - If "auto" → try TSDB (with expansions), if too thin → consult AllSports
+    """
+    raw_sources: Dict[str, Any] = {"tsdb": None, "allsports": None}
+
+    # 1) Try TSDB
+    if req.provider in ("auto", "tsdb"):
+        args = {}
+        if req.eventName:
+            args["eventName"] = req.eventName
+        if req.eventId:
+            args["eventId"] = req.eventId
+        if req.season:
+            args["season"] = req.season
+        if req.date:
+            args["dateEvent"] = req.date
+        args["expand"] = ["timeline", "stats", "lineup"]
+
+        tsdb_payload = {"intent": "event.get", "args": args}
+        tsdb = await call_tsdb_agent(tsdb_payload, trace)
+        raw_sources["tsdb"] = tsdb
+
+        if tsdb.get("ok"):
+            data = tsdb.get("data") or {}
+            # If TSDB successfully picked an event (data.event exists) or at least one candidate and expansions
+            if (data.get("event") or (data.get("candidates") and len(data.get("candidates")) == 1)):
+                norm = norm_tsdb_event(data)
+                # If score or timeline look empty and provider is auto, we may still consult AllSports
+                if req.provider == "auto":
+                    if not norm["score"]["home"] and not norm["score"]["away"] and not norm["timeline"]:
+                        trace.append({"step": "tsdb_thin_data_consult_allsports"})
+                    else:
+                        return norm, "tsdb", raw_sources
+                else:
+                    return norm, "tsdb", raw_sources
+
+    # 2) Try AllSports
+    if req.provider in ("auto", "allsports"):
+        as_args = {}
+        if req.eventId:     # in AllSports this is usually 'matchId' but your RawAgent maps eventId -> matchId
+            as_args["eventId"] = req.eventId
+        if req.eventName:
+            # RawAgent doesn't require name for event.get, but we can try fixtures.list if you want name-based
+            pass
+        as_payload = {"intent": "event.get", "args": as_args}
+        allsports = await call_allsports_agent(as_payload, trace)
+        raw_sources["allsports"] = allsports
+        if allsports.get("ok"):
+            norm = norm_allsports_event(allsports)
+            # If venue missing, try to fill from TSDB event (if we queried it already)
+            if (not norm.get("venue")) and (raw_sources.get("tsdb") or {}).get("ok"):
+                tsdb_data = (raw_sources["tsdb"].get("data") or {})
+                tsdb_event = (tsdb_data.get("event") or {})
+                venue_tsdb = tsdb_event.get("strVenue")
+                if venue_tsdb:
+                    norm["venue"] = venue_tsdb
+            # If still super thin and we had TSDB candidates, keep TSDB as provider
+            if norm["teams"]["home"] or norm["teams"]["away"]:
+                return norm, "allsports", raw_sources
+
+    return None, "none", raw_sources
+
+
+async def enrich_missing_venue(bundle: Dict[str, Any], req: SummarizeRequest, trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """If venue is empty, attempt to resolve via TSDB venue.get using eventName/eventId."""
+    if (bundle.get("venue") or "").strip():
+        return bundle
+
+    # Best-effort event name
+    ev_name = (req.eventName or "").strip()
+    if not ev_name:
+        raw = bundle.get("raw_event") or {}
+        ev_name = (
+            raw.get("strEvent")
+            or raw.get("strEventAlternate")
+            or (f"{raw.get('event_home_team')} vs {raw.get('event_away_team')}" if raw.get('event_home_team') or raw.get('event_away_team') else "")
+        ) or ""
+
+    # Build args; CollectorAgentV2.venue.get requires venueId or eventName (+optional eventId)
+    args = {}
+    if ev_name:
+        args["eventName"] = ev_name
+    if req.eventId:
+        args["eventId"] = req.eventId
+    if not args:
+        return bundle
+
+    try:
+        resp = await call_tsdb_agent({"intent": "venue.get", "args": args}, trace)
+        if resp.get("ok"):
+            data = resp.get("data") or {}
+            ven = (data.get("venue") or {})
+            name = ven.get("strVenue") or ven.get("strStadium") or ven.get("strName")
+            if name:
+                bundle = dict(bundle)
+                bundle["venue"] = name
+    except Exception:
+        pass
+    return bundle
+
+
+def build_llm_prompt(bundle: Dict[str, Any]) -> Tuple[str, str]:
+    """Return (system, user) prompts for the LLM with stronger guidance; adapts if match is live."""
+    teams = bundle["teams"]
+    score = bundle["score"]
+    comp = bundle["competition"]
+    venue = bundle["venue"]
+    date = bundle["date"]
+    time_local = bundle["time_local"]
+    status = bundle["status"]
+    timeline = bundle["timeline"]
+    stats = bundle["stats"]
+    lineup = bundle["lineup"]
+
+    is_live = _is_live_status(status)
+    last_min = _latest_minute(timeline)
+    system = (
+        "You are an elite football match reporter. Use ONLY the provided data; never invent names or stats. "
+        "Write precise, vivid, factual prose that highlights momentum, turning points, and context. "
+        f"The one_paragraph MUST be between 300 and 400 words."
+    )
+
+    # Build timeline bullets (stringified) — include AllSports fields
+    tl_lines = []
+    for ev in (timeline or []):
+        minute = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
+        # Determine event type and player across providers
+        kind = (ev.get("type") or ev.get("event") or ev.get("card") or ev.get("info") or ev.get("event_type") or "").strip()
+        # AllSports goal/career fields
+        scorer = ev.get("player") or ev.get("player_name") or ev.get("scorer") or ev.get("home_scorer") or ev.get("away_scorer")
+        # Cards sometimes in home_fault/away_fault
+        fault = ev.get("home_fault") or ev.get("away_fault")
+        sub_on = ev.get("substitution") or ev.get("in_player")
+        sub_off = ev.get("out_player")
+        who = scorer or fault or sub_on or sub_off
+        note = ev.get("assist") or ev.get("score") or ev.get("result") or ev.get("info_time") or ""
+        # If type is missing but we can infer
+        if not kind:
+            if ev.get("home_scorer") or ev.get("away_scorer") or ev.get("scorer"):
+                kind = "Goal"
+            elif ev.get("card"):
+                kind = str(ev.get("card"))
+            elif sub_on or sub_off:
+                kind = "Substitution"
+        tl_lines.append(
+            f"{(str(minute)+'′ ') if minute else ''}{kind} — {(who or 'Unknown').strip()} {(note or '').strip()}".strip()
+        )
+
+    # Primary stats (TSDB often [{"strStat","intHome","intAway"}])
+    stats_pairs = []
+    if isinstance(stats, list):
+        for st in stats[:12]:
+            name = st.get("strStat") or st.get("type") or st.get("name")
+            h = st.get("intHome") or st.get("home") or st.get("home_value")
+            a = st.get("intAway") or st.get("away") or st.get("away_value")
+            if name and (h is not None or a is not None):
+                stats_pairs.append(f"{name}: {h}-{a}")
+    stats_hint = " | ".join(stats_pairs) if stats_pairs else "None"
+
+    # Story hints derived from data to encourage richer detail (still non-hallucinatory)
+    first_goal_min = _minute_of_first_goal(timeline)
+    eq_min = _minute_of_equalizer(score.get("home"), score.get("away"), timeline)
+    flow_hint = []
+    if first_goal_min:
+        flow_hint.append(f"Opening goal around {first_goal_min}′.")
+    if eq_min:
+        flow_hint.append(f"Equalizer around {eq_min}′.")
+    if not flow_hint and (score.get("home") is not None and score.get("away") is not None):
+        flow_hint.append("Scoreline changes inferred from final score; exact minutes not fully available.")
+
+    header = "Final Score" if is_live is False else ("Current Score" if is_live else "Score")
+    live_line = "Live update — do not assume final result" if is_live else ("Not started" if is_live is None and not timeline else "")
+
+    user = f"""
+Match: {teams.get('home','')} vs {teams.get('away','')}
+{header}: {score.get('home')}–{score.get('away')}
+Competition/Stage: {comp}
+Venue: {venue or 'Unknown'}
+Date/Time: {date or 'Unknown'} {time_local or ''}
+Status: {status or 'Unknown'}{(' | ' + live_line) if live_line else ''}
+Latest minute seen: {last_min or 'n/a'}
+
+Timeline (minute • event • player • note):
+- """ + ("\n- ".join(tl_lines) if tl_lines else "None") + """
+
+Key stats (home-away):
+""" + stats_hint + """
+
+Story hints:
+- """ + ("\n- ".join(flow_hint) if flow_hint else "None") + """
+
+Write JSON only with keys:
+headline (short), one_paragraph (single paragraph, """ \
++ f"""300-400 words, include: {'current state and likely themes so far' if is_live else 'result'}; phases (first half vs second half) when supported by data; minutes for the opening goal and equalizer if present; how momentum changed; any notable absences of data like venue/stats),""" \
++ """ bullets (3-6 crisp points), key_events (minute,type,player,note), star_performers (name,reason), numbers (home_score,away_score).
+
+Rules:
+- If a data point (scorer, venue, stats) is missing, explicitly note that it was not provided; do not guess.
+- If the match is live, DO NOT write as if it has finished; clearly frame as a live update based on current score and minute.
+- Prefer concrete minutes and competition context when available.
+- Keep language active and specific; avoid clichés.
+"""
+    return system, user
+
+
+
+async def run_llm(system: str, user: str) -> Dict[str, Any]:
+    """Call Groq LLM to produce structured JSON, enforcing longer one_paragraph with a single retry if needed."""
+    if Groq is None or not GROQ_API_KEY:
+        return {
+            "headline": "Match Report Unavailable",
+            "one_paragraph": "LLM is not configured. Set GROQ_API_KEY.",
+            "bullets": [],
+            "key_events": [],
+            "star_performers": [],
+            "numbers": {},
+        }
+
+    client = Groq(api_key=GROQ_API_KEY)
+
+    def _content():
+        schema_hint = f"""Respond ONLY in JSON with keys:
+{{
+  "headline": str,
+  "one_paragraph": str,   // MUST be between 300-400 words, single paragraph
+  "bullets": [str, ...],  // 3-6 items
+  "key_events": [{{"minute": str, "type": str, "player": str, "note": str}}, ...],
+  "star_performers": [{{"name": str, "reason": str}}, ...],
+  "numbers": {{"home_score": int|null, "away_score": int|null}}
+}}
+Do not add extra fields.
+"""
+        return schema_hint + "\n\nDATA:\n" + user
+
+    async def _call():
+        return await asyncio.to_thread(
+            client.chat.completions.create,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": user},
+                {"role": "user", "content": _content()},
             ],
-        )
-        return resp.choices[0].message.content.strip()
-
-
-# -----------------------
-# Data models (normalized)
-# -----------------------
-class MatchEvent(BaseModel):
-    minute: int
-    team: Optional[str] = None
-    type: str
-    description: str
-    xg: Optional[float] = None
-
-
-class MatchData(BaseModel):
-    match_id: str
-    status: str
-    minute: Optional[int] = 0
-    competition: Optional[str] = None
-    home_team: str
-    away_team: str
-    score_home: int
-    score_away: int
-    events: List[MatchEvent] = []
-
-
-# -----------------------
-# Providers
-# -----------------------
-PROVIDER = os.getenv("SPORTS_API_PROVIDER", "collector").lower()
-
-
-class SportsProvider:
-    async def fetch(self, match_ref: str) -> MatchData:
-        raise NotImplementedError
-
-
-class GenericProvider(SportsProvider):
-    """
-    Previous generic HTTP provider kept for compatibility. It expects an upstream that
-    already returns a football-like JSON and maps it into MatchData.
-    """
-    def __init__(self):
-        self.template = os.getenv("SPORTS_API_URL_TEMPLATE")
-        if not self.template:
-            raise RuntimeError("SPORTS_API_URL_TEMPLATE is required for generic provider.")
-
-    async def fetch(self, match_id: str) -> MatchData:
-        url = self.template.format(match_id=match_id)
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(url)
-            if r.status_code >= 400:
-                raise HTTPException(r.status_code, f"Sports API error: {r.text[:200]}")
-            data = r.json()
-        if all(k in data for k in ["match_id", "home_team", "away_team", "score_home", "score_away"]):
-            evs = [MatchEvent(**e) for e in data.get("events", [])]
-            return MatchData(**{**data, "events": evs})
-        return self._map_common_football(data, match_id)
-
-    def _map_common_football(self, payload: Any, match_id: str) -> MatchData:
-        status = payload.get("fixture", {}).get("status", {})
-        minute = status.get("elapsed") or 0
-        short = status.get("short") or "NS"
-        home = payload.get("teams", {}).get("home", {}).get("name") or "Home"
-        away = payload.get("teams", {}).get("away", {}).get("name") or "Away"
-        g = payload.get("goals", {})
-        sh = int(g.get("home") or 0)
-        sa = int(g.get("away") or 0)
-        events_raw = payload.get("events") or []
-        events: List[MatchEvent] = []
-        for e in events_raw:
-            minute_e = e.get("time", {}).get("elapsed") or 0
-            team_e = (e.get("team") or {}).get("name")
-            etype = str(e.get("type") or "Event")
-            detail = str(e.get("detail") or "")
-            desc = f"{etype}: {detail}" if detail else etype
-            events.append(MatchEvent(minute=minute_e, team=team_e, type=etype, description=desc))
-        return MatchData(
-            match_id=match_id,
-            status=short,
-            minute=minute,
-            home_team=home,
-            away_team=away,
-            score_home=sh,
-            score_away=sa,
-            events=events,
+            model=GROQ_MODEL,
+            temperature=LLM_TEMPERATURE,
+            response_format={"type": "json_object"},
         )
 
-
-class APIFootballProvider(SportsProvider):
-    def __init__(self):
-        self.base = os.getenv("APIFOOTBALL_BASE", "https://v3.football.api-sports.io")
-        self.key = os.getenv("APIFOOTBALL_KEY")
-        if not self.key:
-            raise RuntimeError("APIFOOTBALL_KEY is required for api_football provider.")
-
-    async def fetch(self, match_id: str) -> MatchData:
-        headers = {"x-apisports-key": self.key, "Accept": "application/json"}
-        async with httpx.AsyncClient(timeout=15, headers=headers) as client:
-            fx = await client.get(f"{self.base}/fixtures", params={"id": match_id})
-            if fx.status_code >= 400:
-                raise HTTPException(fx.status_code, f"API-Football fixtures error: {fx.text[:200]}")
-            js = fx.json()
-            if not js.get("response"):
-                raise HTTPException(404, "Match not found")
-            base = js["response"][0]
-            ev = await client.get(f"{self.base}/fixtures/events", params={"fixture": match_id})
-            ev.raise_for_status()
-            ev_js = ev.json()
-            ev_resp = ev_js.get("response") or []
-        status = (base.get("fixture", {}).get("status") or {})
-        short = status.get("short") or "NS"
-        minute = status.get("elapsed") or 0
-        home = base.get("teams", {}).get("home", {}).get("name")
-        away = base.get("teams", {}).get("away", {}).get("name")
-        sh = int((base.get("goals", {}) or {}).get("home") or 0)
-        sa = int((base.get("goals", {}) or {}).get("away") or 0)
-        events: List[MatchEvent] = []
-        for e in ev_resp:
-            minute_e = (e.get("time") or {}).get("elapsed") or 0
-            team_e = (e.get("team") or {}).get("name")
-            etype = str(e.get("type") or "Event")
-            detail = str(e.get("detail") or "")
-            desc = f"{etype}: {detail}" if detail else etype
-            events.append(MatchEvent(minute=minute_e, team=team_e, type=etype, description=desc))
-        return MatchData(
-            match_id=str(match_id),
-            status=short,
-            minute=minute,
-            home_team=home,
-            away_team=away,
-            score_home=sh,
-            score_away=sa,
-            events=events,
-        )
-
-
-class CollectorProvider(SportsProvider):
-    """
-    NEW: Fetches event details from your Collector Agent (CollectorAgentV2).
-    Expects an HTTP POST to COLLECTOR_URL with a JSON body like:
-      {"intent":"event.get","args":{"eventName":"Arsenal vs Chelsea","expand":["timeline","stats"]}}
-    Note: Collector disables ID-only event lookups; provide eventName (optionally eventId to disambiguate).
-    """
-    def __init__(self):
-        self.url = os.getenv("COLLECTOR_URL")
-        if not self.url:
-            raise RuntimeError("COLLECTOR_URL is required for collector provider.")
-        # Comma-separated list, e.g. "timeline,stats,lineup"
-        self.expand = [s.strip() for s in os.getenv("COLLECTOR_EXPAND", "timeline,stats").split(",") if s.strip()]
-
-    async def fetch_by_name(self, event_name: str, event_id: Optional[str] = None) -> MatchData:
-        args: Dict[str, Any] = {"eventName": event_name}
-        if event_id:
-            args["eventId"] = str(event_id)
-        if self.expand:
-            args["expand"] = self.expand
-
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post(self.url, json={"intent": "event.get", "args": args})
-            r.raise_for_status()
-            resp = r.json()
-
-        if not resp.get("ok", False):
-            err = resp.get("error") or {}
-            code = err.get("code") or "COLLECTOR_ERROR"
-            msg = err.get("message") or "Unknown error from collector"
-            raise HTTPException(status_code=400, detail=f"{code}: {msg}")
-
-        data = resp.get("data") or {}
-        event = data.get("event")
-        candidates = data.get("candidates") or []
-        if not event and event_id:
-            picks = [ev for ev in candidates if str(ev.get("idEvent") or "").strip() == str(event_id)]
-            if len(picks) == 1:
-                event = picks[0]
-        tl = data.get("timeline")
-        timeline = tl if isinstance(tl, list) else []
-
-        # If collector couldn't select, but there's exactly one candidate, take it.
-        if not event:
-            if len(candidates) == 1:
-                event = candidates[0]
-            else:
-                raise HTTPException(404, detail="Event ambiguous or not found. Provide a more specific name or eventId.")
-
-        return self._map_tsdb_event(event, timeline)
-
-    async def fetch(self, match_ref: str) -> MatchData:
-        """
-        For compatibility with the existing /summary/{match_id} route:
-        When PROVIDER=collector, we treat the path segment as the *event name*.
-        """
-        return await self.fetch_by_name(event_name=match_ref)
-
-    # ---- Mapping helpers (TSDB -> normalized) ----
-    def _map_tsdb_event(self, ev: Dict[str, Any], timeline: List[Dict[str, Any]]) -> MatchData:
-        home = ev.get("strHomeTeam") or "Home"
-        away = ev.get("strAwayTeam") or "Away"
-
-        def _to_int(x: Any, default: int = 0) -> int:
-            try:
-                return int(x)
-            except Exception:
-                return default
-
-        sh = _to_int(ev.get("intHomeScore"))
-        sa = _to_int(ev.get("intAwayScore"))
-
-        # minute best-effort: try event field, else max of timeline, else 0
-        minute = 0
-        for k in ("intTime", "intMinute", "intElapsed"):
-            v = ev.get(k)
-            if v is not None:
-                minute = _to_int(v, 0)
-                if minute:
-                    break
-        if minute == 0 and timeline:
-            minute = max((_to_int(t.get("intTime"), 0) or _to_int(t.get("intMinute"), 0) or _to_int(t.get("intElapsed"), 0)) for t in timeline)
-
-        # status best-effort: map free-text to our short codes
-        raw_status = (ev.get("strStatus") or ev.get("strProgress") or "").strip().lower()
-        if "finished" in raw_status or raw_status == "match finished" or raw_status == "ft":
-            status = "FT"
-        elif raw_status in ("1h", "first half", "1st half", "live"):
-            status = "1H"
-        elif raw_status in ("2h", "second half", "2nd half"):
-            status = "2H"
-        elif raw_status in ("ht", "half time", "halftime"):
-            status = "HT"
-        elif raw_status in ("not started", "ns", "scheduled", ""):
-            status = "NS"
-        else:
-            status = "LIVE"
-
-        # Build events from timeline
-        events: List[MatchEvent] = []
-        for e in timeline:
-            minute_e = 0
-            for k in ("intTime", "intMinute", "intElapsed"):
-                v = e.get(k)
-                if v is not None:
-                    minute_e = _to_int(v, 0)
-                    if minute_e:
-                        break
-            team_e = e.get("strTeam") or None
-            etype = str(e.get("strEvent") or e.get("strType") or "Event")
-            detail = str(e.get("strEventDetail") or e.get("strDetail") or e.get("strComment") or "")
-            # Keep same convention as other providers: description already includes type for readability
-            desc = f"{etype}: {detail}" if detail else etype
-            events.append(MatchEvent(minute=minute_e, team=team_e, type=etype, description=desc))
-
-        match_id = str(ev.get("idEvent") or f"{home}_vs_{away}_{ev.get('dateEvent') or ''}").strip()
-        competition = ev.get("strLeague") or None
-
-        return MatchData(
-            match_id=match_id,
-            status=status,
-            minute=minute,
-            competition=competition,
-            home_team=home,
-            away_team=away,
-            score_home=sh,
-            score_away=sa,
-            events=events,
-        )
-
-
-# Provider factory
-if PROVIDER == "api_football":
-    provider: SportsProvider = APIFootballProvider()
-elif PROVIDER == "generic":
-    provider = GenericProvider()
-else:
-    # default to collector
-    provider = CollectorProvider()
-
-
-# -----------------------
-# Prompts
-# -----------------------
-SYSTEM_PROMPT = (
-    "You are a concise sports writer. Given raw match data (teams, scoreline, time, and a list of key "
-    "events with minutes), write a sharp, readable summary. Keep facts straight, avoid speculation, "
-    "and prefer short sentences. Use team names, include scoreline, and mention the most important "
-    "moments in chronological order."
-)
-
-LIVE_USER_TEMPLATE = (
-    "Create a LIVE snapshot (2-4 bullets) for the match below. Start with the current scoreline and minute, "
-    "then list key moments so far. Avoid future tense.\n\n{payload}\n"
-)
-
-FULL_USER_TEMPLATE = (
-    "Create a FULL-TIME summary (one short paragraph + a 3-5 bullet key-moments list) for the match below. "
-    "Begin with the final scoreline, then the game story.\n\n{payload}\n"
-)
-
-
-# -----------------------
-# FastAPI app
-# -----------------------
-app = FastAPI(title="Summarizer Agent (LLM)")
-
-
-def to_llm_payload(m: MatchData) -> str:
-    lines = [
-        f"MatchID: {m.match_id}",
-        f"Status: {m.status}  Minute: {m.minute}",
-        f"Teams: {m.home_team} vs {m.away_team}",
-        f"Score: {m.home_team} {m.score_home}-{m.score_away} {m.away_team}",
-        "Events:",
-    ]
-    for e in sorted(m.events, key=lambda x: x.minute or 0):
-        team = f" [{e.team}]" if e.team else ""
-        lines.append(f"  - {e.minute}'{team} {e.type}: {e.description}")
-    return "\n".join(lines)
-
-
-# --- Debug endpoints ---
-@app.get("/debug/raw/{ref}")
-async def debug_raw(ref: str, event_id: Optional[str] = Query(None)):
-    """
-    If PROVIDER=collector, 'ref' is treated as an eventName.
-    Optionally pass ?event_id=... to disambiguate for collector.
-    """
-    if isinstance(provider, CollectorProvider):
-        m = await provider.fetch_by_name(event_name=ref, event_id=event_id)
-    else:
-        m = await provider.fetch(ref)
-    return m.model_dump()
-
-
-# --- Main summary endpoints ---
-@app.get("/summary/{ref}")
-async def summarize_endpoint(ref: str, event_id: Optional[str] = Query(None)):
-    """
-    Universal summary endpoint:
-      - PROVIDER=collector: 'ref' is the eventName (e.g., "Arsenal vs Chelsea").
-        Optionally add ?event_id=... to filter.
-      - Other providers: 'ref' is the match/fixture id.
-    """
-    if isinstance(provider, CollectorProvider):
-        m = await provider.fetch_by_name(event_name=ref, event_id=event_id)
-    else:
-        m = await provider.fetch(ref)
-
-    payload = to_llm_payload(m)
-
-    status = m.status.upper() if m.status else "NS"
-    if status == "FT":
-        mode = "full"
-    elif status in ["1H", "2H", "HT", "LIVE"]:
-        mode = "live"
-    elif status == "NS":
-        raise HTTPException(400, detail="Match has not started yet.")
-    else:
-        mode = "live"
-
-    user = LIVE_USER_TEMPLATE.format(payload=payload) if mode == "live" else FULL_USER_TEMPLATE.format(payload=payload)
-
-    llm = LLM()
+    # First try
+    chat = await _call()
+    raw = chat.choices[0].message.content
+    import json
     try:
-        summary = await llm.summarize(SYSTEM_PROMPT, user)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LLM error: {e}")
+        out = json.loads(raw)
+    except Exception:
+        out = {
+            "headline": "Match Report",
+            "one_paragraph": raw[:800],
+            "bullets": [],
+            "key_events": [],
+            "star_performers": [],
+            "numbers": {},
+        }
 
-    return {
-        "match_ref": ref,
-        "mode": mode,
-        "status": m.status,
-        "minute": m.minute,
-        "scoreline": f"{m.home_team} {m.score_home}-{m.score_away} {m.away_team}",
-        "summary": summary,
+    # Enforce paragraph length once
+    para = out.get("one_paragraph") or ""
+    wc = word_count(para)
+    if wc < 300 or wc > 400:
+        reinforce = (
+            system
+            + f" The one_paragraph MUST be between 300-400 words. "
+              "Preserve facts; do not invent missing data. Expand with momentum and context only from provided info."
+        )
+        chat2 = await asyncio.to_thread(
+            client.chat.completions.create,
+            messages=[
+                {"role": "system", "content": reinforce},
+                {"role": "user", "content": _content()},
+            ],
+            model=GROQ_MODEL,
+            temperature=LLM_TEMPERATURE,
+            response_format={"type": "json_object"},
+        )
+        try:
+            out = json.loads(chat2.choices[0].message.content)
+        except Exception:
+            pass  # keep first response if second parse fails
+
+    return out
+
+
+# -----------------------
+# FastAPI route
+# -----------------------
+@app.post("/summarize", response_model=SummaryOut)
+async def summarize(req: SummarizeRequest):
+    trace: List[Dict[str, Any]] = []
+    trace_id = req.trace_id or new_trace_id()
+    idempotency_key = req.idempotency_key or trace_id
+    trace.append({"trace_id": trace_id, "idempotency_key": idempotency_key})
+
+    # Fetch event bundle from agents
+    bundle, provider_used, raw_sources = await fetch_event_bundle(req, trace)
+    if not bundle:
+        # Build a graceful error response
+        src_notes = {
+            "tsdb_ok": (raw_sources.get("tsdb") or {}).get("ok"),
+            "allsports_ok": (raw_sources.get("allsports") or {}).get("ok"),
+            "tsdb_err": (raw_sources.get("tsdb") or {}).get("error"),
+            "allsports_err": (raw_sources.get("allsports") or {}).get("error"),
+        }
+        raise HTTPException(
+            status_code=404,
+            detail={"reason": "Event not found or too little data to summarize", "sources": src_notes, "trace": trace},
+        )
+
+    # Enrich missing venue via TSDB if possible
+    bundle = await enrich_missing_venue(bundle, req, trace)
+
+    # Prompt LLM
+    system, user = build_llm_prompt(bundle)
+    llm_out = await run_llm(system, user)
+
+    # Assemble final shape
+    summary = {
+        "ok": True,
+        "headline": llm_out.get("headline") or "Match Report",
+        "one_paragraph": llm_out.get("one_paragraph") or "",
+        "bullets": llm_out.get("bullets") or [],
+        "key_events": llm_out.get("key_events") or [],
+        "star_performers": llm_out.get("star_performers") or [],
+        "numbers": llm_out.get("numbers") or {
+            "home_score": bundle["score"]["home"],
+            "away_score": bundle["score"]["away"],
+        },
+        "source_meta": {
+            "provider_used": provider_used,
+            "bundle": {
+                "teams": bundle["teams"],
+                "score": bundle["score"],
+                "competition": bundle["competition"],
+                "venue": bundle["venue"],
+                "date": bundle["date"],
+                "time_local": bundle["time_local"],
+                "status": bundle["status"],
+                "event_id": bundle["event_id"],
+            },
+            "trace": trace,
+            "raw_peek": {
+                "tsdb_head": _short(str(raw_sources.get("tsdb"))[:800]),
+                "allsports_head": _short(str(raw_sources.get("allsports"))[:800]),
+            },
+        },
     }
-
-
-@app.get("/summary/by-name")
-async def summarize_by_name(event_name: str = Query(..., description="Exact or close TSDB event name."),
-                            event_id: Optional[str] = Query(None, description="Optional TSDB eventId to disambiguate")):
-    """
-    Convenience endpoint when using the collector provider explicitly by event name.
-    """
-    if not isinstance(provider, CollectorProvider):
-        raise HTTPException(400, detail="This endpoint requires PROVIDER=collector.")
-    m = await provider.fetch_by_name(event_name=event_name, event_id=event_id)
-    payload = to_llm_payload(m)
-
-    status = m.status.upper() if m.status else "NS"
-    if status == "FT":
-        mode = "full"
-    elif status in ["1H", "2H", "HT", "LIVE"]:
-        mode = "live"
-    elif status == "NS":
-        raise HTTPException(400, detail="Match has not started yet.")
-    else:
-        mode = "live"
-
-    user = LIVE_USER_TEMPLATE.format(payload=payload) if mode == "live" else FULL_USER_TEMPLATE.format(payload=payload)
-
-    llm = LLM()
-    try:
-        summary = await llm.summarize(SYSTEM_PROMPT, user)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LLM error: {e}")
-
-    return {
-        "match_ref": event_name,
-        "mode": mode,
-        "status": m.status,
-        "minute": m.minute,
-        "scoreline": f"{m.home_team} {m.score_home}-{m.score_away} {m.away_team}",
-        "summary": summary,
-    }
+    return summary
