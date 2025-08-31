@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>History Matches by League</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="../styles/history.css" />
+</head>
+<body>
+  <header>
+    <h1>History Matches (Grouped by League)</h1>
+    <nav class="nav">
+      <a href="./matches.html">Live & Finished</a>
+      <a href="./history_matches.html" class="active">History</a>
+    </nav>
+    <div class="controls">
+      <label>Days Back <input type="number" id="daysInput" min="1" max="31" value="7" /></label>
+      <label>End Date <input type="date" id="endDate" /></label>
+      <label>League <select id="leagueSelect"><option value="__ALL__">All Leagues</option></select></label>
+      <button id="fetchLeagueBtn" title="Fetch matches only for selected league over range">Fetch League</button>
+      <button id="loadBtn">Load</button>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+  <main id="content"></main>
+  <template id="leagueTemplate">
+    <section class="league">
+      <h2 class="leagueTitle"></h2>
+      <div class="dates"></div>
+    </section>
+  </template>
+  <template id="dateTemplate">
+    <div class="date-block">
+      <h3 class="dateHeading"></h3>
+      <div class="matches"></div>
+    </div>
+  </template>
+  <template id="matchRowTemplate">
+    <div class="match-row"></div>
+  </template>
+  <script src="../scripts/history.js"></script>
+</body>
+</html>
