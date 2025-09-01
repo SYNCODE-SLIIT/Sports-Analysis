@@ -33,6 +33,7 @@ app.add_middleware(
 # --- Agents ---
 router = RouterCollector()                        # unified router over TSDB + AllSports
 
+
 # # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
 # @app.on_event("startup")
 # async def _show_routes():
@@ -44,6 +45,14 @@ router = RouterCollector()                        # unified router over TSDB + A
 #                 print("   *", p)
 #     except Exception as e:
 #         print("[startup] Could not list routes:", e)
+
+try:
+    from .agents import summarizer
+    app.mount("/summarizer", summarizer.app)
+    print("[startup] summarizer mounted at /summarizer")
+except Exception as e:
+    print(f"[startup] summarizer not mounted: {e}")
+
 
 # --- JSON entrypoints (minimal surface) ---
 @app.post("/collect")
