@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .routers.router_collector import RouterCollector
+from .services.highlight_search import search_event_highlights
 
 app = FastAPI(title="Sports Collector HM (Unified)", version="0.3.0")
 
@@ -190,3 +191,18 @@ app.include_router(matches_router)
 @app.get("/_debug/routes")
 def _debug_routes():  # pragma: no cover
     return {"count": len(app.routes), "paths": sorted({r.path for r in app.routes})}
+
+
+# --- Event highlight search (free-form, no provider key needed) ---
+@app.get('/highlight/event')
+def highlight_event(home: str, away: str, minute: int | None = None, player: str | None = None,
+                    event_type: str | None = None, date: str | None = None):
+    args = {
+        'homeTeam': home,
+        'awayTeam': away,
+        'minute': minute,
+        'player': player,
+        'event_type': event_type,
+        'date': date,
+    }
+    return search_event_highlights(args)

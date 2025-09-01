@@ -13,7 +13,7 @@ async-lru==2.0.5
 attrs==25.3.0
 audioread==3.0.1
 babel==2.17.0
-beautifulsoup4==4.13.4
+beautifulsoup4==4.13.4  # used for lightweight DuckDuckGo HTML parsing for highlight search
 bleach==6.2.0
 certifi==2025.4.26
 cffi==1.17.1

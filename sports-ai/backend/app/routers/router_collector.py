@@ -13,6 +13,7 @@ This module exposes a single class: RouterCollector, with .handle({intent, args}
 
 from __future__ import annotations
 from typing import Any, Dict, Tuple
+from ..services.highlight_search import search_event_highlights
 
 # --- Adapters (thin wrappers around your existing agents) ---
 from ..adapters.tsdb_adapter import TSDBAdapter
@@ -44,6 +45,17 @@ class RouterCollector:
                 raise RouterError("BAD_REQUEST", "Missing 'intent' (string)")
             if not isinstance(args, dict):
                 raise RouterError("BAD_REQUEST", "'args' must be an object")
+
+            # --- Internal (non-provider) intents ---
+            if intent == "highlight.event.search":
+                result = search_event_highlights(args)
+                return {
+                    "ok": True,
+                    "intent": intent,
+                    "args_resolved": args,
+                    "data": result,  # embed result under data for uniformity
+                    "meta": {"source": {"primary": "internal", "fallback": None}, "trace": []},
+                }
 
             primary, fallback = self._route(intent)
 
