@@ -388,8 +388,12 @@
       </div>`;
     
     const detailsInfo = modalBody.querySelector('#details_info');
-    console.log('Rendering event details...');
-    renderEventDetails(ev, detailsInfo);
+  console.log('Rendering event details...');
+  // Build a clean, match-relevant timeline from the event payload and attach it so the UI renders it
+  try{ ev.timeline = buildCleanTimeline(ev); }catch(e){ console.warn('buildCleanTimeline failed', e); }
+  renderEventDetails(ev, detailsInfo);
+  // Auto-augment with model predictions (runs in background; will re-render when complete)
+  setTimeout(()=> { try{ augmentEventTags(ev); }catch(e){ console.warn('auto augment failed', e); } }, 300);
     
     // wire new feature buttons
     const augmentBtn = modalBody.querySelector('#augmentTagsBtn');
@@ -686,7 +690,20 @@
   }
 
   function renderMatchTimeline(ev, container) {
-    const timeline = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || [];
+    // Accept many timeline shapes; if empty try to synthesize from scorers/comments
+    let timeline = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || ev.event_entries || [];
+
+    // If provider returned an object-of-arrays, flatten into an array
+    if(timeline && !Array.isArray(timeline) && typeof timeline === 'object'){
+      const vals = Object.values(timeline).filter(Boolean);
+      const arr = vals.reduce((acc, cur) => acc.concat(Array.isArray(cur) ? cur : []), []);
+      if(arr.length>0) timeline = arr;
+    }
+
+    // If still empty, attempt to synthesize a simple timeline from common fields
+    if(!Array.isArray(timeline) || timeline.length === 0){
+      timeline = synthesizeTimelineFromEvent(ev);
+    }
     if(!Array.isArray(timeline) || timeline.length === 0) return;
 
     const timelineCard = document.createElement('div');
@@ -715,6 +732,123 @@
     container.appendChild(timelineCard);
   }
 
+  // Create a minimal timeline when provider doesn't include one
+  function synthesizeTimelineFromEvent(ev){
+    try{
+      const out = [];
+      // scorers / goals (many provider shapes)
+      const scorers = ev.scorers || ev.goals || ev.goal_scorers || ev.scorers_list || ev.goals_list || [];
+      if(Array.isArray(scorers) && scorers.length>0){
+        scorers.forEach(s => {
+          const minute = s.minute || s.time || s.minute_display || s.m || s.match_minute || '';
+          const name = s.name || s.player || s.scorer || s.player_name || s.player_fullname || '';
+          const team = s.team || s.side || s.club || '';
+          const desc = s.description || s.text || (name ? `Goal by ${name}` : 'Goal');
+          const tags = s.tags || s.predicted_tags || s.predictedTags || s.labels || (s.type? [s.type]: []);
+          out.push({ minute, description: desc, player: name, team, type: s.type || 'goal', predicted_tags: tags, raw: s });
+        });
+      }
+
+      // comments / play-by-play as timeline entries (take first few)
+      const comments = ev.comments || ev.comments_list || ev.match_comments || ev.play_by_play || ev.commentary || [];
+      if(Array.isArray(comments) && comments.length>0){
+        comments.slice(0,8).forEach(c => {
+          const minute = c.time || c.minute || c.comments_time || c.match_minute || '';
+          const desc = c.text || c.comment || c.comments_text || c.body || '';
+          const tags = c.tags || c.predicted_tags || c.predictedTags || c.labels || [];
+          if(desc) out.push({ minute, description: desc, predicted_tags: tags, raw: c });
+        });
+      }
+
+      // fallback: create an entry for final result
+      if(out.length === 0){
+        const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || ev.homeName || '';
+        const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || ev.awayName || '';
+        const score = ev.event_final_result || ev.event_ft_result || (ev.home_score!=null && ev.away_score!=null ? `${ev.home_score} - ${ev.away_score}` : '');
+        if(home || away || score){
+          out.push({ minute: '', description: `${home} vs ${away} ${score}`, predicted_tags: [], raw: ev });
+        }
+      }
+
+      // If entries exist but have no tags, run a small heuristic detector to surface likely tags
+      const enriched = out.map(entry => {
+        const hasTags = entry.predicted_tags && Array.isArray(entry.predicted_tags) && entry.predicted_tags.length>0;
+        if(!hasTags){
+          const inferred = detectTagsFromText(entry.description || '');
+          entry.predicted_tags = inferred;
+        }
+        return entry;
+      });
+
+      return enriched;
+    }catch(e){ return []; }
+  }
+
+  // Lightweight heuristic tag detection from text for better UX when no model tags available
+  function detectTagsFromText(text){
+    if(!text) return [];
+    const t = String(text).toLowerCase();
+    const tags = new Set();
+    if(t.includes('goal') || /scores?|scored|goal by|assist/.test(t)) tags.add('goal');
+    if(t.includes('penalty')) tags.add('penalty');
+    if(t.includes('yellow card') || t.includes('yellow')) tags.add('yellow card');
+    if(t.includes('red card') || t.includes('sent off') || t.includes('red')) tags.add('red card');
+    if(t.includes('substitution') || t.includes('sub') || t.includes('replaced')) tags.add('substitution');
+    if(t.includes('corner')) tags.add('corner');
+    if(t.includes('offside')) tags.add('offside');
+    if(t.includes('penalty shootout') || t.includes('shootout')) tags.add('shootout');
+    // simple player detection
+    const playerMatch = text.match(/by\s+([A-Z][a-z]+\s?[A-Z]?[a-z]*)/);
+    if(playerMatch) tags.add('player');
+    return Array.from(tags).map(s => ({ text: s, source: 'heuristic', confidence: undefined, isModel: false }));
+  }
+
+  // Build a clean, minimal timeline from provider event JSON focusing on goals, subs, and cards
+  function buildCleanTimeline(ev){
+    const out = [];
+    // Goals / goalscorers
+    const goals = ev.goalscorers || ev.goals || ev.goalscorer || ev.goalscorers_list || ev.goalscorers_list || ev.goalscorers || ev.goalscorers || ev.goals || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || [];
+    // Use the canonical names used in your sample
+    const goalsCanonical = ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || [];
+    const goalsSrc = ev.goalscorers || ev.goals || ev.goalscorer || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || [];
+    (goalsSrc||[]).forEach(g => {
+      const minute = g.time || g.minute || '';
+      const player = g.home_scorer || g.away_scorer || g.scorer || g.player || '';
+      const assist = g.home_assist || g.away_assist || g.assist || '';
+      const team = (g.away_scorer? ev.event_away_team : (g.home_scorer? ev.event_home_team : ''));
+      const score = g.score || '';
+      out.push({ minute, type: 'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] });
+    });
+
+    // Substitutions
+    const subs = ev.substitutes || ev.subs || ev.substitutions || [];
+    (subs||[]).forEach(s => {
+      const minute = s.time || '';
+      // home_scorer object can contain in/out
+      if(s.home_scorer && typeof s.home_scorer === 'object' && Object.keys(s.home_scorer).length>0){
+        out.push({ minute, type: 'substitution', player_in: s.home_scorer.in, player_out: s.home_scorer.out, team: ev.event_home_team || 'home', description: `${minute} — ${s.home_scorer.in} ON for ${s.home_scorer.out} (${ev.event_home_team})`, tags: ['substitution'] });
+      }
+      if(s.away_scorer && typeof s.away_scorer === 'object' && Object.keys(s.away_scorer).length>0){
+        out.push({ minute, type: 'substitution', player_in: s.away_scorer.in, player_out: s.away_scorer.out, team: ev.event_away_team || 'away', description: `${minute} — ${s.away_scorer.in} ON for ${s.away_scorer.out} (${ev.event_away_team})`, tags: ['substitution'] });
+      }
+    });
+
+    // Cards
+    const cards = ev.cards || [];
+    (cards||[]).forEach(c => {
+      const minute = c.time || '';
+      const player = c.home_fault || c.away_fault || '';
+      const cardType = (c.card || '').toLowerCase();
+      const team = c.home_fault? ev.event_home_team : (c.away_fault? ev.event_away_team : '');
+      out.push({ minute, type: 'card', player, card: cardType, team, description: `${minute} — ${cardType} for ${player} (${team})`, tags: [cardType] });
+    });
+
+    // Sort by minute (handle '90+4' as 90.04 to keep order)
+    function minuteSortKey(m){ if(!m) return 0; const plus = m.includes('+'); if(plus){ const parts = m.split('+'); return Number(parts[0]) + Number(parts[1]) / 100; } return Number(m)||0; }
+    out.sort((a,b)=> minuteSortKey(a.minute) - minuteSortKey(b.minute));
+    return out;
+  }
+
   function createTimelineEvent(event, isLast) {
     const eventDiv = document.createElement('div');
     eventDiv.style.cssText = `
@@ -724,9 +858,12 @@
       position: relative;
     `;
 
+    // Normalize tags early so color/icon logic can use them
+    const normTags = normalizeEventTags(event);
+    const tags = Array.isArray(normTags) ? normTags.map(t=>t.text) : [];
+
     const minute = event.minute || event.time || '';
     const description = event.description || event.text || event.event || '';
-    const tags = event.predicted_tags || event.tags || [];
 
     // Timeline dot and line
     const timeline = document.createElement('div');
@@ -793,32 +930,61 @@
     eventText.style.cssText = 'color: #374151; margin-bottom: 8px;';
     eventText.textContent = description;
 
-    // Tags
-    if(Array.isArray(tags) && tags.length > 0) {
+    // Tags (render normalized, mark model-derived tags specially)
+    content.appendChild(eventHeader);
+    content.appendChild(eventText);
+    if(Array.isArray(normTags) && normTags.length > 0){
       const tagsContainer = document.createElement('div');
-      tagsContainer.style.cssText = 'display: flex; gap: 4px; flex-wrap: wrap;';
-      
-      tags.forEach(tag => {
+      tagsContainer.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap; margin-top:6px; align-items:center;';
+
+      // show a small ML badge when any tag is model-derived
+      const hasModel = normTags.some(t=>t.isModel);
+      if(hasModel){
+        const mlBadge = document.createElement('span');
+        mlBadge.textContent = 'ML';
+        mlBadge.title = 'Model-predicted tag present';
+        mlBadge.style.cssText = 'background:#7c3aed;color:white;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:700;';
+        tagsContainer.appendChild(mlBadge);
+      }
+
+      normTags.forEach(t => {
         const tagSpan = document.createElement('span');
+        const color = t.isModel ? '#6d28d9' : getTagColor(t.text || '');
         tagSpan.style.cssText = `
-          background: ${getTagColor(tag)};
+          background: ${color};
           color: white;
           padding: 2px 8px;
           border-radius: 12px;
           font-size: 11px;
           font-weight: 500;
+          display:inline-flex;align-items:center;gap:8px;
         `;
-        tagSpan.textContent = tag;
+        // show confidence if available
+        const label = document.createElement('span'); label.textContent = t.text;
+        tagSpan.appendChild(label);
+        if(t.confidence !== undefined && t.confidence !== null){
+          const conf = document.createElement('small'); conf.textContent = ` ${Number(t.confidence).toFixed(2)}`; conf.style.opacity = '0.9'; conf.style.marginLeft = '6px'; conf.style.fontSize='10px'; tagSpan.appendChild(conf);
+        }
         tagsContainer.appendChild(tagSpan);
       });
-      
-      content.appendChild(eventHeader);
-      content.appendChild(eventText);
+
       content.appendChild(tagsContainer);
-    } else {
-      content.appendChild(eventHeader);
-      content.appendChild(eventText);
     }
+
+    // Add a small 'Show raw' toggle for debugging and details
+    const rawToggle = document.createElement('button');
+    rawToggle.textContent = 'Show raw';
+    rawToggle.style.cssText = 'margin-left:8px;background:transparent;border:1px dashed #d1d5db;color:#374151;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;';
+    const rawPre = document.createElement('pre');
+    rawPre.style.cssText = 'display:none;margin-top:8px;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;overflow:auto;max-height:240px;';
+    try{ rawPre.textContent = JSON.stringify(event.raw || event, null, 2); }catch(e){ rawPre.textContent = String(event.raw || event); }
+    rawToggle.addEventListener('click', ()=>{
+      if(rawPre.style.display === 'none'){
+        rawPre.style.display = 'block'; rawToggle.textContent = 'Hide raw';
+      } else { rawPre.style.display = 'none'; rawToggle.textContent = 'Show raw'; }
+    });
+    content.appendChild(rawToggle);
+    content.appendChild(rawPre);
 
     eventDiv.appendChild(timeline);
     eventDiv.appendChild(content);
@@ -858,6 +1024,59 @@
     if(t.includes('substitution')) return '#8b5cf6';
     if(t.includes('penalty')) return '#ef4444';
     return '#6b7280';
+  }
+
+  // Normalize tags into objects: { text, source, confidence, isModel }
+  function normalizeEventTags(evt){
+    // Accept multiple naming conventions and nested shapes
+    // Prefer the first non-empty candidate so an empty `predicted_tags` doesn't mask provider `tags`.
+    const candidates = [];
+    if(evt){
+      if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
+      if(evt.predictedTags !== undefined) candidates.push(evt.predictedTags);
+      if(evt.tags !== undefined) candidates.push(evt.tags);
+      if(evt.labels !== undefined) candidates.push(evt.labels);
+      if(evt.labels_list !== undefined) candidates.push(evt.labels_list);
+    }
+    let raw = [];
+    for(const c of candidates){
+      if(c === undefined || c === null) continue;
+      // choose the first candidate that is a non-empty array or a non-empty string/object
+      if(Array.isArray(c) && c.length>0){ raw = c; break; }
+      if(typeof c === 'string' && c.trim()) { raw = [c]; break; }
+      if(typeof c === 'object' && !Array.isArray(c)) { raw = [c]; break; }
+      // otherwise skip empty arrays (so predicted_tags: [] won't mask tags)
+    }
+    const out = [];
+  if(!raw) return out;
+    try{
+      if(!Array.isArray(raw)){
+        if(typeof raw === 'string') raw = [raw];
+        else if(typeof raw === 'object') raw = [raw];
+        else raw = [];
+      }
+    }catch(e){ return out; }
+
+    raw.forEach(r => {
+      if(r === undefined || r === null) return;
+      if(typeof r === 'string'){
+        const isModel = /^model[:\-\s]/i.test(r) || /\bmodel\b|\bml\b/i.test(r);
+        const text = r.replace(/^model[:\-\s]+/i, '').trim();
+        out.push({ text: text || r, source: isModel ? 'model' : 'rule', confidence: undefined, isModel });
+        return;
+      }
+      if(typeof r === 'object'){
+  // Heuristic objects may have { text, label, name, score, source }
+  const text = r.label || r.text || r.name || r.tag || JSON.stringify(r);
+  const src = r.source || r.origin || r.by || r.src || r.provider || '';
+  const conf = r.confidence || r.score || r.probability || r.p || r.conf || undefined;
+  const isModel = String(src).toLowerCase().includes('model') || String(src).toLowerCase().includes('ml') || /^model[:\-\s]/i.test(text) || !!r.isModel;
+  out.push({ text, source: src || (isModel ? 'model' : 'rule'), confidence: conf, isModel });
+        return;
+      }
+    });
+
+    return out;
   }
 
   function renderAdditionalInfo(ev, container) {
@@ -2063,13 +2282,96 @@
     const args = {};
     if(ev.idEvent) args.eventId = ev.idEvent; else if(ev.event_key) args.eventId = ev.event_key;
     try{
-      const resp = await fetch(apiBase + '/collect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent: 'event.get', args: Object.assign({ augment_tags: true }, args) }) });
+      // attempt to use a local model path (frontend dev environment) if available
+  // point to model file location on the server filesystem (relative to project root)
+  const modelPath = window.EVENT_TAG_MODEL_PATH || 'sports-ai/backend/app/models/event_tag_model.pkl';
+      const resp = await fetch(apiBase + '/collect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent: 'event.get', args: Object.assign({ augment_tags: true, model_path: modelPath }, args) }) });
       if(!resp.ok) throw new Error('HTTP '+resp.status);
       const j = await resp.json();
       if(!j || !j.ok) throw new Error((j && j.error && j.error.message) ? j.error.message : 'No data');
       // update displayed JSON and highlights status
       pre.textContent = JSON.stringify(j.data || j.result || j, null, 2);
       if(hlBody) hlBody.textContent = 'Tags augmented (see Timeline items for predicted_tags).';
+
+      // merge predicted_tags into our in-memory ev.timeline if present in response
+      try{
+        const retEvent = (j.data && j.data.result && j.data.result[0]) ? j.data.result[0] : (j.data && j.data.event) ? j.data.event : null;
+        if(retEvent && Array.isArray(retEvent.timeline)){
+          // robust merge: try exact key (minute+desc), minute+substring, player match, then index fallback
+          const localTimeline = Array.isArray(ev.timeline) ? ev.timeline : [];
+          const keyOf = item => `${item.minute || ''}||${(item.description||'').slice(0,80)}`;
+          const localMap = new Map((localTimeline||[]).map(i=>[keyOf(i), i]));
+
+          const unmatched = [];
+          retEvent.timeline.forEach((rt, idx) => {
+            try{
+              let local = null;
+              // 1) exact key
+              const k = keyOf(rt);
+              if(localMap.has(k)) local = localMap.get(k);
+
+              // 2) minute + description contains
+              if(!local && (rt.minute || rt.time)){
+                const m = rt.minute || rt.time || '';
+                const rdesc = (rt.description || rt.text || '').toLowerCase();
+                local = localTimeline.find(li => {
+                  const ld = (li.description || li.text || '').toLowerCase();
+                  return String(li.minute || '') === String(m) && (rdesc && ld.includes(rdesc) || rdesc && rdesc.includes(ld) || ld.includes((rdesc||'').slice(0,20)));
+                }) || null;
+              }
+
+              // 3) player-based match
+              if(!local){
+                const rplayer = (rt.player || rt.player_in || rt.player_out || rt.scorer || '').toString().toLowerCase();
+                if(rplayer){
+                  local = localTimeline.find(li => {
+                    const lplayer = (li.player || li.player_in || li.player_out || '').toString().toLowerCase();
+                    return lplayer && rplayer && (lplayer === rplayer || lplayer.includes(rplayer) || rplayer.includes(lplayer));
+                  }) || null;
+                }
+              }
+
+              // 4) fallback to same index when counts match or index exists
+              if(!local && idx < localTimeline.length){
+                local = localTimeline[idx];
+              }
+
+              if(local){
+                local.predicted_tags = rt.predicted_tags || rt.predictedTags || rt.tags || local.predicted_tags || [];
+              } else {
+                unmatched.push({ idx, rt });
+              }
+            }catch(e){ console.warn('merge item failed', e, rt); }
+          });
+
+          if(unmatched.length) console.debug('augment merge: unmatched items', unmatched.length, unmatched.slice(0,5));
+
+          // If no local items got tags but the returned timeline has tags, fallback to index-copying
+          try{
+            const localHasAny = (localTimeline || []).some(i => Array.isArray(i.predicted_tags) && i.predicted_tags.length>0);
+            const retHasAny = Array.isArray(retEvent.timeline) && retEvent.timeline.some(i => Array.isArray(i.predicted_tags) && i.predicted_tags.length>0);
+            if(!localHasAny && retHasAny){
+              if(localTimeline.length === 0){
+                // replace entirely
+                ev.timeline = retEvent.timeline.map(x=>({ ...x }));
+                console.debug('augment merge: replaced local timeline with returned timeline (fallback)');
+              } else {
+                // copy by index where possible
+                for(let i=0;i<Math.min(localTimeline.length, retEvent.timeline.length); i++){
+                  const r = retEvent.timeline[i];
+                  if(r && (r.predicted_tags || r.predictedTags || r.tags)){
+                    localTimeline[i].predicted_tags = r.predicted_tags || r.predictedTags || r.tags || localTimeline[i].predicted_tags || [];
+                  }
+                }
+                console.debug('augment merge: applied index-based fallback merge');
+              }
+            }
+          }catch(e){ console.warn('augment merge fallback failed', e); }
+
+          // re-render details to reflect updated tags
+          renderEventDetails(ev, modalBody.querySelector('#details_info'));
+        }
+      }catch(e){ console.warn('merge augment failed', e); }
     }catch(e){ if(hlBody) hlBody.textContent = 'Augment error: ' + (e && e.message ? e.message : String(e)); }
   }
 
