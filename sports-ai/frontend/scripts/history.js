@@ -2256,11 +2256,39 @@
                        (match.home_score != null && match.away_score != null ? 
                         `${match.home_score} - ${match.away_score}` : '');
 
-          matchItem.innerHTML = `
-            <span style="color: #6b7280;">${date}</span>
-            <span style="color: #1f2937; font-weight: 500;">${home} vs ${away}</span>
-            <span style="color: #374151; font-weight: 600;">${score}</span>
-          `;
+          // Build row with logos and names (like matches.js)
+          const dateSpan = document.createElement('span'); dateSpan.style.cssText = 'color: #6b7280;'; dateSpan.textContent = date;
+
+          const teamsWrap = document.createElement('div'); teamsWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex:1;justify-content:center;';
+
+          const homeWrap = document.createElement('div'); homeWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+          const homeLogo = document.createElement('img'); homeLogo.src = match.home_team_logo || match.homeTeamLogo || match.home_logo || match.home_team_image || '';
+          homeLogo.style.cssText = 'width:28px;height:20px;object-fit:contain;border-radius:4px;'; homeLogo.onerror = () => homeLogo.remove();
+          const homeNameEl = document.createElement('div'); homeNameEl.style.cssText = 'font-weight:600;color:#1f2937;font-size:13px;'; homeNameEl.textContent = home;
+          homeWrap.appendChild(homeLogo); homeWrap.appendChild(homeNameEl);
+
+          const vsEl = document.createElement('div'); vsEl.style.cssText = 'font-size:12px;color:#6b7280;font-weight:600;'; vsEl.textContent = 'vs';
+
+          const awayWrap = document.createElement('div'); awayWrap.style.cssText = 'display:flex;align-items:center;gap:8px;';
+          const awayLogo = document.createElement('img'); awayLogo.src = match.away_team_logo || match.awayTeamLogo || match.away_logo || match.away_team_image || '';
+          awayLogo.style.cssText = 'width:28px;height:20px;object-fit:contain;border-radius:4px;'; awayLogo.onerror = () => awayLogo.remove();
+          const awayNameEl = document.createElement('div'); awayNameEl.style.cssText = 'font-weight:600;color:#1f2937;font-size:13px;'; awayNameEl.textContent = away;
+          awayWrap.appendChild(awayLogo); awayWrap.appendChild(awayNameEl);
+
+          teamsWrap.appendChild(homeWrap); teamsWrap.appendChild(vsEl); teamsWrap.appendChild(awayWrap);
+
+          const scoreSpan = document.createElement('span'); scoreSpan.style.cssText = 'color: #374151; font-weight: 600; min-width:60px; text-align:center;'; scoreSpan.textContent = score || 'vs';
+
+          matchItem.appendChild(dateSpan);
+          matchItem.appendChild(teamsWrap);
+          matchItem.appendChild(scoreSpan);
+
+          // Make row clickable to open match details if available
+          matchItem.style.cursor = 'pointer';
+          matchItem.addEventListener('click', ()=>{
+            try{ if(typeof showDetails === 'function'){ showDetails(match); } }
+            catch(e){ console.warn('showDetails error', e); }
+          });
 
           matchesList.appendChild(matchItem);
         });
