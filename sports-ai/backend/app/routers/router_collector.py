@@ -13,6 +13,9 @@ This module exposes a single class: RouterCollector, with .handle({intent, args}
 
 from __future__ import annotations
 from typing import Any, Dict, Tuple
+
+from ..services.highlight_search import search_event_highlights
+
 # --- Adapters (thin wrappers around your existing agents) ---
 from ..adapters.tsdb_adapter import TSDBAdapter
 from ..adapters.allsports_adapter import AllSportsAdapter
@@ -29,11 +32,186 @@ class RouterError(Exception):
 
 
 class RouterCollector:
+    def _resolve_event_id_from_name(self, name: str) -> str | None:
+        """Resolve an eventId from a human-friendly event name using AllSports only.
+
+        Strategy:
+          1) Try to parse "Team A vs Team B" style names and use the AllSports H2H endpoint.
+          2) Fallback: scan a small date window around today via AllSports events.list and fuzzy-match team names.
+        """
+        try:
+            import re
+            from datetime import datetime, timedelta, timezone
+
+            if not isinstance(name, str) or not name.strip():
+                return None
+
+            raw = name.strip()
+            lower = raw.lower()
+
+            # ---- 1) Parse "A vs B" style and use H2H (most reliable) ----
+            parts = re.split(r"\s+vs\.?\s+|\s+v\s+|\s+-\s+|\s+–\s+|\s+—\s+|\s*\|\s*", raw, flags=re.IGNORECASE)
+            if len(parts) == 2:
+                a, b = parts[0].strip(), parts[1].strip()
+                if a and b:
+                    h2h_resp = self._call_allsports("h2h", {"h2h": f"{a}-{b}"})
+                    data = (h2h_resp or {}).get("data") or {}
+                    result = data.get("result")
+
+                    candidates = []
+                    if isinstance(result, list):
+                        candidates = result
+                    elif isinstance(result, dict):
+                        for arr in result.values():
+                            if isinstance(arr, list):
+                                candidates.extend(arr)
+
+                    # Sort newest first by event_date + event_time if present
+                    def dt_key(m):
+                        d = str(m.get("event_date") or m.get("match_date") or m.get("date") or "")
+                        t = str(m.get("event_time") or m.get("match_time") or m.get("time") or "")
+                        return f"{d} {t}".strip()
+
+                    try:
+                        candidates.sort(key=dt_key, reverse=True)
+                    except Exception:
+                        pass
+
+                    if candidates:
+                        ev = candidates[0]
+                        for k in ("match_id", "event_id", "event_key", "fixture_id", "idEvent", "id"):
+                            if ev.get(k):
+                                return str(ev[k])
+
+            # ---- 2) Fallback: search a small date window via events.list and fuzzy match ----
+            today = datetime.now(timezone.utc).date()
+            frm = (today - timedelta(days=3)).isoformat()
+            to = (today + timedelta(days=3)).isoformat()
+
+            ev_resp = self._call_allsports("events.list", {"from": frm, "to": to})
+            ev_data = (ev_resp or {}).get("data") or {}
+
+            events = []
+            for k in ("result", "events", "matches", "results"):
+                v = ev_data.get(k)
+                if isinstance(v, list):
+                    events = v
+                    break
+
+            if not events:
+                return None
+
+            # Build a simple relevance score based on substring hits of home/away in the provided name
+            def score(ev: dict) -> tuple:
+                home = str(ev.get("event_home_team") or ev.get("home_team") or ev.get("homeTeam") or "").lower()
+                away = str(ev.get("event_away_team") or ev.get("away_team") or ev.get("awayTeam") or "").lower()
+                league = str(ev.get("league_name") or ev.get("strLeague") or "").lower()
+                title = f"{home} {away} {league}".strip()
+                both_hit = (home and home in lower) and (away and away in lower)
+                one_hit = (home and home in lower) or (away and away in lower)
+                # Prefer both-team matches, then single-team, then generic substring of title
+                return (
+                    1 if both_hit else 0,
+                    1 if one_hit else 0,
+                    1 if title and any(tok in title for tok in lower.split()) else 0,
+                )
+
+            # Helper to sort by date desc
+            def dt_key(ev: dict):
+                d = str(ev.get("event_date") or ev.get("dateEvent") or "")
+                t = str(ev.get("event_time") or ev.get("strTime") or "")
+                return f"{d} {t}".strip()
+
+            # Rank candidates: primary by score, secondary by recency
+            try:
+                events.sort(key=lambda e: (score(e), dt_key(e)), reverse=True)
+            except Exception:
+                pass
+
+            best = events[0] if events else None
+            if isinstance(best, dict):
+                for k in ("event_id", "event_key", "match_id", "fixture_id", "idEvent", "id"):
+                    if best.get(k):
+                        return str(best[k])
+
+            return None
+
+        except Exception:
+            return None
+
+    def _resolve_event_id_from_h2h(self, a: str, b: str) -> str | None:
+        """Resolve an eventId using provider h2h lookup (most recent fixture)."""
+        try:
+            # Call the dedicated provider endpoint via intent 'h2h'
+            resp = self._call_allsports("h2h", {"h2h": f"{a}-{b}"})
+            data = resp.get("data") or {}
+
+            # The AllSports H2H response can be:
+            #  - {"success":1, "result":[ ...fixtures... ]}
+            #  - {"success":1, "result":{"firstTeam_VS_secondTeam":[...], "secondTeam_VS_firstTeam":[...]}}
+            #  - Rarely provider-specific keys but always with fixture dicts inside.
+            result = data.get("result")
+
+            candidates = []
+            if isinstance(result, list):
+                candidates = result
+            elif isinstance(result, dict):
+                for key, arr in result.items():
+                    if isinstance(arr, list):
+                        candidates.extend(arr)
+
+            # Fallback: sometimes provider returns fixtures at the top level (unlikely but safe)
+            if not candidates:
+                top_keys = ("fixtures", "events", "matches", "results")
+                for tk in top_keys:
+                    if isinstance(data.get(tk), list):
+                        candidates = data.get(tk) or []
+                        break
+
+            if not candidates:
+                return None
+
+            # Prefer the most recent by date+time if available; otherwise first item
+            def dt_key(m):
+                d = str(m.get("event_date") or m.get("match_date") or m.get("date") or "")
+                t = str(m.get("event_time") or m.get("match_time") or m.get("time") or "")
+                return f"{d} {t}".strip()
+
+            try:
+                candidates.sort(key=dt_key, reverse=True)
+            except Exception:
+                pass
+
+            ev = candidates[0]
+            for k in ("match_id", "event_id", "event_key", "fixture_id", "idEvent", "id"):
+                if ev.get(k):
+                    return str(ev[k])
+        except Exception:
+            return None
+        return None
+
+    def _normalize_event_id(self, args: Dict[str, Any]) -> str | None:
+        """Return a unified eventId string from many common keys."""
+        if not isinstance(args, dict):
+            return None
+        for k in ("eventId", "event_id", "matchId", "fixture_id", "event_key", "idEvent", "idAPIfootball", "id"):
+            v = args.get(k)
+            if v is not None and str(v).strip() != "":
+                return str(v)
+        return None
     def __init__(self) -> None:
         self.tsdb = TSDBAdapter()
         self.asapi = AllSportsAdapter()
         self.allsports = AllSportsRawAgent()
-        self.analysis = AnalysisAgent(self.allsports)
+        self.analysis = AnalysisAgent(
+            tsdb_agent=None,              # TSDBAdapter exposes .call, not .handle
+            all_sports_agent=self.allsports,
+        )
+
+    @property
+    def all_sports_agent(self):
+        # Back-compat for older notebooks: expose the AllSports raw agent under the old name.
+        return self.allsports
 
     # ---- public entry ----
     def handle(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -50,46 +228,75 @@ class RouterCollector:
 
             # --- Analysis intents (short-circuit normal routing) ---
             if intent in ("analysis.match_insights", "analysis.match.insights"):
-                event_id = args.get("eventId") or args.get("event_id")
-                res = self.analysis.match_insights(str(event_id))
-                return {
-                    "ok": True,
-                    "intent": intent,
-                    "args_resolved": args,
-                    "data": self._to_model_dict(res),
-                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
-                }
+                event_id = self._normalize_event_id(args) or (
+                    self._resolve_event_id_from_name(args.get("eventName")) if args.get("eventName") else None
+                )
+                if not event_id:
+                    return {
+                        "ok": False,
+                        "intent": intent,
+                        "args_resolved": args,
+                        "error": "Missing required 'eventId' (or could not resolve from 'eventName').",
+                        "data": None,
+                        "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                    }
+                resp = self.analysis.handle("analysis.match_insights", {"eventId": str(event_id)})
+                return resp
+
             elif intent in ("analysis.winprob", "analysis.win_probabilities"):
-                event_id = args.get("eventId") or args.get("event_id")
-                res = self.analysis.win_probabilities(str(event_id))
-                return {
-                    "ok": True,
-                    "intent": intent,
-                    "args_resolved": args,
-                    "data": self._to_model_dict(res),
-                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
-                }
+                event_id = self._normalize_event_id(args)
+                if not event_id:
+                    return {
+                        "ok": False,
+                        "intent": intent,
+                        "args_resolved": args,
+                        "error": "Missing required 'eventId'.",
+                        "data": None,
+                        "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                    }
+                resp = self.analysis.handle("analysis.winprob", {"eventId": str(event_id)})
+                return resp
+
             elif intent in ("analysis.form", "analysis.team_form"):
-                team_id = args.get("teamId") or args.get("team_id")
-                res = self.analysis.team_form(str(team_id))
-                return {
-                    "ok": True,
-                    "intent": intent,
-                    "args_resolved": args,
-                    "data": self._to_model_dict(res),
-                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
-                }
+                event_id = self._normalize_event_id(args)
+                lookback = args.get("lookback")
+                if not event_id:
+                    return {
+                        "ok": False,
+                        "intent": intent,
+                        "args_resolved": args,
+                        "error": "analysis.form now requires 'eventId'. Pass the match's eventId (use name resolver if needed).",
+                        "data": None,
+                        "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                    }
+                call_args = {"eventId": str(event_id)}
+                if lookback is not None:
+                    call_args["lookback"] = lookback
+                resp = self.analysis.handle("analysis.form", call_args)
+                return resp
+
             elif intent in ("analysis.h2h", "analysis.head_to_head"):
-                a = args.get("teamA") or args.get("team_a")
-                b = args.get("teamB") or args.get("team_b")
-                res = self.analysis.head_to_head(str(a), str(b))
-                return {
-                    "ok": True,
-                    "intent": intent,
-                    "args_resolved": args,
-                    "data": self._to_model_dict(res),
-                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
-                }
+                event_id = self._normalize_event_id(args)
+                if not event_id:
+                    a = args.get("teamA") or args.get("team_a")
+                    b = args.get("teamB") or args.get("team_b")
+                    if a and b:
+                        event_id = self._resolve_event_id_from_h2h(str(a), str(b))
+                lookback = args.get("lookback")
+                if not event_id:
+                    return {
+                        "ok": False,
+                        "intent": intent,
+                        "args_resolved": args,
+                        "error": "Missing 'eventId'. Provide eventId, or teamA/teamB that resolve to a recent H2H fixture.",
+                        "data": None,
+                        "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                    }
+                call_args = {"eventId": str(event_id)}
+                if lookback is not None:
+                    call_args["lookback"] = lookback
+                resp = self.analysis.handle("analysis.h2h", call_args)
+                return resp
 
             primary, fallback = self._route(intent)
 

@@ -1,235 +1,629 @@
+# backend/app/agents/analysis_agent.py
+# -*- coding: utf-8 -*-
+
+"""
+Analysis Agent (AllSports-only)
+--------------
+Match-level insights built solely on AllSports raw endpoints.
+
+Intents:
+  - analysis.winprob        (eventId)
+  - analysis.form           (eventId, lookback=5)
+  - analysis.h2h            (eventId, lookback=10)
+  - analysis.match_insights (eventId)
+
+Data source:
+  - self.sports: AllSportsRawAgent (from game_analytics_agent.py)
+
+Response envelope matches existing agents:
+  {
+    "ok": bool,
+    "intent": str,
+    "args_resolved": dict,
+    "data": any | None,
+    "error": str | None,
+    "meta": {"source": {"primary": "analysis", "fallback": "<src>"}, "trace": [...]}
+  }
+"""
+
 from __future__ import annotations
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
 import math
-import datetime as dt
-from typing import Dict, List, Optional, Tuple
+# ---------------------------- helpers: envelope/trace ----------------------------
 
-from ..utils.odds import implied_probs_from_any, blend_probs
-from ..utils.form import RecentFormSummary, summarize_recent_form, rating_from_form
-from ..utils.ir import fetch_event, fetch_team_recent_fixtures, fetch_head_to_head
-from ..schemas.analysis import (
-    WinProbabilities, TeamForm, HeadToHead, MatchInsights,
-)
+def mkresp(ok: bool, intent: str, args: Dict[str, Any], data: Any = None,
+           error: Optional[str] = None, trace: Optional[List[Any]] = None,
+           primary: str = "analysis", fallback: Optional[str] = None) -> Dict[str, Any]:
+    return {
+        "ok": ok,
+        "intent": intent,
+        "args_resolved": args or {},
+        "data": data if ok else None,
+        "error": None if ok else (error or "Unknown error"),
+        "meta": {"source": {"primary": primary, "fallback": fallback}, "trace": trace or []},
+    }
 
-HOME_ADVANTAGE_ELO = 60  # simple constant expressed in Elo points
+def _now_utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
+# ---------------------------- id normalization & picking ----------------------------
+_EVENT_ID_KEYS = ("eventId", "event_id", "matchId", "fixture_id", "event_key", "idEvent", "idAPIfootball", "id")
 
-def logistic_prob(elo_diff: float) -> float:
-    """Logistic transform to probability using Elo-like scale."""
-    return 1.0 / (1.0 + math.pow(10.0, -elo_diff / 400.0))
+def _normalize_event_id(args: Dict[str, Any]) -> str:
+    for k in _EVENT_ID_KEYS:
+        v = (args or {}).get(k)
+        if v is not None and str(v).strip() != "":
+            return str(v)
+    raise ValueError("Missing required arg: eventId (any of: " + ", ".join(_EVENT_ID_KEYS) + ")")
 
+def _pick_event_row_from_data(data: Any, eid: str) -> Optional[Dict[str, Any]]:
+    """
+    Given provider 'data' payload, return the row whose id matches eid against common keys.
+    """
+    rows: List[Dict[str, Any]] = []
+    if isinstance(data, dict):
+        for key in ("result", "results", "events", "fixtures"):
+            if isinstance(data.get(key), list):
+                rows = data[key]
+                break
+        if not rows and data:
+            # some providers return a single object
+            rows = [data]
+    elif isinstance(data, list):
+        rows = data
+
+    keys = ("match_id","event_id","event_key","fixture_id","idEvent","id","idAPIfootball")
+    for r in rows:
+        try:
+            if any(str(r.get(k)) == str(eid) for k in keys):
+                return r
+        except Exception:
+            continue
+
+    # fallback: if exactly one row, assume it's the one
+    if len(rows) == 1:
+        return rows[0]
+    return None
+
+# ---------------------------- data shapes ----------------------------
+
+@dataclass
+class EventInfo:
+    event_id: str
+    league_id: Optional[str]
+    home_team_id: str
+    away_team_id: str
+    home_team_name: Optional[str] = None
+    away_team_name: Optional[str] = None
+    scheduled_utc: Optional[str] = None
+    status: Optional[str] = None
+    odds_decimal: Optional[Dict[str, float]] = None  # keys: "home","draw","away"
+
+# ---------------------------- AnalysisAgent ----------------------------
 
 class AnalysisAgent:
-    """
-    High-level analysis agent that composes:
-      - Win probability estimation (bookmaker odds + form-based Elo)
-      - Team performance summaries (last N)
-      - Head-to-head summaries
+    SUPPORTED = {
+        "analysis.winprob",
+        "analysis.form",
+        "analysis.h2h",
+        "analysis.match_insights",
+    }
 
-    It expects a RAW provider agent exposing pass-through endpoints.
-    """
+    def __init__(self, tsdb_agent=None, all_sports_agent=None, logger=None):
+        # NOTE: tsdb_agent is ignored (kept only for backward compatibility).
+        self.sports = all_sports_agent
+        self.log = logger
 
-    def __init__(self, raw_provider_agent):
-        self.raw = raw_provider_agent
+    # --------------- public entry ---------------
 
-    # ---------- Core public methods ----------
-    def match_insights(self, event_id: str, n_form: int = 5, n_h2h: int = 10) -> MatchInsights:
-        event = fetch_event(self.raw, event_id)
-        if not event:
-            raise ValueError(f"Event {event_id} not found")
+    def handle(self, intent: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Synchronous handler to match existing agents.
+        """
+        try:
+            if intent not in self.SUPPORTED:
+                return mkresp(False, intent, args, error=f"Unsupported intent: {intent}")
 
-        home_id, away_id = self._extract_team_ids(event)
+            try:
+                event_id = _normalize_event_id(args)
+            except ValueError as _e:
+                return mkresp(False, intent, args, error=str(_e))
 
-        # 1) Forms
-        home_recent = fetch_team_recent_fixtures(self.raw, home_id, limit=max(20, n_form * 3))
-        away_recent = fetch_team_recent_fixtures(self.raw, away_id, limit=max(20, n_form * 3))
-        home_form_summary = summarize_recent_form(home_id, home_recent, n=n_form)
-        away_form_summary = summarize_recent_form(away_id, away_recent, n=n_form)
+            # fetch canonical event + team info up front for all intents
+            trace: List[Any] = []
+            ev, src, ev_trace = self._resolve_event(event_id)
+            trace.extend(ev_trace)
+            if not ev:
+                return mkresp(False, intent, {"eventId": event_id}, error=f"Event {event_id} not found", trace=trace)
 
-        # 2) Head-to-head
-        h2h_fixtures = fetch_head_to_head(self.raw, home_id, away_id, limit=max(40, n_h2h * 4))
-        h2h_summary = self._summarize_h2h(home_id, away_id, h2h_fixtures, n=n_h2h)
+            if intent == "analysis.winprob":
+                data, calc_trace = self._intent_winprob(ev)
+                trace.extend(calc_trace)
+                return mkresp(True, intent, {"eventId": ev.event_id}, data=data, trace=trace, fallback=src)
 
-        # 3) Win probabilities
-        win_probs = self._estimate_win_probs(event, home_form_summary, away_form_summary)
+            if intent == "analysis.form":
+                lookback = int(args.get("lookback") or 5)
+                data, calc_trace = self._intent_form(ev, lookback=lookback)
+                trace.extend(calc_trace)
+                return mkresp(True, intent, {"eventId": ev.event_id, "lookback": lookback}, data=data, trace=trace, fallback=src)
 
-        return MatchInsights(
-            event_id=str(event_id),
-            home_team_id=str(home_id),
-            away_team_id=str(away_id),
-            generated_at = dt.datetime.now(dt.UTC).isoformat().replace("+00:00", "Z"),
-            win_probabilities=win_probs,
-            home_form=self._to_team_form(home_form_summary),
-            away_form=self._to_team_form(away_form_summary),
-            head_to_head=h2h_summary,
-        )
+            if intent == "analysis.h2h":
+                lookback = int(args.get("lookback") or 10)
+                data, calc_trace = self._intent_h2h(ev, lookback=lookback)
+                trace.extend(calc_trace)
+                return mkresp(True, intent, {"eventId": ev.event_id, "lookback": lookback}, data=data, trace=trace, fallback=src)
 
-    def win_probabilities(self, event_id: str, n_form: int = 5) -> WinProbabilities:
-        event = fetch_event(self.raw, event_id)
-        if not event:
-            raise ValueError(f"Event {event_id} not found")
-        home_id, away_id = self._extract_team_ids(event)
-        home_recent = fetch_team_recent_fixtures(self.raw, home_id, limit=max(20, n_form * 3))
-        away_recent = fetch_team_recent_fixtures(self.raw, away_id, limit=max(20, n_form * 3))
-        home_form_summary = summarize_recent_form(home_id, home_recent, n=n_form)
-        away_form_summary = summarize_recent_form(away_id, away_recent, n=n_form)
-        return self._estimate_win_probs(event, home_form_summary, away_form_summary)
+            if intent == "analysis.match_insights":
+                form_data, t1 = self._intent_form(ev, lookback=5)
+                h2h_data, t2 = self._intent_h2h(ev, lookback=10)
+                wp_data, t3 = self._intent_winprob(ev)
+                trace.extend(t1 + t2 + t3)
+                return mkresp(
+                    True, intent, {"eventId": ev.event_id},
+                    data={"winprob": wp_data, "form": form_data, "h2h": h2h_data,
+                          "generated_at": _now_utc_iso()},
+                    trace=trace, fallback=src
+                )
 
-    def team_form(self, team_id: str, n_form: int = 5) -> TeamForm:
-        recent = fetch_team_recent_fixtures(self.raw, team_id, limit=max(20, n_form * 3))
-        form = summarize_recent_form(team_id, recent, n=n_form)
-        return self._to_team_form(form)
+            return mkresp(False, intent, args, error=f"Unhandled intent: {intent}")
 
-    def head_to_head(self, team_a: str, team_b: str, n_h2h: int = 10) -> HeadToHead:
-        fixtures = fetch_head_to_head(self.raw, team_a, team_b, limit=max(40, n_h2h * 4))
-        return self._summarize_h2h(team_a, team_b, fixtures, n=n_h2h)
+        except Exception as e:
+            if self.log:
+                try: self.log.exception("analysis.handle failed")
+                except Exception: pass
+            return mkresp(False, intent, args, error=f"{type(e).__name__}: {e}")
 
-    # ---------- Internals ----------
-    def _estimate_win_probs(
-        self,
-        event: Dict,
-        home_form: RecentFormSummary,
-        away_form: RecentFormSummary,
-    ) -> WinProbabilities:
-        # A) Try bookmaker odds from event payload
-        odds_probs = implied_probs_from_any(event)
+    # --------------- data resolution ---------------
 
-        # B) Form-based Elo
-        home_rating = rating_from_form(home_form)
-        away_rating = rating_from_form(away_form)
-        elo_diff = (home_rating + HOME_ADVANTAGE_ELO) - away_rating
-        p_home = logistic_prob(elo_diff)
-        p_away = logistic_prob(-elo_diff)
-        # Rough draw probability heuristic
-        closeness = 1.0 - abs(p_home - p_away)
-        p_draw_form = 0.2 + 0.2 * closeness  # 0.2–0.4 depending on closeness
-        denom = p_home + p_away + p_draw_form
-        form_probs = {
-            "home": p_home / denom,
-            "draw": p_draw_form / denom,
-            "away": p_away / denom,
-        }
+    def _resolve_event(self, event_id: str) -> Tuple[Optional[EventInfo], Optional[str], List[Any]]:
+        """
+        Resolve event using AllSports only.
+        Map provider-specific shapes to EventInfo.
+        """
+        trace: List[Any] = []
 
-        # C) Blend (odds 0.7, form 0.3) if odds present; otherwise just form
-        if odds_probs:
-            blended = blend_probs(odds_probs, form_probs, w_odds=0.7)
-            method = "blend:odds(0.7)+form(0.3)"
-            sources = ["bookmaker_odds", "recent_form"]
-        else:
-            blended = form_probs
-            method = "form_only"
-            sources = ["recent_form"]
+        # AllSportsRawAgent: event.get (met=Fixtures with eventId/matchId)
+        if self.sports:
+            try:
+                r = self.sports.handle({"intent": "event.get", "args": {"eventId": event_id, "matchId": event_id}})
+                trace.append({"step": "sports.event.get", "ok": r.get("ok"), "raw_meta": r.get("meta")})
+                ev = self._extract_event_from_provider(r, expected_id=event_id)
+                if ev:
+                    return ev, "allsports", trace
+            except Exception as e:
+                trace.append({"step": "sports.event.get", "error": str(e)})
 
-        return WinProbabilities(**blended, method=method, sources=sources)
+        return None, None, trace
 
-    def _extract_team_ids(self, event: Dict) -> Tuple[str, str]:
-        """Be flexible to provider schema keys."""
-        def find(keys: List[str]) -> Optional[str]:
-            for k in keys:
-                v = event.get(k)
-                if v:
-                    return str(v)
-            teams = event.get("teams") or {}
-            for k in keys:
-                v = teams.get(k)
-                if v:
-                    return str(v)
+    # Provider shape → EventInfo
+    def _extract_event_from_provider(self, resp: Dict[str, Any], expected_id: Optional[str] = None) -> Optional[EventInfo]:
+        if not resp or not resp.get("ok"):
+            return None
+        data = resp.get("data") or {}
+        obj = _pick_event_row_from_data(data, expected_id) if expected_id else None
+
+        if not obj:
+            # Fallback to previous heuristics if expected_id not given or not found
+            if isinstance(data, dict) and "result" in data and isinstance(data["result"], list) and data["result"]:
+                obj = data["result"][0]
+            elif isinstance(data, list) and data:
+                obj = data[0]
+            elif isinstance(data, dict) and data:
+                obj = data
+
+        if not obj:
             return None
 
-        home_id = find(["home_id", "homeTeam_id", "homeTeamId", "homeTeam", "home_team_id"]) or ""
-        away_id = find(["away_id", "awayTeam_id", "awayTeamId", "awayTeam", "away_team_id"]) or ""
-        if not home_id or not away_id:
-            home = event.get("home") or {}
-            away = event.get("away") or {}
-            home_id = home_id or str(home.get("id") or home.get("team_id") or "")
-            away_id = away_id or str(away.get("id") or away.get("team_id") or "")
-        if not home_id or not away_id:
-            raise KeyError("Could not extract home/away team ids from event payload")
-        return home_id, away_id
+        # Heuristic field names across providers (now includes event_key)
+        eid = str(obj.get("match_id") or obj.get("event_id") or obj.get("event_key") or obj.get("id") or "").strip()
+        if not eid:
+            return None
 
-    def _to_team_form(self, rf: RecentFormSummary) -> TeamForm:
-        return TeamForm(
-            team_id=str(rf.team_id),
-            matches=rf.matches,
-            wins=rf.wins,
-            draws=rf.draws,
-            losses=rf.losses,
-            goals_for=rf.goals_for,
-            goals_against=rf.goals_against,
-            last_five=" ".join(rf.last_five),
-            unbeaten_streak=rf.unbeaten_streak,
+        home_id = str(obj.get("home_team_key") or obj.get("homeTeamId") or obj.get("home_id") or obj.get("home_team_id") or "").strip()
+        away_id = str(obj.get("away_team_key") or obj.get("awayTeamId") or obj.get("away_id") or obj.get("away_team_id") or "").strip()
+
+        home_name = obj.get("event_home_team") or obj.get("homeTeam") or obj.get("home_team") or None
+        away_name = obj.get("event_away_team") or obj.get("awayTeam") or obj.get("away_team") or None
+
+        league_id = str(obj.get("league_key") or obj.get("league_id") or obj.get("leagueId") or "") or None
+        # Try to combine date+time when available to a UTC-ish ISO string if provider only gives local date/time.
+        start_date = obj.get("event_date") or obj.get("match_date") or obj.get("scheduled") or None
+        start_time = obj.get("event_time") or obj.get("match_time") or None
+        if start_date and start_time and isinstance(start_date, str) and isinstance(start_time, str):
+            scheduled_utc = f"{start_date}T{start_time}:00"
+        else:
+            scheduled_utc = start_date
+
+        status = obj.get("event_status") or obj.get("status") or None
+
+        odds = self._extract_odds(obj)
+
+        if not home_id or not away_id:
+            return None
+
+        return EventInfo(
+            event_id=eid, league_id=league_id,
+            home_team_id=home_id, away_team_id=away_id,
+            home_team_name=home_name, away_team_name=away_name,
+            scheduled_utc=scheduled_utc, status=status, odds_decimal=odds
         )
 
-    def _summarize_h2h(self, team_a: str, team_b: str, fixtures: List[Dict], n: int = 10) -> HeadToHead:
-        fixtures_sorted = sorted(fixtures, key=lambda f: f.get("timestamp") or f.get("time") or f.get("date") or 0, reverse=True)
-        picked = fixtures_sorted[:n]
-        wins_a = wins_b = draws = 0
-        recent = []
-        total_gf_a = total_gf_b = 0
-        for fx in picked:
-            ha, aa = _extract_score(fx)
-            total_gf_a += ha
-            total_gf_b += aa
-            outcome = _outcome_for_pair(fx, team_a, team_b)
-            if outcome == "A":
-                wins_a += 1
-            elif outcome == "B":
-                wins_b += 1
+
+    def _extract_odds(self, obj: Dict[str, Any]) -> Optional[Dict[str, float]]:
+        """
+        Try to read decimal odds for 1X2 from common keys.
+        Returns normalized dict or None.
+        """
+        # Direct decimal odds in object
+        for k in ("odds", "markets", "bookmakers", "odds_1x2"):
+            if k in obj and obj[k]:
+                raw = obj[k]
+                # various shapes: {"home":2.1,"draw":3.2,"away":3.5} OR list of markets
+                if isinstance(raw, dict) and {"home","away"}.issubset(set(raw.keys())):
+                    h = _safe_float(raw.get("home"))
+                    d = _safe_float(raw.get("draw"))
+                    a = _safe_float(raw.get("away"))
+                    if valid_odds_triplet(h,d,a):
+                        return {"home": h, "draw": d, "away": a}
+                if isinstance(raw, list):
+                    # find 1X2 market
+                    for m in raw:
+                        name = (m.get("name") or m.get("key") or "").lower()
+                        if "1x2" in name or "match winner" in name or name in ("home/draw/away","result"):
+                            o = m.get("outcomes") or m.get("odds") or {}
+                            if isinstance(o, dict):
+                                h = _safe_float(o.get("home") or o.get("1"))
+                                d = _safe_float(o.get("draw") or o.get("X"))
+                                a = _safe_float(o.get("away") or o.get("2"))
+                                if valid_odds_triplet(h,d,a):
+                                    return {"home": h, "draw": d, "away": a}
+        # Some feeds flatten as event_odd_home, event_odd_draw, event_odd_away
+        h = _safe_float(obj.get("event_odd_home"))
+        d = _safe_float(obj.get("event_odd_draw"))
+        a = _safe_float(obj.get("event_odd_away"))
+        if valid_odds_triplet(h,d,a):
+            return {"home": h, "draw": d, "away": a}
+        return None
+
+    # --------------- intent: win probability ---------------
+
+    def _intent_winprob(self, ev: EventInfo) -> Tuple[Dict[str, Any], List[Any]]:
+        trace: List[Any] = []
+        if ev.odds_decimal:
+            probs = implied_probs_from_decimal_odds(ev.odds_decimal)
+            trace.append({"step": "odds->probs", "odds": ev.odds_decimal, "probs": probs})
+            return {
+                "eventId": ev.event_id,
+                "method": "odds_implied",
+                "probs": probs,
+                "inputs": {"odds_decimal": ev.odds_decimal},
+            }, trace
+
+        # Fallback: form-based logistic from recent matches
+        form, t = self._intent_form(ev, lookback=5)
+        trace.extend(t)
+        home = form["home_metrics"]
+        away = form["away_metrics"]
+
+        # Simple rating using points per game & goal diff per game
+        home_rating = (home["ppg"] * 1.0) + (home["gd_per_game"] * 0.35) + (home["streak_bonus"])
+        away_rating = (away["ppg"] * 1.0) + (away["gd_per_game"] * 0.35) + (away["streak_bonus"])
+
+        # home-field tweak (light if neutral or unknown)
+        hfa = 0.20
+        rating_diff = (home_rating + hfa) - away_rating
+
+        # map diff → probabilities (3-way) using softmax with draw prior
+        # baseline draw prior for football ~0.27; blend by closeness
+        p_home = 1 / (1 + math.exp(-rating_diff))
+        p_away = 1 - p_home
+        closeness = 1 - abs(0.5 - p_home) * 2  # 0..1
+        p_draw = 0.22 + 0.2 * closeness        # 0.22..0.42
+        # renormalize
+        s = p_home + p_draw + p_away
+        probs = {"home": p_home / s, "draw": p_draw / s, "away": p_away / s}
+        trace.append({"step": "form->probs", "rating_diff": rating_diff, "probs": probs})
+
+        return {
+            "eventId": ev.event_id,
+            "method": "form_logistic",
+            "probs": probs,
+            "inputs": {"home_metrics": home, "away_metrics": away},
+        }, trace
+
+    # --------------- intent: recent form ---------------
+
+    def _intent_form(self, ev: EventInfo, lookback: int = 5) -> Tuple[Dict[str, Any], List[Any]]:
+        trace: List[Any] = []
+        # Fetch recent finished matches for both teams (provider-first strategy)
+        h_matches, t1 = self._recent_matches(ev.home_team_id, lookback)
+        a_matches, t2 = self._recent_matches(ev.away_team_id, lookback)
+        trace.extend(t1 + t2)
+
+        h_metrics = form_metrics_from_matches(h_matches, ev.home_team_id)
+        a_metrics = form_metrics_from_matches(a_matches, ev.away_team_id)
+
+        # Build short summary strings
+        def _summary(m):
+            parts = []
+            if m["unbeaten"] >= 3:
+                parts.append(f"unbeaten in {m['unbeaten']}")
+            if m["win_streak"] >= 2:
+                parts.append(f"{m['win_streak']}-win streak")
+            if not parts:
+                parts.append(f"{m['wins']}-{m['draws']}-{m['losses']} last {m['games']}")
+            return ", ".join(parts)
+
+        data = {
+            "eventId": ev.event_id,
+            "home_team": {"id": ev.home_team_id, "name": ev.home_team_name, "summary": _summary(h_metrics)},
+            "away_team": {"id": ev.away_team_id, "name": ev.away_team_name, "summary": _summary(a_metrics)},
+            "home_metrics": h_metrics,
+            "away_metrics": a_metrics,
+        }
+        return data, trace
+
+    # --------------- intent: head-to-head ---------------
+
+    def _intent_h2h(self, ev: EventInfo, lookback: int = 10) -> Tuple[Dict[str, Any], List[Any]]:
+        trace: List[Any] = []
+        matches, t = self._h2h_matches(ev.home_team_id, ev.away_team_id, lookback)
+        trace.extend(t)
+
+        w_h = w_a = d = 0
+        goals_h = goals_a = 0
+        for m in matches:
+            s = _scoreline(m)
+            if s is None:
+                continue
+            h, a = s
+            # determine which side is homeTeam in the record
+            mh = str(m.get("homeTeamId") or m.get("home_team_key") or m.get("home_id") or "")
+            ma = str(m.get("awayTeamId") or m.get("away_team_key") or m.get("away_id") or "")
+            if mh == ev.home_team_id and ma == ev.away_team_id:
+                # aligned
+                goals_h += h; goals_a += a
+                if h > a: w_h += 1
+                elif a > h: w_a += 1
+                else: d += 1
             else:
-                draws += 1
-            recent.append({
-                "fixture_id": str(fx.get("id") or fx.get("match_id") or fx.get("fixture_id") or ""),
-                "date": fx.get("date") or fx.get("time") or fx.get("timestamp"),
-                "home_id": str(fx.get("home_id") or fx.get("homeTeamId") or fx.get("homeTeam") or ""),
-                "away_id": str(fx.get("away_id") or fx.get("awayTeamId") or fx.get("awayTeam") or ""),
-                "score": f"{ha}-{aa}",
-                "winner": outcome,
-            })
-        matches = len(picked)
-        avg_goals_a = total_gf_a / matches if matches else 0.0
-        avg_goals_b = total_gf_b / matches if matches else 0.0
-        return HeadToHead(
-            team_a_id=str(team_a), team_b_id=str(team_b),
-            matches=matches, wins_a=wins_a, wins_b=wins_b, draws=draws,
-            recent=recent, avg_goals_a=avg_goals_a, avg_goals_b=avg_goals_b,
-        )
+                # If inverted, flip goals
+                goals_h += a; goals_a += h
+                if a > h: w_h += 1
+                elif h > a: w_a += 1
+                else: d += 1
 
+        data = {
+            "eventId": ev.event_id,
+            "sample_size": len(matches),
+            "record": {"homeWins": w_h, "draws": d, "awayWins": w_a},
+            "goals": {"home": goals_h, "away": goals_a},
+        }
+        return data, trace
 
-def _extract_score(fx: Dict) -> Tuple[int, int]:
-    """Try to extract a numeric home–away score from various common keys."""
-    for keypair in [
-        ("home_score", "away_score"),
-        ("goals_home", "goals_away"),
-        ("homeGoals", "awayGoals"),
-        ("score_home", "score_away"),
-    ]:
-        h, a = fx.get(keypair[0]), fx.get(keypair[1])
-        if h is not None and a is not None:
+    # --------------- upstream fetches ---------------
+
+    def _recent_matches(self, team_id: str, lookback: int) -> Tuple[List[Dict[str, Any]], List[Any]]:
+        trace: List[Any] = []
+        # Prefer provider (AllSports)
+        if self.sports:
             try:
-                return int(h), int(a)
-            except Exception:
-                pass
-    score = fx.get("score") or fx.get("scores") or {}
-    for pair in [("home", "away"), ("localteam", "visitorteam")]:
-        h, a = score.get(pair[0]), score.get(pair[1])
-        if h is not None and a is not None:
+                # Build a generous date window to ensure we capture enough finished matches.
+                # Use ~90 days back or 14 * lookback days, whichever is larger.
+                days_back = max(90, lookback * 14)
+                end_dt = datetime.now(timezone.utc)
+                start_dt = end_dt - timedelta(days=days_back)
+                args = {
+                    "teamId": team_id,
+                    "from": start_dt.strftime("%Y-%m-%d"),
+                    "to": end_dt.strftime("%Y-%m-%d"),
+                }
+                r = self.sports.handle({"intent": "fixtures.list", "args": args})
+                trace.append({"step": "sports.fixtures.list", "ok": r.get("ok"), "args": args})
+                if r.get("ok"):
+                    data = r.get("data") or {}
+                    arr = data.get("result") if isinstance(data, dict) else data
+                    matches = arr if isinstance(arr, list) else []
+
+                    # Filter to finished matches only and sort by date/time ascending
+                    def is_finished(m: Dict[str, Any]) -> bool:
+                        status = str(m.get("event_status") or m.get("status") or "").lower()
+                        if status in ("finished", "match finished", "ft", "full time"):
+                            return True
+                        # Some feeds use minute markers like "90" or "90+"
+                        if status.startswith("90"):
+                            return True
+                        # Final result string present (e.g., "2 - 1")
+                        fr = m.get("event_final_result") or m.get("final_score") or m.get("score")
+                        return isinstance(fr, str) and "-" in fr
+
+                    def dt_key(m: Dict[str, Any]) -> str:
+                        d = str(m.get("event_date") or m.get("match_date") or m.get("date") or "")
+                        t = str(m.get("event_time") or m.get("match_time") or m.get("time") or "")
+                        return f"{d} {t}".strip()
+
+                    finished = [m for m in matches if is_finished(m)]
+                    finished.sort(key=dt_key)  # oldest -> newest
+                    return finished[-lookback:], trace
+            except Exception as e:
+                trace.append({"step": "sports.fixtures.list", "error": str(e)})
+
+        return [], trace
+
+    def _h2h_matches(self, team_a: str, team_b: str, lookback: int) -> Tuple[List[Dict[str, Any]], List[Any]]:
+        trace: List[Any] = []
+        if self.sports:
             try:
+                # Use the dedicated H2H endpoint for best coverage
+                r = self.sports.handle({"intent": "h2h", "args": {"h2h": f"{team_a}-{team_b}"}})
+                trace.append({"step": "sports.h2h", "ok": r.get("ok")})
+                if r.get("ok"):
+                    data = r.get("data") or {}
+                    result = data.get("result")
+                    matches: List[Dict[str, Any]] = []
+
+                    if isinstance(result, list):
+                        matches = result
+                    elif isinstance(result, dict):
+                        # Provider may split into firstTeam_VS_secondTeam / secondTeam_VS_firstTeam
+                        for v in result.values():
+                            if isinstance(v, list):
+                                matches.extend(v)
+
+                    # Fallback: some shapes might use a top-level list under "events" or "fixtures"
+                    if not matches and isinstance(data, dict):
+                        for k in ("fixtures", "events", "matches", "results"):
+                            if isinstance(data.get(k), list):
+                                matches = data.get(k) or []
+                                break
+
+                    # Sort newest first by date+time and trim
+                    def dt_key(m: Dict[str, Any]) -> str:
+                        d = str(m.get("event_date") or m.get("match_date") or m.get("date") or "")
+                        t = str(m.get("event_time") or m.get("match_time") or m.get("time") or "")
+                        return f"{d} {t}".strip()
+
+                    try:
+                        matches.sort(key=dt_key, reverse=True)
+                    except Exception:
+                        pass
+
+                    if matches:
+                        return matches[:lookback], trace
+            except Exception as e:
+                trace.append({"step": "sports.h2h", "error": str(e)})
+
+        # Fallback: intersect recent lists
+        a_list, t1 = self._recent_matches(team_a, lookback * 2)
+        b_list, t2 = self._recent_matches(team_b, lookback * 2)
+        trace.extend(t1 + t2)
+
+        # keep where opponent ids match
+        out: List[Dict[str, Any]] = []
+        opp_keys = {"awayTeamId", "away_team_key", "away_id", "homeTeamId", "home_team_key", "home_id"}
+        for m in a_list:
+            # identify opponent id in record
+            home = str(m.get("homeTeamId") or m.get("home_team_key") or m.get("home_id") or "")
+            away = str(m.get("awayTeamId") or m.get("away_team_key") or m.get("away_id") or "")
+            if (home == team_a and away == team_b) or (home == team_b and away == team_a):
+                out.append(m)
+                if len(out) >= lookback:
+                    break
+        return out, trace
+
+# ---------------------------- metrics & math ----------------------------
+
+def valid_odds_triplet(h: Optional[float], d: Optional[float], a: Optional[float]) -> bool:
+    return all(x and isinstance(x, (int,float)) and x > 1.01 for x in (h,d,a))
+
+def _safe_float(x) -> Optional[float]:
+    try:
+        if x is None: return None
+        return float(x)
+    except Exception:
+        return None
+
+def implied_probs_from_decimal_odds(odds: Dict[str, float]) -> Dict[str, float]:
+    """
+    Basic inverse-odds normalization to remove overround.
+    """
+    inv_h = 1.0 / odds["home"]
+    inv_d = 1.0 / odds["draw"]
+    inv_a = 1.0 / odds["away"]
+    s = inv_h + inv_d + inv_a
+    return {"home": inv_h / s, "draw": inv_d / s, "away": inv_a / s}
+
+def _scoreline(match: Dict[str, Any]) -> Optional[Tuple[int,int]]:
+    # Common fields
+    for hk, ak in (("home_score","away_score"), ("goals_home","goals_away"),
+                   ("event_final_result_home","event_final_result_away"),
+                   ("homeGoals","awayGoals"), ("home","away")):
+        h = match.get(hk); a = match.get(ak)
+        try:
+            if h is not None and a is not None:
                 return int(h), int(a)
-            except Exception:
+        except Exception:
+            continue
+    # Sometimes a single string like "2 - 1"
+    s = match.get("final_score") or match.get("event_final_result") or match.get("score")
+    if isinstance(s, str) and "-" in s:
+        try:
+            left, right = s.replace(" ", "").split("-")
+            return int(left), int(right)
+        except Exception:
+            return None
+    return None
+
+def form_metrics_from_matches(matches: List[Dict[str, Any]], team_id: str) -> Dict[str, Any]:
+    games = 0; wins = draws = losses = 0
+    gf = ga = 0
+    last_results: List[str] = []  # newest first, values "W","D","L"
+
+    for m in matches:
+        s = _scoreline(m)
+        if s is None:
+            continue
+        h, a = s
+        mh = str(m.get("homeTeamId") or m.get("home_team_key") or m.get("home_id") or "")
+        ma = str(m.get("awayTeamId") or m.get("away_team_key") or m.get("away_id") or "")
+        if not mh or not ma:
+            continue
+
+        if mh == team_id:
+            gf += h; ga += a
+            res = "W" if h > a else ("D" if h == a else "L")
+        elif ma == team_id:
+            gf += a; ga += h
+            res = "W" if a > h else ("D" if a == h else "L")
+        else:
+            # not this team (filter noise)
+            continue
+
+        games += 1
+        last_results.append(res)
+        if res == "W": wins += 1
+        elif res == "D": draws += 1
+        else: losses += 1
+
+    ppg = (wins*3 + draws*1) / games if games else 0.0
+    gd = gf - ga
+    gd_per_game = (gd / games) if games else 0.0
+
+    # streaks
+    win_streak = 0
+    unbeaten = 0
+    for r in last_results:
+        if r == "W":
+            win_streak += 1
+            unbeaten += 1
+        elif r == "D":
+            if win_streak == len(last_results):  # first iteration special-case not needed, keep simple
                 pass
-    return 0, 0
+            unbeaten += 1
+            win_streak = 0
+        else:
+            break  # streak broken
+    # unbeaten run
+    unbeaten = 0
+    for r in last_results:
+        if r in ("W","D"):
+            unbeaten += 1
+        else:
+            break
 
+    # Small bonus to fold into rating (keeps winprob fallback realistic)
+    streak_bonus = min(0.35, 0.12 * win_streak) + min(0.25, 0.05 * max(0, unbeaten - 2))
 
-def _outcome_for_pair(fx: Dict, team_a: str, team_b: str) -> str:
-    """Return 'A', 'B', or 'D' for draw for a & b teams in a given fixture."""
-    h, a = _extract_score(fx)
-    home = str(fx.get("home_id") or fx.get("homeTeamId") or fx.get("homeTeam") or "")
-    away = str(fx.get("away_id") or fx.get("awayTeamId") or fx.get("awayTeam") or "")
-    if not home or not away:
-        return "D"
-    if h == a:
-        return "D"
-    winner_is_home = h > a
-    if winner_is_home:
-        return "A" if home == team_a else "B"
-    else:
-        return "A" if away == team_a else "B"
+    return {
+        "games": games,
+        "wins": wins, "draws": draws, "losses": losses,
+        "gf": gf, "ga": ga, "gd": gd,
+        "ppg": round(ppg, 3),
+        "gd_per_game": round(gd_per_game, 3),
+        "last_results": last_results,      # newest→oldest, e.g., ["W","D","L","W","W"]
+        "win_streak": win_streak,
+        "unbeaten": unbeaten,
+        "streak_bonus": round(streak_bonus, 3),
+    }

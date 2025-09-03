@@ -24,16 +24,25 @@ _RESULT_KEYS = [
 
 
 def summarize_recent_form(team_id: str, fixtures: List[Dict], n: int = 5) -> RecentFormSummary:
-    fixtures_sorted = sorted(fixtures, key=lambda f: f.get("timestamp") or f.get("time") or f.get("date") or 0, reverse=True)
-    picked = fixtures_sorted[:n]
+    fixtures_sorted = sorted(
+        fixtures,
+        key=lambda f: f.get("timestamp") or f.get("time") or f.get("date") or 0,
+        reverse=True,
+    )
+    picked = fixtures_sorted[:n * 2]  # over-pick to allow skipping non-completed rows
     wins = draws = losses = 0
     gf = ga = 0
     last_labels: List[str] = []
     unbeaten = 0
+    used = 0
 
     for fx in picked:
+        # Skip fixtures without a real score (provider often sends upcoming games with 0-0 and no FT status)
+        hs, as_, has_score = _score(fx)
+        if not has_score:
+            continue
+
         is_home = _is_home_team(fx, team_id)
-        hs, as_ = _score(fx)
         if is_home:
             gf += hs
             ga += as_
@@ -44,6 +53,7 @@ def summarize_recent_form(team_id: str, fixtures: List[Dict], n: int = 5) -> Rec
             outcome = _outcome(as_, hs)
 
         last_labels.append(outcome)
+        used += 1
         if outcome == "W":
             wins += 1
             unbeaten += 1
@@ -54,9 +64,13 @@ def summarize_recent_form(team_id: str, fixtures: List[Dict], n: int = 5) -> Rec
             losses += 1
             unbeaten = 0
 
+        # stop once we have n completed matches
+        if used >= n:
+            break
+
     return RecentFormSummary(
         team_id=str(team_id),
-        matches=len(picked),
+        matches=used,
         wins=wins,
         draws=draws,
         losses=losses,
@@ -85,23 +99,41 @@ def _is_home_team(fx: Dict, team_id: str) -> bool:
     return home == str(team_id)
 
 
-def _score(fx: Dict) -> Tuple[int, int]:
+def _score(fx: Dict) -> Tuple[int, int, bool]:
+    """
+    Return (home_score, away_score, has_score).
+    has_score is True only if provider supplied concrete numbers and the match is likely completed.
+    """
+    # direct numeric keys
     for hk, ak in _RESULT_KEYS:
         h, a = fx.get(hk), fx.get(ak)
         if h is not None and a is not None:
             try:
-                return int(h), int(a)
+                hi, ai = int(h), int(a)
+                # consider it a real score if non-negative and at least one of: nonzero OR explicit finished status
+                if hi >= 0 and ai >= 0:
+                    status = str(fx.get("event_status") or fx.get("status") or fx.get("match_status") or "").lower()
+                    finished = any(tok in status for tok in ("ft", "full", "ended", "finished", "aet", "pen"))
+                    if (hi + ai) > 0 or finished:
+                        return hi, ai, True
             except Exception:
                 pass
+
+    # nested shapes like score/home, score/away
     score = fx.get("score") or fx.get("scores") or {}
     for pair in [("home", "away"), ("localteam", "visitorteam")]:
         h, a = score.get(pair[0]), score.get(pair[1])
         if h is not None and a is not None:
             try:
-                return int(h), int(a)
+                hi, ai = int(h), int(a)
+                status = str(fx.get("event_status") or fx.get("status") or "").lower()
+                finished = any(tok in status for tok in ("ft", "full", "ended", "finished", "aet", "pen"))
+                if (hi + ai) > 0 or finished:
+                    return hi, ai, True
             except Exception:
                 pass
-    return 0, 0
+
+    return 0, 0, False
 
 
 def _outcome(our: int, opp: int) -> str:
