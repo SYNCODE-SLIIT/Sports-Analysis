@@ -440,6 +440,10 @@
           <button id="playerAnalyticsBtn">Player Analytics</button>
           <button id="multimodalBtn">Multimodal Extract</button>
         </div>
+        <div id="summary_section" class="summary">
+          <h3>Match Summary</h3>
+          <div class="summary-body">Loading summary…</div>
+        </div>
         <div id="details_info" class="details-info" style="margin-bottom:0.75rem"></div>
         <div id="highlights" class="highlights">
           <h3>Highlights</h3>
@@ -466,6 +470,12 @@
   renderEventDetails(ev, detailsInfo);
   // Auto-augment with model predictions (runs in background; will re-render when complete)
   setTimeout(()=> { try{ augmentEventTags(ev); }catch(e){ console.warn('auto augment failed', e); } }, 300);
+    // Fetch AI match summary
+    fetchMatchSummary(ev).catch(err => {
+      console.error('Summary error:', err);
+      const sumEl = modalBody.querySelector('#summary_section .summary-body');
+      if(sumEl) sumEl.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err));
+    });
     
     // wire new feature buttons
     const augmentBtn = modalBody.querySelector('#augmentTagsBtn');
@@ -2584,6 +2594,82 @@
   }
 
   let currentEventContext = null;
+
+  // --- AI Match Summary ---
+  async function fetchMatchSummary(ev){
+    const container = modalBody.querySelector('#summary_section .summary-body');
+    if(!container) return;
+    container.textContent = 'Loading summary…';
+
+    // Build payload: prefer eventId; fallback to event name and date
+    const payload = { provider: 'auto' };
+    const eventId = ev.idEvent || ev.event_key || ev.match_id || ev.id;
+    if(eventId) payload.eventId = String(eventId);
+    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+    const name = ev.strEvent || (home && away ? `${home} vs ${away}` : '');
+    if(name) payload.eventName = name;
+    const date = ev.event_date || ev.dateEvent || ev.date || '';
+    if(date) payload.date = date;
+
+    try{
+      const resp = await fetch(apiBase + '/summarizer/summarize', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+      });
+      if(!resp.ok){
+        const txt = await resp.text().catch(()=> '');
+        throw new Error(`HTTP ${resp.status} ${txt}`.trim());
+      }
+      const j = await resp.json();
+      renderSummary(j, container);
+    }catch(e){
+      container.textContent = 'Unable to load summary.';
+      console.error('fetchMatchSummary error:', e);
+    }
+  }
+
+  function renderSummary(summary, container){
+    if(!container) return;
+    container.innerHTML = '';
+    if(!summary || summary.ok === false){
+      container.textContent = 'No summary available.';
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,0.08);';
+
+    if(summary.headline){
+      const h = document.createElement('h4');
+      h.style.cssText = 'margin:0 0 8px 0;color:#111827;font-size:18px;';
+      h.textContent = summary.headline;
+      wrap.appendChild(h);
+    }
+
+    if(summary.one_paragraph){
+      const p = document.createElement('p');
+      p.style.cssText = 'margin:0 0 10px 0;color:#374151;line-height:1.4;';
+      p.textContent = summary.one_paragraph;
+      wrap.appendChild(p);
+    }
+
+    if(Array.isArray(summary.bullets) && summary.bullets.length){
+      const ul = document.createElement('ul');
+      ul.style.cssText = 'margin:8px 0 0 1rem;color:#374151;';
+      summary.bullets.slice(0,6).forEach(b=>{ const li=document.createElement('li'); li.textContent=String(b); ul.appendChild(li); });
+      wrap.appendChild(ul);
+    }
+
+    const meta = summary.source_meta || {};
+    const bundle = meta.bundle || {};
+    const metaLine = document.createElement('div');
+    metaLine.style.cssText = 'margin-top:8px;font-size:12px;color:#6b7280;';
+    const prov = meta.provider_used ? `via ${meta.provider_used}` : '';
+    const idInfo = bundle.event_id ? `id ${bundle.event_id}` : '';
+    metaLine.textContent = [prov, idInfo].filter(Boolean).join(' · ');
+    if(metaLine.textContent) wrap.appendChild(metaLine);
+
+    container.appendChild(wrap);
+  }
 
   function addEventHighlightSearchUI(container, ev){
     currentEventContext = ev;

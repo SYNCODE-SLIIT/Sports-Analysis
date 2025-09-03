@@ -7,6 +7,7 @@ import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # -----------------------
@@ -51,6 +52,14 @@ if AGENT_MODE == "local":
 import httpx
 
 app = FastAPI(title="Summarizer Agent", version="2.0")
+# Enable CORS (same policy as main app) so frontend on other origins can call this mounted sub-app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # -----------------------
@@ -451,7 +460,7 @@ def build_llm_prompt(bundle: Dict[str, Any]) -> Tuple[str, str]:
         f"The one_paragraph MUST be between 300 and 400 words."
     )
 
-    # Build timeline bullets (stringified) — include AllSports fields
+    # Build timeline bullets (stringified) — include AllSports fields (trim to keep prompt small)
     tl_lines = []
     for ev in (timeline or []):
         minute = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
@@ -473,9 +482,15 @@ def build_llm_prompt(bundle: Dict[str, Any]) -> Tuple[str, str]:
                 kind = str(ev.get("card"))
             elif sub_on or sub_off:
                 kind = "Substitution"
-        tl_lines.append(
-            f"{(str(minute)+'′ ') if minute else ''}{kind} — {(who or 'Unknown').strip()} {(note or '').strip()}".strip()
-        )
+        line = f"{(str(minute)+'′ ') if minute else ''}{kind} — {(who or 'Unknown').strip()} {(note or '').strip()}".strip()
+        # hard-cap each line to ~180 chars to reduce token bloat
+        if len(line) > 180:
+            line = line[:179] + "…"
+        tl_lines.append(line)
+
+    # Trim very long timelines: keep first 48 and last 12 (if many) to capture opening + decisive late events
+    if len(tl_lines) > 60:
+        tl_lines = tl_lines[:48] + ["… (timeline truncated) …"] + tl_lines[-12:]
 
     # Primary stats (TSDB often [{"strStat","intHome","intAway"}])
     stats_pairs = []
@@ -573,18 +588,30 @@ Do not add extra fields.
             model=GROQ_MODEL,
             temperature=LLM_TEMPERATURE,
             response_format={"type": "json_object"},
+            max_tokens=1200,
         )
 
     # First try
-    chat = await _call()
-    raw = chat.choices[0].message.content
     import json
     try:
-        out = json.loads(raw)
-    except Exception:
-        out = {
-            "headline": "Match Report",
-            "one_paragraph": raw[:800],
+        chat = await _call()
+        raw = chat.choices[0].message.content
+        try:
+            out = json.loads(raw)
+        except Exception:
+            out = {
+                "headline": "Match Report",
+                "one_paragraph": (raw or "")[:800],
+                "bullets": [],
+                "key_events": [],
+                "star_performers": [],
+                "numbers": {},
+            }
+    except Exception as e:
+        # Fallback gracefully on API errors (e.g., json_validate_failed or token limits)
+        return {
+            "headline": "Match Report Unavailable",
+            "one_paragraph": "The summarization model could not produce a JSON response within limits. Returning a minimal fallback.",
             "bullets": [],
             "key_events": [],
             "star_performers": [],
@@ -600,20 +627,25 @@ Do not add extra fields.
             + f" The one_paragraph MUST be between 300-400 words. "
               "Preserve facts; do not invent missing data. Expand with momentum and context only from provided info."
         )
-        chat2 = await asyncio.to_thread(
-            client.chat.completions.create,
-            messages=[
-                {"role": "system", "content": reinforce},
-                {"role": "user", "content": _content()},
-            ],
-            model=GROQ_MODEL,
-            temperature=LLM_TEMPERATURE,
-            response_format={"type": "json_object"},
-        )
         try:
-            out = json.loads(chat2.choices[0].message.content)
+            chat2 = await asyncio.to_thread(
+                client.chat.completions.create,
+                messages=[
+                    {"role": "system", "content": reinforce},
+                    {"role": "user", "content": _content()},
+                ],
+                model=GROQ_MODEL,
+                temperature=LLM_TEMPERATURE,
+                response_format={"type": "json_object"},
+                max_tokens=1200,
+            )
+            try:
+                out = json.loads(chat2.choices[0].message.content)
+            except Exception:
+                pass  # keep first response if second parse fails
         except Exception:
-            pass  # keep first response if second parse fails
+            # keep first response if second call fails
+            pass
 
     return out
 

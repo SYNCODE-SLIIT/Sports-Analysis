@@ -30,6 +30,10 @@
           <button id="playerAnalyticsBtn">Player Analytics</button>
           <button id="multimodalBtn">Multimodal Extract</button>
         </div>
+        <div id="summary" class="summary">
+          <h3>Match Summary</h3>
+          <div class="summary-body">Loading summary…</div>
+        </div>
         <div id="details_info" class="details-info" style="margin-bottom:0.75rem"></div>
         <div id="highlights" class="highlights">
           <h3>Highlights</h3>
@@ -52,6 +56,12 @@
     const detailsInfo = modalBody.querySelector('#details_info');
     try{ ev.timeline = buildCleanTimeline(ev); }catch(e){ console.warn('buildCleanTimeline failed', e); }
     renderEventDetails(ev, detailsInfo);
+    // Fetch AI summary (backend summarizer mounted under /summarizer)
+    fetchMatchSummary(ev).catch(err => {
+      console.error('Summary error:', err);
+      const sBody = modalBody.querySelector('#summary .summary-body');
+      if(sBody) sBody.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err));
+    });
     // Auto-augment in background
     setTimeout(()=> { try{ augmentEventTags(ev); }catch(e){ console.warn('auto augment failed', e); } }, 300);
 
@@ -72,6 +82,68 @@
       console.error('Extras error:', err);
       const sec = modalBody.querySelector('#extras .extras-body'); if(sec) sec.textContent = 'Extras error: ' + (err && err.message ? err.message : String(err));
     });
+  }
+  // ----- Match Summary via backend summarizer -----
+  async function fetchMatchSummary(ev){
+    const sBody = modalBody.querySelector('#summary .summary-body');
+    if(!sBody) return;
+    sBody.textContent = 'Loading summary…';
+
+    // Build best-effort payload
+    const payload = { provider: 'auto' };
+    const eventId = ev.idEvent || ev.event_key || ev.id || ev.match_id;
+    if(eventId) payload.eventId = String(eventId);
+    // Event name as "Home vs Away"
+    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+    if(home && away) payload.eventName = `${home} vs ${away}`;
+    // Date if present
+    const date = ev.event_date || ev.dateEvent || ev.date || '';
+    if(date) payload.date = date;
+
+    const url = apiBase + '/summarizer/summarize';
+    const resp = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    if(!resp.ok){
+      // Try fallback: if summarizer mounted path differs (rare), surface HTTP error
+      const txt = await resp.text().catch(()=> '');
+      throw new Error('HTTP '+resp.status + (txt? (': '+txt):''));
+    }
+    const j = await resp.json();
+    if(!j || j.ok === false) throw new Error(j && j.detail ? (j.detail.reason || JSON.stringify(j.detail)) : 'No summary');
+    renderSummary(j, sBody);
+  }
+
+  function renderSummary(s, container){
+    container.innerHTML = '';
+    const card = document.createElement('div');
+    card.style.cssText = 'background:white;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08)';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:18px;font-weight:700;color:#111827;margin-bottom:8px';
+    title.textContent = s.headline || 'Match Summary';
+    card.appendChild(title);
+
+    const para = document.createElement('div');
+    para.style.cssText = 'color:#374151;line-height:1.6;margin-bottom:12px;white-space:pre-wrap';
+    para.textContent = s.one_paragraph || '';
+    card.appendChild(para);
+
+    if(Array.isArray(s.bullets) && s.bullets.length){
+      const ul = document.createElement('ul'); ul.style.cssText = 'margin:0 0 8px 1rem;color:#374151';
+      s.bullets.slice(0,6).forEach(b=>{ const li=document.createElement('li'); li.textContent=b; ul.appendChild(li); });
+      card.appendChild(ul);
+    }
+
+    // Small meta footer
+    const meta = document.createElement('div');
+    meta.style.cssText = 'font-size:12px;color:#6b7280;margin-top:8px';
+    if(s.source_meta && s.source_meta.bundle){
+      const t = s.source_meta.bundle.teams || {}; const sc = s.source_meta.bundle.score || {};
+      meta.textContent = `${t.home||''} ${sc.home!=null?sc.home:''}–${sc.away!=null?sc.away:''} ${t.away||''}`;
+    }
+    card.appendChild(meta);
+
+    container.appendChild(card);
   }
 
   // --- Details rendering & timeline helpers (from history.js) ---
