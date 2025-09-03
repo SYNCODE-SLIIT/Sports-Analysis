@@ -89,6 +89,33 @@ class SummaryOut(BaseModel):
     source_meta: Dict[str, Any]
 
 
+# Lightweight event-brief schemas
+class EventBriefItemIn(BaseModel):
+    minute: Optional[str] = None
+    type: Optional[str] = None  # goal | substitution | yellow card | red card | etc
+    description: Optional[str] = None
+    player: Optional[str] = None
+    team: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class EventBriefsRequest(BaseModel):
+    # Optional match context (not required)
+    eventId: Optional[str] = None
+    eventName: Optional[str] = None
+    date: Optional[str] = None
+    provider: str = Field(default="auto", pattern="^(auto|tsdb|allsports)$")
+    events: List[EventBriefItemIn]
+
+class EventBriefItemOut(BaseModel):
+    minute: Optional[str] = None
+    type: Optional[str] = None
+    brief: str
+
+class EventBriefsOut(BaseModel):
+    ok: bool
+    items: List[EventBriefItemOut]
+
+
 # -----------------------
 # Utilities
 # -----------------------
@@ -186,6 +213,149 @@ def _latest_minute(timeline: list[dict]) -> str | None:
         if m:
             return str(m).strip("′ '")
     return None
+
+
+async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate descriptive per-event briefs (1–3 sentences) for key timeline events.
+    Uses Groq when available with compact, structured prompting; otherwise
+    falls back to deterministic templates. Output is a list aligned to the
+    input order with minute, type, and brief fields.
+    """
+    # Fallback path (no LLM configured)
+    if Groq is None or not GROQ_API_KEY:
+        out: List[Dict[str, Any]] = []
+        for ev in events:
+            t = (ev.get("type") or "").lower()
+            minute = ev.get("minute") or ev.get("time")
+            player = ev.get("player") or ev.get("home_scorer") or ev.get("away_scorer")
+            team = ev.get("team") or ""
+            desc = ev.get("description") or ev.get("text") or ev.get("event") or ""
+            brief = desc or f"{t.title()} at {minute or '?'} by {player or 'unknown'} {('('+team+')') if team else ''}".strip()
+            out.append({"minute": minute, "type": t or None, "brief": brief})
+        return out
+
+    # Prepare compact, context-aware prompt
+    teams = context.get("teams") or {}
+    score = context.get("score") or {}
+    comp = context.get("competition") or ""
+    header = f"{teams.get('home','')} vs {teams.get('away','')} — {comp} — score {score.get('home')}–{score.get('away')}"
+    lines = []
+    idx_map = []
+    for i, ev in enumerate(events):
+        minute = ev.get("minute") or ev.get("time") or ""
+        kind = ev.get("type") or ev.get("event") or ev.get("card") or ev.get("info") or ""
+        who = (
+            ev.get("player")
+            or ev.get("player_name")
+            or ev.get("home_scorer")
+            or ev.get("away_scorer")
+            or ev.get("fault")
+            or ""
+        )
+        team = ev.get("team") or ev.get("side") or ""
+        sub_on = ev.get("in_player") or ev.get("substitution") or ""
+        sub_off = ev.get("out_player") or ""
+        note = ev.get("assist") or ev.get("score") or ev.get("result") or ev.get("description") or ""
+        extra = (f" | team={team}" if team else "") + (f" | in={sub_on} out={sub_off}" if (sub_on or sub_off) else "")
+        line = f"[{i}] {(str(minute)+'\u2032 ') if minute else ''}{kind}: {who} {note}{extra}".strip()
+        if len(line) > 150:
+            line = line[:149] + "…"
+        lines.append(line)
+        idx_map.append(i)
+
+    system = (
+        "You are an insightful football analyst. For each event, write a clear, vivid brief in 1–3 sentences (aim 25–65 words). "
+        "Be strictly factual and use only provided data. Mention the minute, player and team when available. "
+        "For goals, clarify whether it opens the scoring, levels the match, or changes the lead if score info is present. "
+        "For cards, state impact (e.g., team down to 10 for reds). For substitutions, note the like-for-like or tactical feel only if implied (no guessing)."
+    )
+    user = (
+        header
+        + "\nEvents:\n- "
+        + ("\n- ".join(lines) if lines else "None")
+        + "\n\nRespond ONLY as a JSON object with key 'items' containing an array of objects: "
+        + "{\"items\":[{\"index\":number,\"brief\":string}, ...]}."
+    )
+
+    client = Groq(api_key=GROQ_API_KEY)
+    import json
+    try:
+        chat = await asyncio.to_thread(
+            client.chat.completions.create,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            model=GROQ_MODEL,
+            temperature=min(LLM_TEMPERATURE, 0.35),
+            response_format={"type": "json_object"},
+            max_tokens=800,
+        )
+        raw = chat.choices[0].message.content
+        # Expect an object like {"items":[{"index":0,"brief":"..."}, ...]} (prefer object to satisfy JSON mode)
+        parsed = json.loads(raw)
+        items = parsed.get("items") if isinstance(parsed, dict) else parsed
+        out: List[Dict[str, Any]] = []
+        if isinstance(items, list):
+            for it in items:
+                try:
+                    i = it.get("index") if isinstance(it, dict) else None
+                    brief = it.get("brief") if isinstance(it, dict) else None
+                    if isinstance(i, int) and isinstance(brief, str):
+                        ev = events[i] if 0 <= i < len(events) else {}
+                        out.append({
+                            "minute": ev.get("minute") or ev.get("time"),
+                            "type": (ev.get("type") or ev.get("event") or ev.get("card") or "").lower() or None,
+                            "brief": brief.strip(),
+                        })
+                except Exception:
+                    continue
+        if out:
+            return out
+    except Exception:
+        # fall through to templates
+        pass
+
+    # Fallback template summaries (more descriptive)
+    templated: List[Dict[str, Any]] = []
+    for ev in events:
+        t = (ev.get("type") or ev.get("event") or ev.get("card") or "").lower()
+        minute = ev.get("minute") or ev.get("time")
+        player = ev.get("player") or ev.get("home_scorer") or ev.get("away_scorer") or ev.get("player_name")
+        team = ev.get("team") or ev.get("side") or ""
+        score_note = (ev.get("score") or "").strip()
+        assist = (ev.get("assist") or "").strip()
+        if t.startswith("goal") or t == "goal":
+            parts = []
+            who = player or "Unknown scorer"
+            when = f"{minute or '?'}′"
+            parts.append(f"{who} strikes at {when}{(' for '+team) if team else ''}")
+            if assist:
+                parts.append(f"after an assist from {assist}")
+            if score_note:
+                parts.append(f"({score_note})")
+            brief = ". ".join([" ".join(parts), "A decisive moment that shifts the momentum."]).strip()
+        elif "yellow" in t:
+            who = player or "Unknown player"
+            when = f"{minute or '?'}′"
+            brief = f"{who}{(' ('+team+')') if team else ''} is booked at {when}. The caution tempers challenges and forces greater discipline.".strip()
+        elif "red" in t:
+            who = player or "Unknown player"
+            when = f"{minute or '?'}′"
+            brief = f"{who}{(' ('+team+')') if team else ''} is sent off at {when}, leaving the side a player short and changing the dynamic of the match.".strip()
+        elif "substitution" in t or t == "sub":
+            desc = ev.get("description")
+            in_p = ev.get("in_player") or ev.get("substitution")
+            out_p = ev.get("out_player")
+            if desc:
+                brief = desc
+            else:
+                who = (f"{in_p} for {out_p}" if (in_p or out_p) else "Change made")
+                when = f"{minute or '?'}′"
+                brief = f"Substitution at {when}{(' for '+team) if team else ''}: {who}. Fresh legs to alter the tempo.".strip()
+        else:
+            base = ev.get("description") or (t.title() if t else "Event")
+            when = f"{minute or '?'}′"
+            brief = f"{base} around {when}{(' ('+team+')') if team else ''}.".strip()
+        templated.append({"minute": minute, "type": t or None, "brief": brief})
+    return templated
 
 
 # -----------------------
@@ -714,3 +884,57 @@ async def summarize(req: SummarizeRequest):
         },
     }
     return summary
+
+
+@app.post("/summarize/events", response_model=EventBriefsOut)
+async def summarize_events(req: EventBriefsRequest):
+    """Summarize a list of timeline events (goals/cards/substitutions) into short natural-language briefs.
+    This does not fetch provider data; it uses the given events and optional context only.
+    """
+    # minimal context for better phrasing (optional)
+    context = {
+        "teams": {},
+        "score": {},
+        "competition": "",
+    }
+    # Attempt a tiny provider lookup to enrich context if eventId provided, but keep fully optional
+    # Avoid heavy calls; the LLM prompt stays compact.
+    try:
+        if req.eventId or req.eventName:
+            # Build a thin args for TSDB in local mode when available; ignore errors/timeouts
+            args = {}
+            if req.eventId:
+                args["eventId"] = req.eventId
+            if req.eventName:
+                args["eventName"] = req.eventName
+            if req.date:
+                args["dateEvent"] = req.date
+            args["expand"] = []
+            payload = {"intent": "event.get", "args": args}
+            trace: List[Dict[str, Any]] = []
+            tsdb = await call_tsdb_agent(payload, trace)
+            if tsdb.get("ok"):
+                data = tsdb.get("data") or {}
+                norm = norm_tsdb_event({
+                    "event": (data.get("event") or (data.get("candidates") or [None])[0] or {})
+                })
+                context.update({
+                    "teams": norm.get("teams") or {},
+                    "score": norm.get("score") or {},
+                    "competition": norm.get("competition") or "",
+                })
+    except Exception:
+        pass
+
+    # Only accept up to 24 events to keep prompt tight
+    events = list(req.events or [])[:24]
+    briefs = await _llm_event_briefs(context, events)
+    # map back to output items
+    items: List[Dict[str, Any]] = []
+    for i, b in enumerate(briefs):
+        items.append({
+            "minute": b.get("minute"),
+            "type": b.get("type"),
+            "brief": b.get("brief") or "",
+        })
+    return {"ok": True, "items": items}

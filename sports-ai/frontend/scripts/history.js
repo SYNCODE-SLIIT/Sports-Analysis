@@ -806,7 +806,7 @@
     timelineContainer.style.cssText = 'position: relative;';
 
     timeline.forEach((event, index) => {
-      const eventElement = createTimelineEvent(event, index === timeline.length - 1);
+      const eventElement = createTimelineEvent(event, index === timeline.length - 1, ev);
       timelineContainer.appendChild(eventElement);
     });
 
@@ -931,7 +931,7 @@
     return out;
   }
 
-  function createTimelineEvent(event, isLast) {
+  function createTimelineEvent(event, isLast, matchCtx) {
     const eventDiv = document.createElement('div');
     eventDiv.style.cssText = `
       display: flex;
@@ -957,7 +957,7 @@
       flex-shrink: 0;
     `;
 
-    const dot = document.createElement('div');
+  const dot = document.createElement('div');
     dot.style.cssText = `
       width: 12px;
       height: 12px;
@@ -1006,7 +1006,7 @@
     icon.textContent = getEventIcon(description, tags);
 
     eventHeader.appendChild(minuteSpan);
-    eventHeader.appendChild(icon);
+  eventHeader.appendChild(icon);
 
     const eventText = document.createElement('div');
     eventText.style.cssText = 'color: #374151; margin-bottom: 8px;';
@@ -1068,11 +1068,91 @@
     content.appendChild(rawToggle);
     content.appendChild(rawPre);
 
+    // Hover brief on the movement dot for special events
+    try{
+      const etype = deriveEventType(description, tags, event);
+      if(etype){
+        dot.style.cursor = 'help';
+        const onEnter = async ()=>{
+          showEventTooltip(dot, 'Summarizing…');
+          try{
+            const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
+            showEventTooltip(dot, brief);
+          }catch(err){ showEventTooltip(dot, description || etype); }
+        };
+        const onLeave = ()=> hideEventTooltip();
+        const onMove = ()=> positionEventTooltip(dot);
+        dot.addEventListener('mouseenter', onEnter);
+        dot.addEventListener('mouseleave', onLeave);
+        dot.addEventListener('mousemove', onMove);
+      }
+    }catch(_e){ /* ignore hover errors */ }
+
     eventDiv.appendChild(timeline);
     eventDiv.appendChild(content);
 
     return eventDiv;
   }
+
+  // ---- Event brief tooltip helpers (shared) ----
+  const _eventBriefCache = new Map();
+  function _briefKey(etype, payload){
+    const p = payload||{}; return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::');
+  }
+  function deriveEventType(description, tags, ev){
+    const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase());
+    const d = String(description||'').toLowerCase();
+    if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) return 'goal';
+    if(t.includes('red')) return 'red card';
+    if(t.includes('yellow')) return 'yellow card';
+    if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) return 'substitution';
+    return null;
+  }
+  async function getEventBrief(etype, payload, matchCtx){
+    const key = _briefKey(etype, payload);
+    if(_eventBriefCache.has(key)) return _eventBriefCache.get(key);
+    const ev = (payload && payload.event) || {};
+    const tags = payload && payload.tags || [];
+    // Build context
+    const home = matchCtx?.event_home_team || matchCtx?.strHomeTeam || matchCtx?.home_team || '';
+    const away = matchCtx?.event_away_team || matchCtx?.strAwayTeam || matchCtx?.away_team || '';
+    const payloadBody = {
+      provider: 'auto',
+      eventId: String(matchCtx?.idEvent || matchCtx?.event_key || matchCtx?.id || matchCtx?.match_id || '' ) || undefined,
+      eventName: (home && away) ? `${home} vs ${away}` : undefined,
+      date: matchCtx?.event_date || matchCtx?.dateEvent || matchCtx?.date || undefined,
+      events: [{
+        minute: payload.minute || ev.minute || ev.time || '',
+        type: etype,
+        description: payload.description || ev.description || ev.text || ev.event || '',
+        player: ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '',
+        team: ev.team || '',
+        tags: Array.isArray(tags)? tags.slice(0,6) : undefined,
+      }]
+    };
+    let brief = '';
+    try{
+      const loc = window.location; let apiBase = loc.origin; if(loc.port && loc.port !== '8000'){ apiBase = loc.protocol + '//' + loc.hostname + ':8000'; }
+      const r = await fetch(apiBase + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)});
+      if(r.ok){ const j = await r.json(); brief = (j && j.items && j.items[0] && j.items[0].brief) || ''; }
+    }catch(_e){ /* ignore */ }
+    if(!brief){
+      const minute = payload.minute || ev.minute || ev.time || '';
+      const player = ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '';
+      if(etype==='goal') brief = `${player||'Unknown'} scores at ${minute||'?'}.'`;
+      else if(etype==='yellow card') brief = `Yellow card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='red card') brief = `Red card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='substitution') brief = payload.description || 'Substitution.';
+      else brief = payload.description || etype;
+    }
+    _eventBriefCache.set(key, brief);
+    return brief;
+  }
+  let _evtTooltip;
+  function ensureTooltip(){ if(_evtTooltip) return _evtTooltip; const d = document.createElement('div'); d.style.cssText = 'position:fixed;z-index:9999;max-width:320px;background:#111827;color:#e5e7eb;padding:8px 10px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.25);font-size:12px;line-height:1.4;pointer-events:none;display:none;'; document.body.appendChild(d); _evtTooltip = d; return d; }
+  function showEventTooltip(anchor, text){ const d=ensureTooltip(); d.textContent = String(text||''); d.style.display='block'; positionEventTooltip(anchor); }
+  function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
+  function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
 
   function getEventIcon(description, tags) {
     const desc = String(description).toLowerCase();

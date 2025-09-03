@@ -239,8 +239,8 @@
     if(timeline && !Array.isArray(timeline) && typeof timeline === 'object'){ const vals = Object.values(timeline).filter(Boolean); const arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); if(arr.length>0) timeline = arr; }
     if(!Array.isArray(timeline) || timeline.length===0) timeline = synthesizeTimelineFromEvent(ev);
     if(!Array.isArray(timeline) || timeline.length===0) return;
-    const timelineCard = document.createElement('div'); timelineCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)'; const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='⚽ Match Timeline'; timelineCard.appendChild(title);
-    const timelineContainer = document.createElement('div'); timelineContainer.style.cssText='position:relative;'; timeline.forEach((event, index)=>{ timelineContainer.appendChild(createTimelineEvent(event, index===timeline.length-1)); }); timelineCard.appendChild(timelineContainer); container.appendChild(timelineCard);
+  const timelineCard = document.createElement('div'); timelineCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)'; const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='⚽ Match Timeline'; timelineCard.appendChild(title);
+  const timelineContainer = document.createElement('div'); timelineContainer.style.cssText='position:relative;'; timeline.forEach((event, index)=>{ timelineContainer.appendChild(createTimelineEvent(event, index===timeline.length-1, ev)); }); timelineCard.appendChild(timelineContainer); container.appendChild(timelineCard);
   }
 
   function synthesizeTimelineFromEvent(ev){
@@ -260,7 +260,7 @@
     out.sort((a,b)=> minuteSortKey(a.minute) - minuteSortKey(b.minute)); return out;
   }
 
-  function createTimelineEvent(event, isLast){
+  function createTimelineEvent(event, isLast, matchCtx){
     const eventDiv = document.createElement('div'); eventDiv.style.cssText = `display:flex;align-items:flex-start;margin-bottom:${isLast?'0':'16px'};position:relative;`;
     const normTags = normalizeEventTags(event); const tags = Array.isArray(normTags)?normTags.map(t=>t.text):[];
     const minute = event.minute || event.time || ''; const description = event.description || event.text || event.event || '';
@@ -272,8 +272,92 @@
     if(Array.isArray(normTags) && normTags.length>0){ const tagsContainer = document.createElement('div'); tagsContainer.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;'; const hasModel = normTags.some(t=>t.isModel); if(hasModel){ const mlBadge = document.createElement('span'); mlBadge.textContent='ML'; mlBadge.title='Model-predicted tag present'; mlBadge.style.cssText='background:#7c3aed;color:white;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:700;'; tagsContainer.appendChild(mlBadge); }
       normTags.forEach(t=>{ const tagSpan = document.createElement('span'); const color = t.isModel? '#6d28d9' : getTagColor(t.text||''); tagSpan.style.cssText = `background:${color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:8px;`; const label = document.createElement('span'); label.textContent = t.text; tagSpan.appendChild(label); if(t.confidence!==undefined && t.confidence!==null){ const conf = document.createElement('small'); conf.textContent = ` ${Number(t.confidence).toFixed(2)}`; conf.style.opacity='0.9'; conf.style.marginLeft='6px'; conf.style.fontSize='10px'; tagSpan.appendChild(conf); } tagsContainer.appendChild(tagSpan); }); content.appendChild(tagsContainer); }
     const rawToggle = document.createElement('button'); rawToggle.textContent='Show raw'; rawToggle.style.cssText='margin-left:8px;background:transparent;border:1px dashed #d1d5db;color:#374151;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;'; const rawPre = document.createElement('pre'); rawPre.style.cssText='display:none;margin-top:8px;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;overflow:auto;max-height:240px;'; try{ rawPre.textContent = JSON.stringify(event.raw || event, null, 2); }catch(e){ rawPre.textContent = String(event.raw || event); } rawToggle.addEventListener('click', ()=>{ if(rawPre.style.display==='none'){ rawPre.style.display='block'; rawToggle.textContent='Hide raw'; } else { rawPre.style.display='none'; rawToggle.textContent='Show raw'; } }); content.appendChild(rawToggle); content.appendChild(rawPre);
+
+    // Hover brief on the movement dot for special events
+    try{
+      const etype = deriveEventType(description, tags, event);
+      if(etype){
+        dot.style.cursor = 'help';
+        const onEnter = async (e)=>{
+          showEventTooltip(dot, 'Summarizing…');
+          try{
+            const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
+            showEventTooltip(dot, brief);
+          }catch(err){ showEventTooltip(dot, description || etype); }
+        };
+        const onLeave = ()=> hideEventTooltip();
+        const onMove = ()=> positionEventTooltip(dot);
+        dot.addEventListener('mouseenter', onEnter);
+        dot.addEventListener('mouseleave', onLeave);
+        dot.addEventListener('mousemove', onMove);
+      }
+    }catch(_e){ /* ignore hover errors */ }
     eventDiv.appendChild(timeline); eventDiv.appendChild(content); return eventDiv;
   }
+
+  // ---- Event brief tooltip helpers ----
+  const _eventBriefCache = new Map();
+  function _briefKey(etype, payload){
+    const p = payload||{}; return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::');
+  }
+  function deriveEventType(description, tags, ev){
+    const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase());
+    const d = String(description||'').toLowerCase();
+    if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) return 'goal';
+    if(t.includes('red')) return 'red card';
+    if(t.includes('yellow')) return 'yellow card';
+    if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) return 'substitution';
+    return null;
+  }
+  async function getEventBrief(etype, payload, matchCtx){
+    const key = _briefKey(etype, payload);
+    if(_eventBriefCache.has(key)) return _eventBriefCache.get(key);
+    const ev = (payload && payload.event) || {};
+    const tags = payload && payload.tags || [];
+    // Build context
+    const home = matchCtx?.event_home_team || matchCtx?.strHomeTeam || matchCtx?.home_team || '';
+    const away = matchCtx?.event_away_team || matchCtx?.strAwayTeam || matchCtx?.away_team || '';
+    const payloadBody = {
+      provider: 'auto',
+      eventId: String(matchCtx?.idEvent || matchCtx?.event_key || matchCtx?.id || matchCtx?.match_id || '' ) || undefined,
+      eventName: (home && away) ? `${home} vs ${away}` : undefined,
+      date: matchCtx?.event_date || matchCtx?.dateEvent || matchCtx?.date || undefined,
+      events: [{
+        minute: payload.minute || ev.minute || ev.time || '',
+        type: etype,
+        description: payload.description || ev.description || ev.text || ev.event || '',
+        player: ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '',
+        team: ev.team || '',
+        tags: Array.isArray(tags)? tags.slice(0,6) : undefined,
+      }]
+    };
+    let brief = '';
+    try{
+      const r = await fetch(apiBase + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)});
+      if(r.ok){ const j = await r.json(); brief = (j && j.items && j.items[0] && j.items[0].brief) || ''; }
+    }catch(_e){ /* ignore */ }
+    if(!brief){
+      const minute = payload.minute || ev.minute || ev.time || '';
+      const player = ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '';
+      if(etype==='goal') brief = `${player||'Unknown'} scores at ${minute||'?'}.'`;
+      else if(etype==='yellow card') brief = `Yellow card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='red card') brief = `Red card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='substitution') brief = payload.description || 'Substitution.';
+      else brief = payload.description || etype;
+    }
+    _eventBriefCache.set(key, brief);
+    return brief;
+  }
+  let _evtTooltip; 
+  function ensureTooltip(){
+    if(_evtTooltip) return _evtTooltip;
+    const d = document.createElement('div');
+    d.style.cssText = 'position:fixed;z-index:9999;max-width:320px;background:#111827;color:#e5e7eb;padding:8px 10px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.25);font-size:12px;line-height:1.4;pointer-events:none;display:none;';
+    document.body.appendChild(d); _evtTooltip = d; return d;
+  }
+  function showEventTooltip(anchor, text){ const d=ensureTooltip(); d.textContent = String(text||''); d.style.display='block'; positionEventTooltip(anchor); }
+  function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
+  function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
 
   function getEventIcon(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; if(desc.includes('red')||tagStr.includes('red')) return '🟥'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '🔄'; if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; return '⚪'; }
 
