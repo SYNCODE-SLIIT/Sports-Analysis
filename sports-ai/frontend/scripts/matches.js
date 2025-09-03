@@ -30,10 +30,12 @@
           <button id="playerAnalyticsBtn">Player Analytics</button>
           <button id="multimodalBtn">Multimodal Extract</button>
         </div>
+
         <div id="summary" class="summary">
           <h3>Match Summary</h3>
           <div class="summary-body">Loading summary…</div>
         </div>
+
         <div id="details_info" class="details-info" style="margin-bottom:0.75rem"></div>
         <div id="highlights" class="highlights">
           <h3>Highlights</h3>
@@ -56,12 +58,14 @@
     const detailsInfo = modalBody.querySelector('#details_info');
     try{ ev.timeline = buildCleanTimeline(ev); }catch(e){ console.warn('buildCleanTimeline failed', e); }
     renderEventDetails(ev, detailsInfo);
+
     // Fetch AI summary (backend summarizer mounted under /summarizer)
     fetchMatchSummary(ev).catch(err => {
       console.error('Summary error:', err);
       const sBody = modalBody.querySelector('#summary .summary-body');
       if(sBody) sBody.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err));
     });
+
     // Auto-augment in background
     setTimeout(()=> { try{ augmentEventTags(ev); }catch(e){ console.warn('auto augment failed', e); } }, 300);
 
@@ -83,6 +87,7 @@
       const sec = modalBody.querySelector('#extras .extras-body'); if(sec) sec.textContent = 'Extras error: ' + (err && err.message ? err.message : String(err));
     });
   }
+
   // ----- Match Summary via backend summarizer -----
   async function fetchMatchSummary(ev){
     const sBody = modalBody.querySelector('#summary .summary-body');
@@ -239,8 +244,10 @@
     if(timeline && !Array.isArray(timeline) && typeof timeline === 'object'){ const vals = Object.values(timeline).filter(Boolean); const arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); if(arr.length>0) timeline = arr; }
     if(!Array.isArray(timeline) || timeline.length===0) timeline = synthesizeTimelineFromEvent(ev);
     if(!Array.isArray(timeline) || timeline.length===0) return;
+
   const timelineCard = document.createElement('div'); timelineCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)'; const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='⚽ Match Timeline'; timelineCard.appendChild(title);
   const timelineContainer = document.createElement('div'); timelineContainer.style.cssText='position:relative;'; timeline.forEach((event, index)=>{ timelineContainer.appendChild(createTimelineEvent(event, index===timeline.length-1, ev)); }); timelineCard.appendChild(timelineContainer); container.appendChild(timelineCard);
+
   }
 
   function synthesizeTimelineFromEvent(ev){
@@ -260,7 +267,9 @@
     out.sort((a,b)=> minuteSortKey(a.minute) - minuteSortKey(b.minute)); return out;
   }
 
+
   function createTimelineEvent(event, isLast, matchCtx){
+
     const eventDiv = document.createElement('div'); eventDiv.style.cssText = `display:flex;align-items:flex-start;margin-bottom:${isLast?'0':'16px'};position:relative;`;
     const normTags = normalizeEventTags(event); const tags = Array.isArray(normTags)?normTags.map(t=>t.text):[];
     const minute = event.minute || event.time || ''; const description = event.description || event.text || event.event || '';
@@ -272,6 +281,7 @@
     if(Array.isArray(normTags) && normTags.length>0){ const tagsContainer = document.createElement('div'); tagsContainer.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;'; const hasModel = normTags.some(t=>t.isModel); if(hasModel){ const mlBadge = document.createElement('span'); mlBadge.textContent='ML'; mlBadge.title='Model-predicted tag present'; mlBadge.style.cssText='background:#7c3aed;color:white;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:700;'; tagsContainer.appendChild(mlBadge); }
       normTags.forEach(t=>{ const tagSpan = document.createElement('span'); const color = t.isModel? '#6d28d9' : getTagColor(t.text||''); tagSpan.style.cssText = `background:${color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:8px;`; const label = document.createElement('span'); label.textContent = t.text; tagSpan.appendChild(label); if(t.confidence!==undefined && t.confidence!==null){ const conf = document.createElement('small'); conf.textContent = ` ${Number(t.confidence).toFixed(2)}`; conf.style.opacity='0.9'; conf.style.marginLeft='6px'; conf.style.fontSize='10px'; tagSpan.appendChild(conf); } tagsContainer.appendChild(tagSpan); }); content.appendChild(tagsContainer); }
     const rawToggle = document.createElement('button'); rawToggle.textContent='Show raw'; rawToggle.style.cssText='margin-left:8px;background:transparent;border:1px dashed #d1d5db;color:#374151;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;'; const rawPre = document.createElement('pre'); rawPre.style.cssText='display:none;margin-top:8px;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;overflow:auto;max-height:240px;'; try{ rawPre.textContent = JSON.stringify(event.raw || event, null, 2); }catch(e){ rawPre.textContent = String(event.raw || event); } rawToggle.addEventListener('click', ()=>{ if(rawPre.style.display==='none'){ rawPre.style.display='block'; rawToggle.textContent='Hide raw'; } else { rawPre.style.display='none'; rawToggle.textContent='Show raw'; } }); content.appendChild(rawToggle); content.appendChild(rawPre);
+
 
     // Hover brief on the movement dot for special events
     try{
@@ -1796,4 +1806,6 @@
   fetchSummary();
   // auto refresh live every 60s
   setInterval(()=> { if(!document.hidden) fetchSummary(); }, 60000);
+
 })();
+
