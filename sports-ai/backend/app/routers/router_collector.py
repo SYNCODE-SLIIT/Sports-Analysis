@@ -13,12 +13,15 @@ This module exposes a single class: RouterCollector, with .handle({intent, args}
 
 from __future__ import annotations
 from typing import Any, Dict, Tuple
+
 from ..services.highlight_search import search_event_highlights
 
 # --- Adapters (thin wrappers around your existing agents) ---
 from ..adapters.tsdb_adapter import TSDBAdapter
 from ..adapters.allsports_adapter import AllSportsAdapter
-
+## Agents
+from ..agents.analysis_agent import AnalysisAgent
+from ..agents.game_analytics_agent import AllSportsRawAgent
 
 class RouterError(Exception):
     def __init__(self, code: str, message: str, details: Dict[str, Any] | None = None):
@@ -32,6 +35,8 @@ class RouterCollector:
     def __init__(self) -> None:
         self.tsdb = TSDBAdapter()
         self.asapi = AllSportsAdapter()
+        self.allsports = AllSportsRawAgent()
+        self.analysis = AnalysisAgent(self.allsports)
 
     # ---- public entry ----
     def handle(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,15 +51,56 @@ class RouterCollector:
             if not isinstance(args, dict):
                 raise RouterError("BAD_REQUEST", "'args' must be an object")
 
+
             # --- Internal (non-provider) intents ---
             if intent == "highlight.event.search":
                 result = search_event_highlights(args)
+
+            # --- Analysis intents (short-circuit normal routing) ---
+            if intent in ("analysis.match_insights", "analysis.match.insights"):
+                event_id = args.get("eventId") or args.get("event_id")
+                res = self.analysis.match_insights(str(event_id))
+
                 return {
                     "ok": True,
                     "intent": intent,
                     "args_resolved": args,
                     "data": result,  # embed result under data for uniformity
                     "meta": {"source": {"primary": "internal", "fallback": None}, "trace": []},
+
+                    "data": self._to_model_dict(res),
+                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                }
+            elif intent in ("analysis.winprob", "analysis.win_probabilities"):
+                event_id = args.get("eventId") or args.get("event_id")
+                res = self.analysis.win_probabilities(str(event_id))
+                return {
+                    "ok": True,
+                    "intent": intent,
+                    "args_resolved": args,
+                    "data": self._to_model_dict(res),
+                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                }
+            elif intent in ("analysis.form", "analysis.team_form"):
+                team_id = args.get("teamId") or args.get("team_id")
+                res = self.analysis.team_form(str(team_id))
+                return {
+                    "ok": True,
+                    "intent": intent,
+                    "args_resolved": args,
+                    "data": self._to_model_dict(res),
+                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
+                }
+            elif intent in ("analysis.h2h", "analysis.head_to_head"):
+                a = args.get("teamA") or args.get("team_a")
+                b = args.get("teamB") or args.get("team_b")
+                res = self.analysis.head_to_head(str(a), str(b))
+                return {
+                    "ok": True,
+                    "intent": intent,
+                    "args_resolved": args,
+                    "data": self._to_model_dict(res),
+                    "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
                 }
 
             primary, fallback = self._route(intent)
@@ -515,3 +561,11 @@ class RouterCollector:
             'per_day_counts': per_day_counts,
             'meta': {'trace': trace},
         }
+        
+    def _to_model_dict(self, obj):
+        """Compat for Pydantic v1/v2: prefer model_dump(), fallback to dict(), else passthrough."""
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()
+        return obj
