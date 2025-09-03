@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .routers.router_collector import RouterCollector
+from .services.highlight_search import search_event_highlights
 
 app = FastAPI(title="Sports Collector HM (Unified)", version="0.3.0")
 
@@ -32,6 +33,7 @@ app.add_middleware(
 # --- Agents ---
 router = RouterCollector()                        # unified router over TSDB + AllSports
 
+
 # # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
 # @app.on_event("startup")
 # async def _show_routes():
@@ -43,6 +45,14 @@ router = RouterCollector()                        # unified router over TSDB + A
 #                 print("   *", p)
 #     except Exception as e:
 #         print("[startup] Could not list routes:", e)
+
+try:
+    from .agents import summarizer
+    app.mount("/summarizer", summarizer.app)
+    print("[startup] summarizer mounted at /summarizer")
+except Exception as e:
+    print(f"[startup] summarizer not mounted: {e}")
+
 
 # --- JSON entrypoints (minimal surface) ---
 @app.post("/collect")
@@ -190,3 +200,18 @@ app.include_router(matches_router)
 @app.get("/_debug/routes")
 def _debug_routes():  # pragma: no cover
     return {"count": len(app.routes), "paths": sorted({r.path for r in app.routes})}
+
+
+# --- Event highlight search (free-form, no provider key needed) ---
+@app.get('/highlight/event')
+def highlight_event(home: str, away: str, minute: int | None = None, player: str | None = None,
+                    event_type: str | None = None, date: str | None = None):
+    args = {
+        'homeTeam': home,
+        'awayTeam': away,
+        'minute': minute,
+        'player': player,
+        'event_type': event_type,
+        'date': date,
+    }
+    return search_event_highlights(args)
