@@ -185,7 +185,7 @@ class RouterCollector:
         """
         # AllSports supports these intents (primary):
         allsports_first = {
-            # competitions + seasons
+            # competitions
             "leagues.list", "seasons.list",
             # teams & players
             "teams.list", "team.get",
@@ -295,9 +295,13 @@ class RouterCollector:
             # AllSports livescore shape uses 'result'
             live_list = data.get("result") or data.get("events") or []
 
-        # 2. Finished matches: we will call events.list for the date (TSDB primary)
-        finished_req = {"intent": "events.list", "args": {"date": target_date}}
-        finished_resp = self.handle(finished_req)
+        # 2. Finished matches: prefer AllSports fixtures.list with from/to=day; fallback to standard router flow
+        as_finished = self._call_allsports('fixtures.list', {'from': target_date, 'to': target_date})
+        if as_finished.get('ok') and not self._is_empty(as_finished.get('data')):
+            finished_resp = as_finished
+        else:
+            finished_req = {"intent": "events.list", "args": {"date": target_date}}
+            finished_resp = self.handle(finished_req)
         trace.append({"step": "finished_fetch", "ok": finished_resp.get("ok"), "date": target_date})
         finished_list = []
         if finished_resp.get("ok"):
@@ -436,7 +440,8 @@ class RouterCollector:
         for d in date_list:
             # Direct provider calls bypass router fallback to get raw sets
             tsdb_resp = self._call_tsdb('events.list', {'date': d})
-            as_resp = self._call_allsports('events.list', {'date': d})
+            # AllSports: prefer fixtures.list with from/to=day to ensure provider returns matches for that day
+            as_resp = self._call_allsports('fixtures.list', {'from': d, 'to': d})
             trace.append({"step": "history_dual_fetch", "date": d, "tsdb_ok": tsdb_resp.get('ok'), "allsports_ok": as_resp.get('ok')})
             tsdb_events = extract_events(tsdb_resp)
             as_events = extract_events(as_resp)
@@ -540,7 +545,8 @@ class RouterCollector:
 
         for d in date_list:
             tsdb_resp = self._call_tsdb('events.list', {'date': d})
-            as_resp = self._call_allsports('events.list', {'date': d})
+            # AllSports: prefer fixtures.list with explicit from/to
+            as_resp = self._call_allsports('fixtures.list', {'from': d, 'to': d})
             trace.append({"step": "history_raw_fetch", "date": d, "tsdb_ok": bool(tsdb_resp.get('ok')), "allsports_ok": bool(as_resp.get('ok'))})
 
             ts_events = extract_events(tsdb_resp)

@@ -9,9 +9,11 @@
 
   const contentEl = document.getElementById('content');
   const daysInput = document.getElementById('daysInput');
+  const startDateInput = document.getElementById('startDate');
   const endDateInput = document.getElementById('endDate');
   const leagueSelect = document.getElementById('leagueSelect');
   const fetchLeagueBtn = document.getElementById('fetchLeagueBtn');
+  const flatBtn = document.getElementById('flatBtn');
   const loadBtn = document.getElementById('loadBtn');
   const statusEl = document.getElementById('status');
 
@@ -33,17 +35,17 @@
 
   // Set default end date to today
   endDateInput.value = new Date().toISOString().split('T')[0];
+  // Default start date = end date (single day) unless user changes it
+  startDateInput.value = endDateInput.value;
 
   // Load leagues on page load
   loadLeagues();
 
-  // Load sample data immediately for testing
-  setTimeout(() => {
-    console.log('Loading sample data for testing...');
-    showSampleData();
-  }, 1000);
+  // NOTE: Sample data auto-load removed to prevent overriding real results.
+  // If needed during development, call showSampleData() manually from console.
 
   loadBtn.addEventListener('click', loadHistoryMatches);
+  if(flatBtn) flatBtn.addEventListener('click', loadFlatMatches);
   fetchLeagueBtn.addEventListener('click', fetchLeagueMatches);
 
   function setStatus(text, isError = false) {
@@ -181,13 +183,24 @@
     });
   }
 
+  function _rangeToDays(start, end){
+    try{
+      const s = new Date(start);
+      const e = new Date(end);
+      const ms = e.setHours(0,0,0,0) - s.setHours(0,0,0,0);
+      return Math.max(1, Math.min(31, Math.floor(ms / (24*3600*1000)) + 1));
+    }catch(_e){ return null; }
+  }
+
   async function loadHistoryMatches() {
     try {
       setStatus('Loading history matches...');
       contentEl.innerHTML = '';
       
-      const days = parseInt(daysInput.value) || 7;
       const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
+      const startDate = startDateInput.value || '';
+      let days = parseInt(daysInput.value) || 7;
+      if(startDate){ const d = _rangeToDays(startDate, endDate); if(d) days = d; }
       
       const url = `${apiBase}/matches/history?days=${days}&end_date=${endDate}`;
       console.log('Loading from URL:', url);
@@ -212,6 +225,54 @@
     }
   }
 
+  // New: Flat matches (no league grouping) — includes internationals
+  async function loadFlatMatches() {
+    try {
+      setStatus('Loading flat matches...');
+      contentEl.innerHTML = '';
+
+      const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
+      const startDate = startDateInput.value || '';
+      let days = parseInt(daysInput.value) || 7;
+      if(startDate){ const d = _rangeToDays(startDate, endDate); if(d) days = d; }
+
+      const url = `${apiBase}/matches/history_raw?days=${days}&end_date=${endDate}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      // Router returns raw object with top-level matches array
+      const ok = !!(data && (data.ok === true || typeof data.ok === 'undefined'));
+      const matches = (data && (data.matches || (data.data && data.data.matches))) || [];
+
+      if(!ok) throw new Error('Failed to load flat matches');
+
+      // Group by date (newest first) for readability, but do NOT group by league
+      const byDate = {};
+      matches.forEach(m => {
+        const d = m.event_date || m.dateEvent || m.date || 'Unknown Date';
+        (byDate[d] = byDate[d] || []).push(m);
+      });
+
+      const dates = Object.keys(byDate).sort().reverse();
+
+      // Header
+      const hdr = document.createElement('h2');
+      hdr.textContent = `Flat Matches — ${matches.length} total`;
+      hdr.style.margin = '16px';
+      contentEl.appendChild(hdr);
+
+      dates.forEach(d => {
+        const section = createDateSection(d, byDate[d]);
+        contentEl.appendChild(section);
+      });
+
+      setStatus(`Loaded flat matches for ${dates.length} dates`);
+    } catch (error) {
+      console.error('Error loading flat matches:', error);
+      setStatus('Error loading flat matches: ' + (error && error.message ? error.message : String(error)), true);
+    }
+  }
+
   async function fetchLeagueMatches() {
     const selectedLeague = leagueSelect.value;
     if (selectedLeague === '__ALL__') {
@@ -222,46 +283,42 @@
     try {
       setStatus('Loading league matches...');
       contentEl.innerHTML = '';
-      
-      const days = parseInt(daysInput.value) || 7;
-      const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
-      
-      // Calculate start date
-      const end = new Date(endDate);
-      const start = new Date(end);
-      start.setDate(start.getDate() - days + 1);
-      
-      const startDate = start.toISOString().split('T')[0];
-      
-      // Fetch matches for the specific league
-      const url = `${apiBase}/collect`;
-      const requestBody = {
-        intent: "fixtures.list",
-        args: {
-          leagueId: selectedLeague,
-          from: startDate,
-          to: endDate
-        }
+
+      const callIntent = async (intent, args) => {
+        const resp = await fetch(`${apiBase}/collect`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({intent, args}) });
+        if(!resp.ok) throw new Error(`HTTP ${resp.status} for ${intent}`);
+        return resp.json();
       };
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-      
-      const data = await response.json();
-      
-      if (data.ok && data.data && data.data.result) {
-        const matches = data.data.result;
-        const selectedLeagueName = leagueSelect.options[leagueSelect.selectedIndex].textContent;
-        displayLeagueMatches(matches, selectedLeagueName);
-        setStatus(`Loaded ${matches.length} matches for ${selectedLeagueName}`);
-      } else {
-        throw new Error('Failed to load league matches');
+
+      const selectedLeagueName = leagueSelect.options[leagueSelect.selectedIndex].textContent;
+
+      // Build explicit date window (AllSports responds reliably when from/to are provided)
+      const endDate = (endDateInput.value || new Date().toISOString().slice(0,10));
+      let startDate = startDateInput.value || '';
+      if(!startDate){
+        const days = parseInt(daysInput.value || '7', 10) || 7;
+        const end = new Date(endDate);
+        const start = new Date(end);
+        start.setDate(start.getDate() - days + 1);
+        startDate = start.toISOString().slice(0,10);
       }
+
+      const args = { leagueId: selectedLeague, from: startDate, to: endDate };
+      let res = await callIntent('events.list', args);
+      let matches = [];
+      if(res && res.ok && res.data){
+        matches = res.data.result || res.data.events || res.data.results || [];
+      }
+      if((!Array.isArray(matches) || matches.length === 0)){
+        // Try fixtures.list alias with same params
+        res = await callIntent('fixtures.list', args);
+        if(res && res.ok && res.data){
+          matches = res.data.result || res.data.events || res.data.results || [];
+        }
+      }
+
+      displayLeagueMatches(Array.isArray(matches) ? matches : [], selectedLeagueName);
+      setStatus(`Loaded ${Array.isArray(matches)?matches.length:0} matches for ${selectedLeagueName} (${startDate} → ${endDate})`);
     } catch (error) {
       console.error('Error loading league matches:', error);
       setStatus('Error loading league matches: ' + error.message, true);
@@ -320,7 +377,7 @@
 
   function createDateSection(date, matches) {
     const dateNode = dateTemplate.content.firstElementChild.cloneNode(true);
-    dateNode.querySelector('.dateHeading').textContent = formatDate(date);
+    dateNode.querySelector('.dateHeading').textContent = formatDate(date || 'Unknown Date');
     
     const matchesContainer = dateNode.querySelector('.matches');
     
@@ -334,11 +391,12 @@
 
   function createMatchRow(match) {
     const matchNode = matchRowTemplate.content.firstElementChild.cloneNode(true);
-    
-    const homeTeam = match.event_home_team || match.strHomeTeam || 'Unknown';
-    const awayTeam = match.event_away_team || match.strAwayTeam || 'Unknown';
-    const time = match.event_time || match.strTime || '';
-    const status = match.event_status || match.status || '';
+    const pick = (obj, keys) => { for(const k of keys){ if(obj && obj[k] != null && obj[k] !== '') return obj[k]; } return ''; };
+    const homeTeam = pick(match, ['event_home_team','strHomeTeam','home_team','homeTeam','home','localteam','homeTeamName']);
+    const awayTeam = pick(match, ['event_away_team','strAwayTeam','away_team','awayTeam','away','visitorteam','awayTeamName']);
+    const time = pick(match, ['event_time','strTime','match_time','time']);
+    const status = pick(match, ['event_status','status','match_status']);
+    const date = pick(match, ['event_date','dateEvent','match_date','date']);
     
     // Format score
     let score = '-';
@@ -355,14 +413,14 @@
     matchNode.innerHTML = `
       <div class="match-info">
         <div class="teams">
-          <span class="home-team">${homeTeam}</span>
+          <span class="home-team">${homeTeam || 'Unknown'}</span>
           <span class="vs">vs</span>
-          <span class="away-team">${awayTeam}</span>
+          <span class="away-team">${awayTeam || 'Unknown'}</span>
         </div>
         <div class="match-details">
-          <span class="time">${time}</span>
+          <span class="time">${time || ''}</span>
           <span class="score">${score}</span>
-          <span class="status">${status}</span>
+          <span class="status">${status || ''}</span>
         </div>
       </div>
       <div style="margin-top:8px"><button class="detailsBtn">Details</button></div>
@@ -2701,12 +2759,49 @@
         args.idLeague = leagueId;
         args.leagueKey = leagueId;
       } else if(leagueName) args.leagueName = leagueName;
-      const j = await callIntent('league.table', args);
-      if(j && j.ok){ 
+      let j = await callIntent('league.table', args);
+      let okTable = (j && j.ok) ? (function(payload){
+        try{
+          const d = payload.data || payload.result || payload || {};
+          if(Array.isArray(d)) return d.length>0;
+          const arrs = ['total','table','result','standings','rows','league_table'];
+          return arrs.some(k => Array.isArray(d[k]) && d[k].length>0) || (d.data && Array.isArray(d.data.total) && d.data.total.length>0);
+        }catch(e){ return false; }
+      })(j) : false;
+
+      // Fallback: if empty, try season-specific calls derived from event date or fields
+      if(!okTable){
+        const yearStr = (ev.event_date || ev.dateEvent || '').slice(0,4);
+        const leagueSeason = ev.league_season || ev.season || ev.league_year || '';
+        const yr = parseInt(yearStr || '', 10);
+        const cands = [];
+        if(leagueSeason) cands.push(String(leagueSeason));
+        if(yr && !Number.isNaN(yr)){
+          cands.push(String(yr));
+          cands.push(`${yr-1}/${yr}`);
+          cands.push(`${yr}/${yr+1}`);
+        }
+        for(const s of cands){
+          try{
+            const j2 = await callIntent('league.table', { ...args, season: s });
+            const d2 = j2 && (j2.data || j2.result || j2 || {});
+            const nonEmpty = (()=>{
+              if(Array.isArray(d2)) return d2.length>0;
+              const arrs=['total','table','result','standings','rows','league_table'];
+              return arrs.some(k => Array.isArray(d2[k]) && d2[k].length>0) || (d2.data && Array.isArray(d2.data.total) && d2.data.total.length>0);
+            })();
+            if(nonEmpty){ j = j2; okTable = true; break; }
+          }catch(_e){ /* try next */ }
+        }
+      }
+
+      if(okTable){
         const tableCard = createLeagueTableCard(j.data || j.result || {});
         tableBody.innerHTML = '';
         tableBody.appendChild(tableCard);
-      } else tableBody.textContent = 'No table available';
+      } else {
+        tableBody.textContent = 'No table available';
+      }
       // debug league.table raw
       try{
         const dbgT = document.createElement('details'); dbgT.style.marginTop='8px';
