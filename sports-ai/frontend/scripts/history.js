@@ -440,6 +440,10 @@
           <button id="playerAnalyticsBtn">Player Analytics</button>
           <button id="multimodalBtn">Multimodal Extract</button>
         </div>
+        <div id="summary_section" class="summary">
+          <h3>Match Summary</h3>
+          <div class="summary-body">Loading summary…</div>
+        </div>
         <div id="details_info" class="details-info" style="margin-bottom:0.75rem"></div>
         <div id="highlights" class="highlights">
           <h3>Highlights</h3>
@@ -466,6 +470,12 @@
   renderEventDetails(ev, detailsInfo);
   // Auto-augment with model predictions (runs in background; will re-render when complete)
   setTimeout(()=> { try{ augmentEventTags(ev); }catch(e){ console.warn('auto augment failed', e); } }, 300);
+    // Fetch AI match summary
+    fetchMatchSummary(ev).catch(err => {
+      console.error('Summary error:', err);
+      const sumEl = modalBody.querySelector('#summary_section .summary-body');
+      if(sumEl) sumEl.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err));
+    });
     
     // wire new feature buttons
     const augmentBtn = modalBody.querySelector('#augmentTagsBtn');
@@ -796,7 +806,7 @@
     timelineContainer.style.cssText = 'position: relative;';
 
     timeline.forEach((event, index) => {
-      const eventElement = createTimelineEvent(event, index === timeline.length - 1);
+      const eventElement = createTimelineEvent(event, index === timeline.length - 1, ev);
       timelineContainer.appendChild(eventElement);
     });
 
@@ -921,7 +931,7 @@
     return out;
   }
 
-  function createTimelineEvent(event, isLast) {
+  function createTimelineEvent(event, isLast, matchCtx) {
     const eventDiv = document.createElement('div');
     eventDiv.style.cssText = `
       display: flex;
@@ -947,7 +957,7 @@
       flex-shrink: 0;
     `;
 
-    const dot = document.createElement('div');
+  const dot = document.createElement('div');
     dot.style.cssText = `
       width: 12px;
       height: 12px;
@@ -996,7 +1006,7 @@
     icon.textContent = getEventIcon(description, tags);
 
     eventHeader.appendChild(minuteSpan);
-    eventHeader.appendChild(icon);
+  eventHeader.appendChild(icon);
 
     const eventText = document.createElement('div');
     eventText.style.cssText = 'color: #374151; margin-bottom: 8px;';
@@ -1058,11 +1068,91 @@
     content.appendChild(rawToggle);
     content.appendChild(rawPre);
 
+    // Hover brief on the movement dot for special events
+    try{
+      const etype = deriveEventType(description, tags, event);
+      if(etype){
+        dot.style.cursor = 'help';
+        const onEnter = async ()=>{
+          showEventTooltip(dot, 'Summarizing…');
+          try{
+            const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
+            showEventTooltip(dot, brief);
+          }catch(err){ showEventTooltip(dot, description || etype); }
+        };
+        const onLeave = ()=> hideEventTooltip();
+        const onMove = ()=> positionEventTooltip(dot);
+        dot.addEventListener('mouseenter', onEnter);
+        dot.addEventListener('mouseleave', onLeave);
+        dot.addEventListener('mousemove', onMove);
+      }
+    }catch(_e){ /* ignore hover errors */ }
+
     eventDiv.appendChild(timeline);
     eventDiv.appendChild(content);
 
     return eventDiv;
   }
+
+  // ---- Event brief tooltip helpers (shared) ----
+  const _eventBriefCache = new Map();
+  function _briefKey(etype, payload){
+    const p = payload||{}; return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::');
+  }
+  function deriveEventType(description, tags, ev){
+    const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase());
+    const d = String(description||'').toLowerCase();
+    if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) return 'goal';
+    if(t.includes('red')) return 'red card';
+    if(t.includes('yellow')) return 'yellow card';
+    if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) return 'substitution';
+    return null;
+  }
+  async function getEventBrief(etype, payload, matchCtx){
+    const key = _briefKey(etype, payload);
+    if(_eventBriefCache.has(key)) return _eventBriefCache.get(key);
+    const ev = (payload && payload.event) || {};
+    const tags = payload && payload.tags || [];
+    // Build context
+    const home = matchCtx?.event_home_team || matchCtx?.strHomeTeam || matchCtx?.home_team || '';
+    const away = matchCtx?.event_away_team || matchCtx?.strAwayTeam || matchCtx?.away_team || '';
+    const payloadBody = {
+      provider: 'auto',
+      eventId: String(matchCtx?.idEvent || matchCtx?.event_key || matchCtx?.id || matchCtx?.match_id || '' ) || undefined,
+      eventName: (home && away) ? `${home} vs ${away}` : undefined,
+      date: matchCtx?.event_date || matchCtx?.dateEvent || matchCtx?.date || undefined,
+      events: [{
+        minute: payload.minute || ev.minute || ev.time || '',
+        type: etype,
+        description: payload.description || ev.description || ev.text || ev.event || '',
+        player: ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '',
+        team: ev.team || '',
+        tags: Array.isArray(tags)? tags.slice(0,6) : undefined,
+      }]
+    };
+    let brief = '';
+    try{
+      const loc = window.location; let apiBase = loc.origin; if(loc.port && loc.port !== '8000'){ apiBase = loc.protocol + '//' + loc.hostname + ':8000'; }
+      const r = await fetch(apiBase + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)});
+      if(r.ok){ const j = await r.json(); brief = (j && j.items && j.items[0] && j.items[0].brief) || ''; }
+    }catch(_e){ /* ignore */ }
+    if(!brief){
+      const minute = payload.minute || ev.minute || ev.time || '';
+      const player = ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '';
+      if(etype==='goal') brief = `${player||'Unknown'} scores at ${minute||'?'}.'`;
+      else if(etype==='yellow card') brief = `Yellow card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='red card') brief = `Red card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='substitution') brief = payload.description || 'Substitution.';
+      else brief = payload.description || etype;
+    }
+    _eventBriefCache.set(key, brief);
+    return brief;
+  }
+  let _evtTooltip;
+  function ensureTooltip(){ if(_evtTooltip) return _evtTooltip; const d = document.createElement('div'); d.style.cssText = 'position:fixed;z-index:9999;max-width:320px;background:#111827;color:#e5e7eb;padding:8px 10px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.25);font-size:12px;line-height:1.4;pointer-events:none;display:none;'; document.body.appendChild(d); _evtTooltip = d; return d; }
+  function showEventTooltip(anchor, text){ const d=ensureTooltip(); d.textContent = String(text||''); d.style.display='block'; positionEventTooltip(anchor); }
+  function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
+  function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
 
   function getEventIcon(description, tags) {
     const desc = String(description).toLowerCase();
@@ -2584,6 +2674,82 @@
   }
 
   let currentEventContext = null;
+
+  // --- AI Match Summary ---
+  async function fetchMatchSummary(ev){
+    const container = modalBody.querySelector('#summary_section .summary-body');
+    if(!container) return;
+    container.textContent = 'Loading summary…';
+
+    // Build payload: prefer eventId; fallback to event name and date
+    const payload = { provider: 'auto' };
+    const eventId = ev.idEvent || ev.event_key || ev.match_id || ev.id;
+    if(eventId) payload.eventId = String(eventId);
+    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+    const name = ev.strEvent || (home && away ? `${home} vs ${away}` : '');
+    if(name) payload.eventName = name;
+    const date = ev.event_date || ev.dateEvent || ev.date || '';
+    if(date) payload.date = date;
+
+    try{
+      const resp = await fetch(apiBase + '/summarizer/summarize', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+      });
+      if(!resp.ok){
+        const txt = await resp.text().catch(()=> '');
+        throw new Error(`HTTP ${resp.status} ${txt}`.trim());
+      }
+      const j = await resp.json();
+      renderSummary(j, container);
+    }catch(e){
+      container.textContent = 'Unable to load summary.';
+      console.error('fetchMatchSummary error:', e);
+    }
+  }
+
+  function renderSummary(summary, container){
+    if(!container) return;
+    container.innerHTML = '';
+    if(!summary || summary.ok === false){
+      container.textContent = 'No summary available.';
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,0.08);';
+
+    if(summary.headline){
+      const h = document.createElement('h4');
+      h.style.cssText = 'margin:0 0 8px 0;color:#111827;font-size:18px;';
+      h.textContent = summary.headline;
+      wrap.appendChild(h);
+    }
+
+    if(summary.one_paragraph){
+      const p = document.createElement('p');
+      p.style.cssText = 'margin:0 0 10px 0;color:#374151;line-height:1.4;';
+      p.textContent = summary.one_paragraph;
+      wrap.appendChild(p);
+    }
+
+    if(Array.isArray(summary.bullets) && summary.bullets.length){
+      const ul = document.createElement('ul');
+      ul.style.cssText = 'margin:8px 0 0 1rem;color:#374151;';
+      summary.bullets.slice(0,6).forEach(b=>{ const li=document.createElement('li'); li.textContent=String(b); ul.appendChild(li); });
+      wrap.appendChild(ul);
+    }
+
+    const meta = summary.source_meta || {};
+    const bundle = meta.bundle || {};
+    const metaLine = document.createElement('div');
+    metaLine.style.cssText = 'margin-top:8px;font-size:12px;color:#6b7280;';
+    const prov = meta.provider_used ? `via ${meta.provider_used}` : '';
+    const idInfo = bundle.event_id ? `id ${bundle.event_id}` : '';
+    metaLine.textContent = [prov, idInfo].filter(Boolean).join(' · ');
+    if(metaLine.textContent) wrap.appendChild(metaLine);
+
+    container.appendChild(wrap);
+  }
 
   function addEventHighlightSearchUI(container, ev){
     currentEventContext = ev;
