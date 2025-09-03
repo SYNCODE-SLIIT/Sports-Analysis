@@ -124,34 +124,48 @@
       return 1000; // Low priority for non-popular leagues
     }
 
-    // Sort leagues: popular ones first, then alphabetically
-    const sortedLeagues = [...allLeagues].sort((a, b) => {
+    // Deduplicate leagues by stable id (league_key|league_id); fallback to country+name pair
+    const uniqMap = new Map();
+    (allLeagues || []).forEach(L => {
+      const id = String(L.league_key || L.league_id || `${L.country_name || ''}|${L.league_name || ''}`);
+      if (!uniqMap.has(id)) uniqMap.set(id, L);
+    });
+    const uniqLeagues = Array.from(uniqMap.values());
+
+    // Sort leagues: popular ones first (by raw league_name), then alphabetically by display label "Country — League"
+    const sortedLeagues = uniqLeagues.sort((a, b) => {
       const nameA = a.league_name || '';
       const nameB = b.league_name || '';
-      
+      const dispA = ((a.country_name ? (a.country_name + ' — ') : '') + nameA).trim();
+      const dispB = ((b.country_name ? (b.country_name + ' — ') : '') + nameB).trim();
+
       const priorityA = getLeaguePriority(nameA);
       const priorityB = getLeaguePriority(nameB);
-      
-      // If both are popular or both are non-popular, sort alphabetically
+
+      // If both are popular or both are non-popular, sort alphabetically by display name including country
       if (priorityA === priorityB) {
-        return nameA.toLowerCase().localeCompare(nameB.toLowerCase());
+        return dispA.toLowerCase().localeCompare(dispB.toLowerCase());
       }
-      
+
       // Otherwise, sort by priority
       return priorityA - priorityB;
     });
 
-    // Add league options
+    // Add league options with Country — League display label
     sortedLeagues.forEach((league, index) => {
       const option = document.createElement('option');
       option.value = league.league_key || league.league_id || '';
-      option.textContent = league.league_name || 'Unknown League';
-      
+      const country = league.country_name || league.strCountry || '';
+      const lname = league.league_name || league.strLeague || 'Unknown League';
+      const label = country ? `${country} — ${lname}` : lname;
+      option.textContent = label;
+      option.title = label;
+
       // Add visual separator after popular leagues
-      const priority = getLeaguePriority(league.league_name || '');
+      const priority = getLeaguePriority(lname);
       if (index > 0 && priority >= 1000) {
         const prevLeague = sortedLeagues[index - 1];
-        const prevPriority = getLeaguePriority(prevLeague.league_name || '');
+        const prevPriority = getLeaguePriority(prevLeague.league_name || prevLeague.strLeague || '');
         if (prevPriority < 1000) {
           // Add a separator option
           const separator = document.createElement('option');
@@ -162,7 +176,7 @@
           leagueSelect.appendChild(separator);
         }
       }
-      
+
       leagueSelect.appendChild(option);
     });
   }

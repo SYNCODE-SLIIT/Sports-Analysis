@@ -81,7 +81,9 @@
 
     const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
     const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
-    const league = ev.league_name || ev.strLeague || '';
+    const _league = ev.league_name || ev.strLeague || '';
+    const _country = ev.country_name || ev.strCountry || ev.country || '';
+    const league = _country && _league ? (_country + ' — ' + _league) : _league;
     const date = ev.event_date || ev.dateEvent || ev.date || '';
     const time = ev.event_time || ev.strTime || '';
     const status = ev.event_status || ev.status || '';
@@ -1592,7 +1594,9 @@
     const detailsBtn = node.querySelector('.detailsBtn');
 
     // Fill fields with best-effort mappings
-    leagueEl.textContent = ev.league_name || ev.strLeague || '';
+    const _league2 = ev.league_name || ev.strLeague || '';
+    const _country2 = ev.country_name || ev.strCountry || ev.country || '';
+    leagueEl.textContent = (_country2 && _league2) ? (_country2 + ' — ' + _league2) : _league2;
     statusElLocal.textContent = ev.event_status || ev.status || '';
     homeNameEl.textContent = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
     awayNameEl.textContent = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
