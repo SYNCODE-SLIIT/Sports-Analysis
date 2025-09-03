@@ -1,11 +1,13 @@
 import os
-from fastapi import FastAPI, Body, APIRouter
+from fastapi import FastAPI, Body, APIRouter, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .routers.router_collector import RouterCollector
 from .services.highlight_search import search_event_highlights
+from .agents.analysis_agent import AnalysisAgent
+from .agents.game_analytics_agent import AllSportsRawAgent
 
 app = FastAPI(title="Sports Collector HM (Unified)", version="0.3.0")
 
@@ -32,6 +34,8 @@ app.add_middleware(
 
 # --- Agents ---
 router = RouterCollector()                        # unified router over TSDB + AllSports
+allsports = AllSportsRawAgent()
+analysis_agent = AnalysisAgent(allsports)
 
 
 # # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
@@ -195,6 +199,39 @@ def matches_debug_list():  # pragma: no cover
     return {"ok": True, "paths": sorted({r.path for r in app.routes if '/matches' in r.path})}
 
 app.include_router(matches_router)
+
+# --- Analysis endpoints ---
+@app.get("/analysis/match-insights")
+def api_match_insights(eventId: str = Query(...)):
+    try:
+        res = analysis_agent.match_insights(eventId)
+        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/analysis/winprob")
+def api_winprob(eventId: str = Query(...)):
+    try:
+        res = analysis_agent.win_probabilities(eventId)
+        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/analysis/form")
+def api_form(teamId: str = Query(...)):
+    try:
+        res = analysis_agent.team_form(teamId)
+        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/analysis/h2h")
+def api_h2h(teamA: str = Query(...), teamB: str = Query(...)):
+    try:
+        res = analysis_agent.head_to_head(teamA, teamB)
+        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # Global debug route to inspect all registered paths
 @app.get("/_debug/routes")
