@@ -3058,12 +3058,108 @@
     const links = document.createElement('div'); links.className='ehs-links'; links.style.marginTop='.5rem'; const yt = document.createElement('a'); yt.href = j.results.youtube_search_url; yt.target='_blank'; yt.rel='noopener'; yt.textContent='Open YouTube Search'; links.appendChild(yt); const web = document.createElement('a'); web.href = j.results.duckduckgo_search_url; web.target='_blank'; web.rel='noopener'; web.style.marginLeft='1rem'; web.textContent='Open Web Search'; links.appendChild(web); root.appendChild(links);
   }
 
+  // --- Highlights (ported from matches.js) ---
+  function buildBaseQuery(ev, minute, player, eventType){
+    const home = ev.event_home_team || ev.strHomeTeam || '';
+    const away = ev.event_away_team || ev.strAwayTeam || '';
+    const date = ev.event_date || '';
+    const year = date.slice(0,4);
+    const parts = [home + ' vs ' + away];
+    if(minute) parts.push(minute + "'");
+    if(player) parts.push(player);
+    if(eventType) parts.push(eventType);
+    if(year) parts.push(year);
+    return parts.filter(Boolean).join(' ');
+  }
+
+  async function fetchHighlights(ev){
+    const container = modalBody.querySelector('#highlights .hl-body');
+    if(!container) return;
+    container.textContent = 'Loading highlights...';
+
+    const args = {};
+    if(ev.idEvent) args.eventId = ev.idEvent; else if(ev.event_key) args.eventId = ev.event_key;
+    const evtName = ev.strEvent || (ev.event_home_team && ev.event_away_team ? `${ev.event_home_team} vs ${ev.event_away_team}` : '');
+    if(evtName) args.eventName = evtName;
+
+    try{
+      const resp = await fetch(apiBase + '/collect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent: 'video.highlights', args }) });
+      if(!resp.ok){ container.textContent = 'Highlights request failed: HTTP ' + resp.status; return; }
+      const j = await resp.json();
+      if(!j || !j.ok){
+        const msg = (j && j.error && j.error.message) ? j.error.message : 'No highlights available';
+        container.textContent = 'No highlights: ' + msg;
+        return;
+      }
+      const body = j.data || {};
+      let vids = body.videos || body.result || body.results || body.event || body.events || [];
+      if(!Array.isArray(vids)) vids = [];
+      if(vids.length === 0){ container.textContent = 'No highlights found.'; return; }
+
+      renderHighlights(vids, container);
+      addEventHighlightSearchUI(container, ev);
+    }catch(e){
+      container.textContent = 'Highlights fetch error: ' + (e && e.message ? e.message : String(e));
+    }
+  }
+
+  function renderHighlights(vids, container){
+    if(!container) return;
+    container.innerHTML = '';
+    const list = document.createElement('div');
+    list.className = 'hl-list';
+    vids.forEach(v => {
+      const item = document.createElement('div'); item.className = 'hl-item';
+      const title = v.title || v.strTitle || v.strVideo || v.name || v.video_title || v.title_short || '';
+      const url = v.strVideo || v.url || v.link || v.video_url || v.strYoutube || v.strYoutubeUrl || v.video || v.source || '';
+      const thumb = v.strThumb || v.thumbnail || v.thumb || v.strThumbBig || v.cover || '';
+
+      if(thumb){
+        const img = document.createElement('img'); img.className = 'hl-thumb'; img.src = thumb; img.alt = title || 'highlight'; img.onerror = () => img.remove();
+        item.appendChild(img);
+      }
+
+      const meta = document.createElement('div'); meta.className = 'hl-meta';
+      const t = document.createElement('div'); t.className = 'hl-title'; t.textContent = title || (url ? url : 'Video');
+      meta.appendChild(t);
+      if(url){ const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'Open'; a.className = 'hl-link'; meta.appendChild(a); }
+      const info = document.createElement('div'); info.className = 'hl-info';
+      if(v.source) info.textContent = v.source; else if(v._source) info.textContent = v._source; else if(v._sources) info.textContent = String(v._sources.join(','));
+      if(v.duration) info.textContent += (info.textContent ? ' • ' : '') + String(v.duration);
+      if(info.textContent) meta.appendChild(info);
+
+      item.appendChild(meta);
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+    // Also inject the search UI for manual highlight lookup
+    try{ addEventHighlightSearchUI(container, currentEventContext || {}); }catch(_e){}
+  }
+
   // small helper used by fetchExtras
   function _pick(obj, keys){ for(const k of keys) if(obj && obj[k]) return obj[k]; return undefined; }
 
   async function fetchExtras(ev){
     const extrasRoot = modalBody.querySelector('#extras');
     if(!extrasRoot) return;
+
+    // Ensure section existence; return the ".body" node
+    function _createSection(title){
+      const sec = document.createElement('div');
+      sec.className = 'extra-section';
+      const h = document.createElement('h4'); h.textContent = title; sec.appendChild(h);
+      const body = document.createElement('div'); body.className = 'body'; body.textContent = 'Loading...'; sec.appendChild(body);
+      return { sec, body };
+    }
+    function ensureSection(id, title){
+      const extrasBody = modalBody.querySelector('#extras .extras-body');
+      if(!extrasBody) return null;
+      let sec = modalBody.querySelector('#'+id);
+      if(!sec){ const s = _createSection(title); sec = s.sec; sec.id = id; extrasBody.appendChild(sec); return s.body; }
+      let body = sec.querySelector('.body');
+      if(!body){ body = document.createElement('div'); body.className = 'body'; body.textContent = 'Loading...'; sec.appendChild(body); }
+      return body;
+    }
 
   const get = (klist) => _pick(ev, klist) || '';
   const eventId = get(['idEvent','event_key','id', 'event_key']);
@@ -3114,8 +3210,8 @@
     }
 
     // Teams: try to fetch team.get / teams.list for home and away
-    const teamsBody = modalBody.querySelector('#teams_section .body');
-    teamsBody.textContent = 'Loading teams...';
+    const teamsBody = ensureSection('teams_section','Teams');
+    if(teamsBody) teamsBody.textContent = 'Loading teams...';
     try{
       const p = [];
   // Prefer team IDs when available (AllSports uses home_team_key / away_team_key)
@@ -3124,11 +3220,11 @@
   if(awayKey && String(awayKey).match(/^\d+$/)) p.push(callIntent('team.get', {teamId: String(awayKey)}));
   else if(awayName) p.push(callIntent('team.get', {teamName: awayName}));
       const res = await Promise.allSettled(p);
-      teamsBody.innerHTML = '';
+      if(teamsBody) teamsBody.innerHTML = '';
       res.forEach((r, idx)=>{
         const title = idx===0 ? (homeName||'Home') : (awayName||'Away');
         const teamCard = createTeamCard(title, r);
-        teamsBody.appendChild(teamCard);
+        if(teamsBody) teamsBody.appendChild(teamCard);
       });
   // debug raw responses
       try{
@@ -3136,15 +3232,15 @@
         const summary = document.createElement('summary'); summary.textContent = 'Show raw teams responses'; dbg.appendChild(summary);
         const pre = document.createElement('pre'); pre.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; pre.textContent = JSON.stringify(res, null, 2);
         dbg.appendChild(pre);
-        teamsBody.appendChild(dbg);
+        if(teamsBody) teamsBody.appendChild(dbg);
       }catch(e){}
   // hide section if no data
   try{ const teamsSectionEl = modalBody.querySelector('#teams_section'); if(teamsSectionEl) teamsSectionEl.style.display = _responseHasData(res[0]) || _responseHasData(res[1]) ? 'block' : 'none'; }catch(e){}
-    }catch(e){ teamsBody.textContent = 'Teams error: '+e.message; }
+    }catch(e){ if(teamsBody) teamsBody.textContent = 'Teams error: '+e.message; }
 
     // Players: try players.list for each teamName if available
-    const playersBody = modalBody.querySelector('#players_section .body');
-    playersBody.textContent = 'Loading players...';
+    const playersBody = ensureSection('players_section','Players');
+    if(playersBody) playersBody.textContent = 'Loading players...';
     try{
       const tasks = [];
   // Prefer team IDs for players.list
@@ -3153,11 +3249,11 @@
   if(awayKey && String(awayKey).match(/^\d+$/)) tasks.push(callIntent('players.list',{teamId: String(awayKey)}));
   else if(awayName) tasks.push(callIntent('players.list',{teamName: awayName}));
       const rr = await Promise.allSettled(tasks);
-      playersBody.innerHTML = '';
+      if(playersBody) playersBody.innerHTML = '';
       rr.forEach((r, idx)=>{
         const lbl = idx===0 ? (homeName||'Home') : (awayName||'Away');
         const playerCard = createPlayersCard(lbl, r);
-        playersBody.appendChild(playerCard);
+        if(playersBody) playersBody.appendChild(playerCard);
       });
         // debug raw players responses
         try{
@@ -3165,15 +3261,15 @@
           const summaryP = document.createElement('summary'); summaryP.textContent = 'Show raw players responses'; dbgP.appendChild(summaryP);
           const preP = document.createElement('pre'); preP.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preP.textContent = JSON.stringify(rr, null, 2);
           dbgP.appendChild(preP);
-          playersBody.appendChild(dbgP);
+          if(playersBody) playersBody.appendChild(dbgP);
         }catch(e){}
     // hide players section if no results
     try{ const playersSectionEl = modalBody.querySelector('#players_section'); if(playersSectionEl) playersSectionEl.style.display = (_responseHasData(rr[0]) || _responseHasData(rr[1])) ? 'block' : 'none'; }catch(e){}
-    }catch(e){ playersBody.textContent = 'Players error: '+e.message; }
+    }catch(e){ if(playersBody) playersBody.textContent = 'Players error: '+e.message; }
 
     // League table
-    const tableBody = modalBody.querySelector('#league_table_section .body');
-    tableBody.textContent = 'Loading league table...';
+    const tableBody = ensureSection('league_table_section','League Table');
+    if(tableBody) tableBody.textContent = 'Loading league table...';
     try{
       const args = {};
       // league.table may accept leagueId, idLeague or leagueKey depending on backend
@@ -3220,10 +3316,9 @@
 
       if(okTable){
         const tableCard = createLeagueTableCard(j.data || j.result || {});
-        tableBody.innerHTML = '';
-        tableBody.appendChild(tableCard);
+        if(tableBody){ tableBody.innerHTML = ''; tableBody.appendChild(tableCard); }
       } else {
-        tableBody.textContent = 'No table available';
+        if(tableBody) tableBody.textContent = 'No table available';
       }
       // debug league.table raw
       try{
@@ -3231,28 +3326,28 @@
         const summaryT = document.createElement('summary'); summaryT.textContent = 'Show raw league.table response'; dbgT.appendChild(summaryT);
         const preT = document.createElement('pre'); preT.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preT.textContent = JSON.stringify(j, null, 2);
         dbgT.appendChild(preT);
-        tableBody.appendChild(dbgT);
+        if(tableBody) tableBody.appendChild(dbgT);
       }catch(e){}
   // hide league table section when empty
   try{ const tableSectionEl = modalBody.querySelector('#league_table_section'); if(tableSectionEl) tableSectionEl.style.display = _responseHasData(j) ? 'block' : 'none'; }catch(e){}
-    }catch(e){ tableBody.textContent = 'League table error: '+e.message; }
+    }catch(e){ if(tableBody) tableBody.textContent = 'League table error: '+e.message; }
 
     // Odds (list + live)
-    const oddsBody = modalBody.querySelector('#odds_section .body');
-    oddsBody.textContent = 'Loading odds...';
+    const oddsBody = ensureSection('odds_section','Odds');
+    if(oddsBody) oddsBody.textContent = 'Loading odds...';
     try{
   const args = {};
   // supply multiple common param names so different intent implementations accept them
   if(eventId){ args.matchId = eventId; args.eventId = eventId; args.fixtureId = eventId; args.event_key = eventId; }
   else if(ev.event_date) args.date = ev.event_date;
       const [listJ, liveJ] = await Promise.allSettled([callIntent('odds.list', args), callIntent('odds.live', args)]);
-      oddsBody.innerHTML = '';
+      if(oddsBody) oddsBody.innerHTML = '';
 
   const hasList = _responseHasData(listJ);
   const hasLive = _responseHasData(liveJ);
-  if(hasList){ const oddsCard = createOddsCard('Pre-Match Odds', listJ); oddsBody.appendChild(oddsCard); }
-  if(hasLive){ const oddsCard = createOddsCard('Live Odds', liveJ); oddsBody.appendChild(oddsCard); }
-  if(!hasList && !hasLive){ const noOdds = document.createElement('div'); noOdds.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noOdds.textContent = 'No odds available'; oddsBody.appendChild(noOdds); }
+  if(hasList && oddsBody){ const oddsCard = createOddsCard('Pre-Match Odds', listJ); oddsBody.appendChild(oddsCard); }
+  if(hasLive && oddsBody){ const oddsCard = createOddsCard('Live Odds', liveJ); oddsBody.appendChild(oddsCard); }
+  if(!hasList && !hasLive && oddsBody){ const noOdds = document.createElement('div'); noOdds.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noOdds.textContent = 'No odds available'; oddsBody.appendChild(noOdds); }
   try{ const oddsSectionEl = modalBody.querySelector('#odds_section'); if(oddsSectionEl) oddsSectionEl.style.display = (hasList || hasLive) ? 'block' : 'none'; }catch(e){}
       // debug raw odds responses
       try{
@@ -3260,13 +3355,13 @@
         const summaryO = document.createElement('summary'); summaryO.textContent = 'Show raw odds responses'; dbgO.appendChild(summaryO);
         const preO = document.createElement('pre'); preO.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preO.textContent = JSON.stringify([listJ, liveJ], null, 2);
         dbgO.appendChild(preO);
-        oddsBody.appendChild(dbgO);
+        if(oddsBody) oddsBody.appendChild(dbgO);
       }catch(e){}
-    }catch(e){ oddsBody.textContent = 'Odds error: '+e.message; }
+    }catch(e){ if(oddsBody) oddsBody.textContent = 'Odds error: '+e.message; }
 
     // Probabilities
-    const probBody = modalBody.querySelector('#prob_section .body');
-    probBody.textContent = 'Loading probabilities...';
+    const probBody = ensureSection('prob_section','Probabilities');
+    if(probBody) probBody.textContent = 'Loading probabilities...';
     try{
   const args = {};
   if(eventId) { args.matchId = eventId; args.eventId = eventId; args.fixtureId = eventId; }
@@ -3274,46 +3369,44 @@
       const j = await callIntent('probabilities.list', args);
       if(j && j.ok) {
         const probCard = createProbabilitiesCard(j.data || j.result || {});
-        probBody.innerHTML = '';
-        probBody.appendChild(probCard);
-      } else probBody.textContent = 'No probabilities';
+        if(probBody){ probBody.innerHTML = ''; probBody.appendChild(probCard); }
+      } else if(probBody) probBody.textContent = 'No probabilities';
       // debug probabilities raw
       try{
         const dbgPr = document.createElement('details'); dbgPr.style.marginTop='8px';
         const summaryPr = document.createElement('summary'); summaryPr.textContent = 'Show raw probabilities response'; dbgPr.appendChild(summaryPr);
         const prePr = document.createElement('pre'); prePr.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; prePr.textContent = JSON.stringify(j, null, 2);
         dbgPr.appendChild(prePr);
-        probBody.appendChild(dbgPr);
+        if(probBody) probBody.appendChild(dbgPr);
       }catch(e){}
-  }catch(e){ probBody.textContent = 'Probabilities error: '+e.message; }
+  }catch(e){ if(probBody) probBody.textContent = 'Probabilities error: '+e.message; }
   try{ const probSectionEl = modalBody.querySelector('#prob_section'); if(probSectionEl) probSectionEl.style.display = _responseHasData(j) ? 'block' : 'none'; }catch(e){}
 
     // Comments
-    const commBody = modalBody.querySelector('#comments_section .body');
-    commBody.textContent = 'Loading comments...';
+    const commBody = ensureSection('comments_section','Comments');
+    if(commBody) commBody.textContent = 'Loading comments...';
     try{
       const args = {};
       if(eventId) args.matchId = eventId; else if(ev.event_home_team) args.eventName = ev.event_home_team + ' vs ' + (ev.event_away_team || '');
       const j = await callIntent('comments.list', args);
       if(j && j.ok) {
         const commentsCard = createCommentsCard(j.data || j.result || {});
-        commBody.innerHTML = '';
-        commBody.appendChild(commentsCard);
-      } else commBody.textContent = 'No comments';
+        if(commBody){ commBody.innerHTML = ''; commBody.appendChild(commentsCard); }
+      } else if(commBody) commBody.textContent = 'No comments';
       // debug comments raw
       try{
         const dbgC = document.createElement('details'); dbgC.style.marginTop='8px';
         const summaryC = document.createElement('summary'); summaryC.textContent = 'Show raw comments response'; dbgC.appendChild(summaryC);
         const preC = document.createElement('pre'); preC.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preC.textContent = JSON.stringify(j, null, 2);
         dbgC.appendChild(preC);
-        commBody.appendChild(dbgC);
+        if(commBody) commBody.appendChild(dbgC);
       }catch(e){}
-  }catch(e){ commBody.textContent = 'Comments error: '+e.message; }
+  }catch(e){ if(commBody) commBody.textContent = 'Comments error: '+e.message; }
   try{ const commentsSectionEl = modalBody.querySelector('#comments_section'); if(commentsSectionEl) commentsSectionEl.style.display = _responseHasData(j) ? 'block' : 'none'; }catch(e){}
 
     // Seasons (leagues.list raw)
-    const seasBody = modalBody.querySelector('#seasons_section .body');
-    seasBody.textContent = 'Loading seasons...';
+    const seasBody = ensureSection('seasons_section','Seasons');
+    if(seasBody) seasBody.textContent = 'Loading seasons...';
     let seasonsResp = null;
     try{
       const args = {};
@@ -3321,18 +3414,17 @@
       seasonsResp = await callIntent('seasons.list', args);
       if(seasonsResp && seasonsResp.ok) {
         const seasonsCard = createSeasonsCard(seasonsResp.data || seasonsResp.result || {});
-        seasBody.innerHTML = '';
-        seasBody.appendChild(seasonsCard);
-      } else seasBody.textContent = 'No seasons info';
+        if(seasBody){ seasBody.innerHTML = ''; seasBody.appendChild(seasonsCard); }
+      } else if(seasBody) seasBody.textContent = 'No seasons info';
       // debug seasons raw
       try{
         const dbgS = document.createElement('details'); dbgS.style.marginTop='8px';
         const summaryS = document.createElement('summary'); summaryS.textContent = 'Show raw seasons response'; dbgS.appendChild(summaryS);
         const preS = document.createElement('pre'); preS.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preS.textContent = JSON.stringify(seasonsResp, null, 2);
         dbgS.appendChild(preS);
-        seasBody.appendChild(dbgS);
+        if(seasBody) seasBody.appendChild(dbgS);
       }catch(e){}
-  }catch(e){ seasBody.textContent = 'Seasons error: '+e.message; }
+  }catch(e){ if(seasBody) seasBody.textContent = 'Seasons error: '+e.message; }
   try{ const seasonsSectionEl = modalBody.querySelector('#seasons_section'); if(seasonsSectionEl) seasonsSectionEl.style.display = _responseHasData(seasonsResp) ? 'block' : 'none'; }catch(e){}
 
     // H2H (Head-to-Head) — use AllSports via intent 'h2h'
