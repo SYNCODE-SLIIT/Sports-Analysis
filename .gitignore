@@ -22,3 +22,7 @@ __pycache__/
 .build/
 highlight_shorts/
 sports-ai/backend/app/cache/
+
+# Ignore local server log files
+server.out.log
+server.err.log
