@@ -415,6 +415,14 @@ def norm_tsdb_event(bundle: Dict[str, Any]) -> Dict[str, Any]:
     time_local = ev.get("strTimeLocal") or ev.get("strTime") or ""
     status = ev.get("strStatus") or ev.get("strProgress") or ""
 
+    # Coerce provider expansions to lists (TSDB returns "Patreon Only" string for timeline without paid key)
+    raw_tl = (bundle or {}).get("timeline") or []
+    raw_stats = (bundle or {}).get("stats") or []
+    raw_lineup = (bundle or {}).get("lineup") or []
+    tl_list = raw_tl if isinstance(raw_tl, list) else []
+    stats_list = raw_stats if isinstance(raw_stats, list) else []
+    lineup_list = raw_lineup if isinstance(raw_lineup, list) else []
+
     return {
         "provider": "tsdb",
         "teams": {"home": home, "away": away},
@@ -426,9 +434,9 @@ def norm_tsdb_event(bundle: Dict[str, Any]) -> Dict[str, Any]:
         "time_local": time_local,
         "status": status,
         "event_id": ev.get("idEvent"),
-        "timeline": (bundle or {}).get("timeline") or [],
-        "stats": (bundle or {}).get("stats") or [],
-        "lineup": (bundle or {}).get("lineup") or [],
+        "timeline": tl_list,
+        "stats": stats_list,
+        "lineup": lineup_list,
         "raw_event": ev,
     }
 
