@@ -15,8 +15,9 @@ from pydantic import BaseModel, Field
 # -----------------------
 AGENT_MODE = os.getenv("AGENT_MODE", "local")  # "local" or "http"
 # If AGENT_MODE="http", set these to the microservice URLs for your agents
-TSDB_AGENT_URL = os.getenv("TSDB_AGENT_URL", "http://localhost:8000/agent")
-ALLSPORTS_AGENT_URL = os.getenv("ALLSPORTS_AGENT_URL", "http://localhost:8000/agent")
+# Default to the running app's /collect endpoint so single-process dev works without env overrides
+TSDB_AGENT_URL = os.getenv("TSDB_AGENT_URL", "http://127.0.0.1:8000/collect")
+ALLSPORTS_AGENT_URL = os.getenv("ALLSPORTS_AGENT_URL", "http://127.0.0.1:8000/collect")
 
 # LLM (Groq)
 try:
@@ -913,7 +914,12 @@ async def summarize(req: SummarizeRequest):
             req_summary = req.model_dump() if hasattr(req, 'model_dump') else dict(req)
         except Exception:
             req_summary = str(req)
-        print(f"[summarizer-log] missing bundle trace_id={trace_id} idempotency_key={idempotency_key} req={str(req_summary)[:800]} sources={src_notes}")
+        try:
+            ts_head = _short(str(raw_sources.get('tsdb'))[:800])
+            as_head = _short(str(raw_sources.get('allsports'))[:800])
+        except Exception:
+            ts_head = as_head = ''
+        print(f"[summarizer-log] missing bundle trace_id={trace_id} idempotency_key={idempotency_key} req={str(req_summary)[:800]} sources={src_notes} ts_head={ts_head} as_head={as_head}")
         raise HTTPException(
             status_code=404,
             detail={"reason": "Event not found or too little data to summarize", "sources": src_notes, "trace": trace},

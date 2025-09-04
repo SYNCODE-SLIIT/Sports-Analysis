@@ -2699,7 +2699,7 @@
     if(date) payload.date = date;
 
     try{
-      console.log('[summarizer] POST', apiBase + '/summarizer/summarize', 'payload=', payload);
+      console.debug('[summarizer] POST', apiBase + '/summarizer/summarize', 'payload=', payload);
       const resp = await fetch(apiBase + '/summarizer/summarize', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
       });

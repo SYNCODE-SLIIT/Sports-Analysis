@@ -112,12 +112,27 @@
     if(date) payload.date = date;
 
     const url = apiBase + '/summarizer/summarize';
-  console.log('[summarizer] POST', url, 'payload=', payload);
+  console.debug('[summarizer] POST', url, 'payload=', payload);
     const resp = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     if(!resp.ok){
       // Log raw response for debugging
       const txt = await resp.text().catch(()=> '');
-  console.log('[summarizer] non-ok response', resp.status, txt);
+  console.debug('[summarizer] non-ok response', resp.status, txt);
+      // Diagnostic fallback: call /collect to see raw provider data for the same identifiers
+      try{
+        const collectPayload = { intent: 'event.get', args: {} };
+        if(payload.eventId) collectPayload.args.eventId = payload.eventId;
+        if(payload.eventName) collectPayload.args.eventName = payload.eventName;
+        if(payload.date) collectPayload.args.dateEvent = payload.date;
+        collectPayload.args.expand = ['timeline','stats','lineup'];
+        const cResp = await fetch(apiBase + '/collect', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(collectPayload) });
+        const cTxt = await cResp.text().catch(()=> '');
+  console.debug('[summarizer] collect fallback response', cResp.status, cTxt);
+        const sBody = modalBody.querySelector('#summary .summary-body');
+        if(sBody) sBody.textContent = 'Summary error: ' + (txt || ('HTTP '+resp.status)) + '. See console for collect response.';
+      }catch(ce){
+  console.debug('[summarizer] collect fallback failed', ce);
+      }
       // Try fallback: if summarizer mounted path differs (rare), surface HTTP error
       throw new Error('HTTP '+resp.status + (txt? (': '+txt):''));
     }
