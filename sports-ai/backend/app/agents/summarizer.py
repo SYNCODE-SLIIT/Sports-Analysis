@@ -49,6 +49,12 @@ if AGENT_MODE == "local":
             # Final fallback: leave as None so HTTP mode will be used
             pass
 
+# If AGENT_MODE was requested as 'local' but the local agent classes couldn't be
+# imported, switch to HTTP mode automatically so the app continues to function
+# when mounted in environments where local agents are not available.
+if AGENT_MODE == "local" and (CollectorAgentV2 is None or AllSportsRawAgent is None):
+    AGENT_MODE = "http"
+
 import httpx
 
 app = FastAPI(title="Summarizer Agent", version="2.0")
@@ -257,7 +263,9 @@ async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]
         sub_off = ev.get("out_player") or ""
         note = ev.get("assist") or ev.get("score") or ev.get("result") or ev.get("description") or ""
         extra = (f" | team={team}" if team else "") + (f" | in={sub_on} out={sub_off}" if (sub_on or sub_off) else "")
-        line = f"[{i}] {(str(minute)+'\u2032 ') if minute else ''}{kind}: {who} {note}{extra}".strip()
+        # Precompute minute label to avoid backslash in f-string expression (escape not allowed there)
+        minute_label = (str(minute) + "′ ") if minute else ""
+        line = f"[{i}] {minute_label}{kind}: {who} {note}{extra}".strip()
         if len(line) > 150:
             line = line[:149] + "…"
         lines.append(line)
@@ -366,11 +374,40 @@ async def call_tsdb_agent(payload: Dict[str, Any], trace: List[Dict[str, Any]]) 
     trace.append({"step": "call_tsdb_agent", "mode": AGENT_MODE, "intent": payload.get("intent")})
     if AGENT_MODE == "local":
         if not CollectorAgentV2:
-            return {"ok": False, "error": {"code": "NO_LOCAL_TSDB", "message": "CollectorAgentV2 not importable"}}
-        agent = CollectorAgentV2()
-        return agent.handle(payload)
+            # Local agent not importable — fall through to HTTP behaviour
+            pass
+        try:
+            agent = CollectorAgentV2()
+            resp = agent.handle(payload)
+            # If local handler signals failure, fall back to HTTP
+            if isinstance(resp, dict) and resp.get("ok") is False:
+                raise RuntimeError("local-tsdb-failed")
+            return resp
+        except Exception:
+            # Try HTTP fallback when local mode fails at runtime
+            async with httpx.AsyncClient(timeout=25) as client:
+                r = await client.post(TSDB_AGENT_URL, json=payload)
+                return r.json()
     else:
+        # If the configured TSDB_AGENT_URL targets this same FastAPI app's /collect
+        # and we can import the main.collect handler, call it directly to avoid
+        # making a loopback HTTP request which may fail in single-process dev.
+        try:
+            if (TSDB_AGENT_URL and ("127.0.0.1" in TSDB_AGENT_URL or "localhost" in TSDB_AGENT_URL) and TSDB_AGENT_URL.rstrip('/').endswith('/collect')):
+                try:
+                    from backend.app.main import collect as main_collect
+                    # main.collect expects a request dict
+                    return main_collect(payload)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         async with httpx.AsyncClient(timeout=25) as client:
+            # Debug: log outgoing HTTP payload
+            try:
+                print(f"[summarizer-debug] POST TSDB_AGENT_URL={TSDB_AGENT_URL} payload={str(payload)[:800]}")
+            except Exception:
+                pass
             r = await client.post(TSDB_AGENT_URL, json=payload)
             return r.json()
 
@@ -379,11 +416,34 @@ async def call_allsports_agent(payload: Dict[str, Any], trace: List[Dict[str, An
     trace.append({"step": "call_allsports_agent", "mode": AGENT_MODE, "intent": payload.get("intent")})
     if AGENT_MODE == "local":
         if not AllSportsRawAgent:
-            return {"ok": False, "error": {"code": "NO_LOCAL_ASRAW", "message": "AllSportsRawAgent not importable"}}
-        agent = AllSportsRawAgent()
-        return agent.handle(payload)
+            # Local agent not importable — fall through to HTTP behaviour
+            pass
+        try:
+            agent = AllSportsRawAgent()
+            resp = agent.handle(payload)
+            if isinstance(resp, dict) and resp.get("ok") is False:
+                raise RuntimeError("local-allsports-failed")
+            return resp
+        except Exception:
+            async with httpx.AsyncClient(timeout=25) as client:
+                r = await client.post(ALLSPORTS_AGENT_URL, json=payload)
+                return r.json()
     else:
+        try:
+            if (ALLSPORTS_AGENT_URL and ("127.0.0.1" in ALLSPORTS_AGENT_URL or "localhost" in ALLSPORTS_AGENT_URL) and ALLSPORTS_AGENT_URL.rstrip('/').endswith('/collect')):
+                try:
+                    from backend.app.main import collect as main_collect
+                    return main_collect(payload)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         async with httpx.AsyncClient(timeout=25) as client:
+            # Debug: log outgoing HTTP payload
+            try:
+                print(f"[summarizer-debug] POST ALLSPORTS_AGENT_URL={ALLSPORTS_AGENT_URL} payload={str(payload)[:800]}")
+            except Exception:
+                pass
             r = await client.post(ALLSPORTS_AGENT_URL, json=payload)
             return r.json()
 
@@ -848,6 +908,12 @@ async def summarize(req: SummarizeRequest):
             "tsdb_err": (raw_sources.get("tsdb") or {}).get("error"),
             "allsports_err": (raw_sources.get("allsports") or {}).get("error"),
         }
+        # Helpful server-side log to correlate incoming browser requests with backend traces
+        try:
+            req_summary = req.model_dump() if hasattr(req, 'model_dump') else dict(req)
+        except Exception:
+            req_summary = str(req)
+        print(f"[summarizer-log] missing bundle trace_id={trace_id} idempotency_key={idempotency_key} req={str(req_summary)[:800]} sources={src_notes}")
         raise HTTPException(
             status_code=404,
             detail={"reason": "Event not found or too little data to summarize", "sources": src_notes, "trace": trace},

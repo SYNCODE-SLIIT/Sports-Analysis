@@ -1,10 +1,15 @@
 /* Matches dashboard logic */
 (function(){
-  // Determine backend base: if served from a static server (e.g. 5500) assume FastAPI on 8000 same host.
+  // Determine backend base. Dev convenience: allow explicit override via window.__API_BASE__.
+  // If not provided and frontend is localhost, default to backend on 127.0.0.1:8030 (dev server we use here).
   const loc = window.location;
-  let apiBase = loc.origin;
-  if(loc.port && loc.port !== '8000'){
-    apiBase = loc.protocol + '//' + loc.hostname + ':8000';
+  let apiBase = window.__API_BASE__ || loc.origin;
+  if(!window.__API_BASE__){
+    if (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1'){
+      apiBase = loc.protocol + '//' + loc.hostname + ':8030';
+    } else if(loc.port && loc.port !== '8000'){
+      apiBase = loc.protocol + '//' + loc.hostname + ':8000';
+    }
   }
   const liveListEl = document.getElementById('liveList');
   const finishedListEl = document.getElementById('finishedList');
@@ -107,10 +112,13 @@
     if(date) payload.date = date;
 
     const url = apiBase + '/summarizer/summarize';
+  console.log('[summarizer] POST', url, 'payload=', payload);
     const resp = await fetch(url, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     if(!resp.ok){
-      // Try fallback: if summarizer mounted path differs (rare), surface HTTP error
+      // Log raw response for debugging
       const txt = await resp.text().catch(()=> '');
+  console.log('[summarizer] non-ok response', resp.status, txt);
+      // Try fallback: if summarizer mounted path differs (rare), surface HTTP error
       throw new Error('HTTP '+resp.status + (txt? (': '+txt):''));
     }
     const j = await resp.json();

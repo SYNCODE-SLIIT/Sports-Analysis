@@ -1,10 +1,15 @@
 /* History matches dashboard logic */
 (function(){
-  // Determine backend base: if served from a static server (e.g. 5500) assume FastAPI on 8000 same host.
+  // Determine backend base. Dev convenience: allow explicit override via window.__API_BASE__.
+  // If not provided and frontend is localhost, default to backend on 127.0.0.1:8030 (dev server we use here).
   const loc = window.location;
-  let apiBase = loc.origin;
-  if(loc.port && loc.port !== '8000'){
-    apiBase = loc.protocol + '//' + loc.hostname + ':8000';
+  let apiBase = window.__API_BASE__ || loc.origin;
+  if(!window.__API_BASE__){
+    if (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1'){
+      apiBase = loc.protocol + '//' + loc.hostname + ':8030';
+    } else if(loc.port && loc.port !== '8000'){
+      apiBase = loc.protocol + '//' + loc.hostname + ':8000';
+    }
   }
 
   const contentEl = document.getElementById('content');
@@ -2681,18 +2686,20 @@
     if(!container) return;
     container.textContent = 'Loading summary…';
 
-    // Build payload: prefer eventId; fallback to event name and date
-    const payload = { provider: 'auto' };
-    const eventId = ev.idEvent || ev.event_key || ev.match_id || ev.id;
-    if(eventId) payload.eventId = String(eventId);
-    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
-    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
-    const name = ev.strEvent || (home && away ? `${home} vs ${away}` : '');
-    if(name) payload.eventName = name;
+  // Build payload: prefer eventId; fallback to event name and date
+  const payload = { provider: 'auto' };
+  // Align selection order with matches.js so we pick canonical ids first
+  const eventId = ev.idEvent || ev.event_key || ev.id || ev.match_id;
+  if (eventId) payload.eventId = String(eventId);
+  const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+  const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+  // Prefer explicit home vs away naming like matches.js
+  if (home && away) payload.eventName = `${home} vs ${away}`;
     const date = ev.event_date || ev.dateEvent || ev.date || '';
     if(date) payload.date = date;
 
     try{
+      console.log('[summarizer] POST', apiBase + '/summarizer/summarize', 'payload=', payload);
       const resp = await fetch(apiBase + '/summarizer/summarize', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
       });
