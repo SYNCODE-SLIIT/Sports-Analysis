@@ -289,11 +289,224 @@
       if(etype){
         dot.style.cursor = 'help';
         const onEnter = async (e)=>{
-          showEventTooltip(dot, 'Summarizing…');
+          // Build a small rich tooltip showing player image and team logo (if available), then a brief summary.
           try{
-            const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
-            showEventTooltip(dot, brief);
-          }catch(err){ showEventTooltip(dot, description || etype); }
+            const d = ensureTooltip();
+            let playerImg = event.player_image || event.player_photo || event.playerImage || event.photo || event.thumb || event.strThumb || event.strThumbBig || event.thumbnail || event.photo_url || event.player_cutout || event.player_pic || event.img || event.avatar || event.headshot || event.cutout || event.image || (event.player && (event.player.photo || event.player.player_image || event.player.image || event.player.playerImage || event.player.photo_url)) || (event.raw && (event.raw.player_image || event.raw.player_photo || event.raw.photo || event.raw.thumb || event.raw.image || event.raw.playerImage || event.raw.photo_url || event.raw.player_cutout || event.raw.strThumb || event.raw.strCutout || event.raw.thumbnail || event.raw.img || event.raw.avatar || event.raw.headshot || event.raw.player_pic));
+            let teamLogo = event.team_logo || event.teamLogo || event.team_logo_url || event.team_image || (event.raw && (event.raw.team_logo || event.raw.teamLogo));
+            if(!teamLogo && matchCtx){
+              const home = matchCtx.event_home_team || matchCtx.strHomeTeam || matchCtx.home_team || '';
+              const away = matchCtx.event_away_team || matchCtx.strAwayTeam || matchCtx.away_team || '';
+              if(event.team && home && String(event.team).trim() === String(home).trim()){
+                teamLogo = matchCtx.home_team_logo || matchCtx.strHomeTeamBadge || matchCtx.homeLogo || '';
+              } else if(event.team && away && String(event.team).trim() === String(away).trim()){
+                teamLogo = matchCtx.away_team_logo || matchCtx.strAwayTeamBadge || matchCtx.awayLogo || '';
+              }
+            }
+
+            // If no direct player image on the event, try to build/find a players map from matchCtx (so we can find images without waiting for fetchExtras)
+            try{
+              if(matchCtx && !matchCtx._playersMap){
+                try{
+                  const allPlayers = [];
+                  for(const k of Object.keys(matchCtx||{})){
+                    const v = matchCtx[k];
+                    if(Array.isArray(v) && v.length>0 && typeof v[0] === 'object'){
+                      const s = v[0];
+                      if(s.player_name || s.name || s.strPlayer || s.player || s.player_fullname || s.playerId || s.idPlayer) allPlayers.push(...v);
+                    }
+                  }
+                  if(allPlayers.length>0){ const map = {}; const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase(); allPlayers.forEach(p=>{ const name = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim(); if(!name) return; const nm = name; const low = nm.toLowerCase(); const norm = normalize(nm); map[nm] = p; map[low] = p; map[norm] = p; try{ const parts = norm.split(' ').filter(Boolean); if(parts.length){ const last = parts[parts.length-1]; if(last) map[last] = map[last] || p; if(parts.length>=2){ const initLast = parts[0].charAt(0) + ' ' + last; const initLastNoSpace = parts[0].charAt(0) + last; map[initLast] = map[initLast] || p; map[initLastNoSpace] = map[initLastNoSpace] || p; } } }catch(_e){} }); matchCtx._playersMap = map; }
+                }catch(_e){ /* ignore build errors */ }
+              }
+              if(!playerImg && matchCtx && matchCtx._playersMap){
+                const lookupNameRaw = (event.player || event.player_name || event.playerName || event.player_fullname || '').trim();
+                if(lookupNameRaw){
+                  const norm = s => (s || '').toString().replace(/[\.]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                  const lookupNorm = norm(lookupNameRaw);
+                  let p = matchCtx._playersMap[lookupNameRaw] || matchCtx._playersMap[lookupNameRaw.toLowerCase()] || matchCtx._playersMap[lookupNorm];
+                  if(!p){
+                    const vals = Object.values(matchCtx._playersMap || {});
+                    const lookupParts = lookupNorm.split(' ').filter(Boolean);
+                    const lookupLast = lookupParts.length ? lookupParts[lookupParts.length-1] : '';
+                    const lookupFirst = lookupParts.length ? lookupParts[0] : '';
+                    for(const cand of vals){
+                      try{
+                        const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
+                        const candNorm = norm(candName);
+                        if(!candNorm) continue;
+                        if(candNorm === lookupNorm || candNorm.includes(lookupNorm) || lookupNorm.includes(candNorm)) { p = cand; break; }
+                        const candParts = candNorm.split(' ').filter(Boolean);
+                        const candLast = candParts.length ? candParts[candParts.length-1] : '';
+                        if(lookupLast && candLast && lookupLast === candLast){ p = cand; break; }
+                        if(lookupParts.length >= 2 && lookupFirst.length === 1){ const candFirst = candParts.length ? candParts[0].charAt(0) : ''; if(candFirst === lookupFirst && candLast === lookupLast){ p = cand; break; } }
+                        const lookupId = event.player_id || event.playerId || event.player_key || (event.raw && (event.raw.player_id || event.raw.idPlayer || event.raw.player_key));
+                        const candId = cand.idPlayer || cand.player_id || cand.playerKey || cand.player_key || cand.id || cand.playerId;
+                        if(lookupId && candId && String(lookupId) === String(candId)){ p = cand; break; }
+                      }catch(_e){ }
+                    }
+                  }
+                  if(p){
+                    playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
+                  }
+                }
+              }
+            }catch(_e){ /* ignore */ }
+
+            // If we still don't have a player image, attempt a lightweight fetch of the team's players
+            // using the existing callIntent helper (if available) and populate matchCtx._playersMap,
+            // then retry the same fuzzy lookup. This helps resolve abbreviated names like "I. Sarr".
+            try{
+              if(!playerImg && matchCtx && event.team && typeof callIntent === 'function'){
+                try{
+                  if(!matchCtx._playersPromise){ matchCtx._playersPromise = callIntent('players.list', { teamName: String(event.team) }); }
+                  const playersRes = await matchCtx._playersPromise;
+                  let arr = [];
+                  if(playersRes){ arr = playersRes.data?.result || playersRes.data?.results || playersRes.data?.players || playersRes.data || playersRes.result || playersRes.players || playersRes; }
+                  if(!Array.isArray(arr) && playersRes && Array.isArray(playersRes.data)) arr = playersRes.data;
+                  if(Array.isArray(arr) && arr.length>0){
+                    matchCtx._playersMap = matchCtx._playersMap || {};
+                    const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+                    arr.forEach(p=>{
+                      try{
+                        const name = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim(); if(!name) return;
+                        const nm = name; const low = nm.toLowerCase(); const norm = normalize(nm);
+                        matchCtx._playersMap[nm] = p; matchCtx._playersMap[low] = p; matchCtx._playersMap[norm] = p;
+                        const parts = norm.split(' ').filter(Boolean);
+                        if(parts.length){ const last = parts[parts.length-1]; if(last) matchCtx._playersMap[last] = matchCtx._playersMap[last] || p; if(parts.length>=2){ const initLast = parts[0].charAt(0) + ' ' + last; const initLastNoSpace = parts[0].charAt(0) + last; matchCtx._playersMap[initLast] = matchCtx._playersMap[initLast] || p; matchCtx._playersMap[initLastNoSpace] = matchCtx._playersMap[initLastNoSpace] || p; } }
+                      }catch(_e){}
+                    });
+
+                    // retry lookup with the newly populated map
+                    try{
+                      const lookupNameRaw = (event.player || event.player_name || event.playerName || event.player_fullname || '').trim();
+                      if(lookupNameRaw){
+                        const norm = s => (s || '').toString().replace(/[\.]?/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                        const lookupNorm = norm(lookupNameRaw);
+                        let p = matchCtx._playersMap[lookupNameRaw] || matchCtx._playersMap[lookupNameRaw.toLowerCase()] || matchCtx._playersMap[lookupNorm];
+                        if(!p){
+                          const vals = Object.values(matchCtx._playersMap || {});
+                          const lookupParts = lookupNorm.split(' ').filter(Boolean);
+                          const lookupLast = lookupParts.length ? lookupParts[lookupParts.length-1] : '';
+                          const lookupFirst = lookupParts.length ? lookupParts[0] : '';
+                          for(const cand of vals){
+                            try{
+                              const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
+                              const candNorm = normalize(candName);
+                              if(!candNorm) continue;
+                              if(candNorm === lookupNorm || candNorm.includes(lookupNorm) || lookupNorm.includes(candNorm)) { p = cand; break; }
+                              const candParts = candNorm.split(' ').filter(Boolean);
+                              const candLast = candParts.length ? candParts[candParts.length-1] : '';
+                              if(lookupLast && candLast && lookupLast === candLast){ p = cand; break; }
+                              if(lookupParts.length >= 2 && lookupFirst.length === 1){ const candFirst = candParts.length ? candParts[0].charAt(0) : ''; if(candFirst === lookupFirst && candLast === lookupLast){ p = cand; break; } }
+                              const lookupId = event.player_id || event.playerId || event.player_key || (event.raw && (event.raw.player_id || event.raw.idPlayer || event.raw.player_key));
+                              const candId = cand.idPlayer || cand.player_id || cand.playerKey || cand.player_key || cand.id || cand.playerId;
+                              if(lookupId && candId && String(lookupId) === String(candId)){ p = cand; break; }
+                            }catch(_e){ }
+                          }
+                        }
+                        if(p){ playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || ''; }
+                      }
+                    }catch(_e){}
+                  }
+                }catch(_e){ /* ignore network errors */ }
+              }
+            }catch(_e){}
+
+            // DOM-scrape fallback: if we still don't have a player image, try to find an <img>
+            // for the player inside the rendered Players section on the page. This re-uses
+            // already-fetched UI content (seen in the Players panel) when API lookups fail.
+            try{
+              if(!playerImg && typeof document !== 'undefined'){
+                const norm = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+                const target = norm(event.player || event.player_name || '');
+                const teamName = (event.team || '').toString().trim();
+                if(target){
+                  const imgs = Array.from(document.querySelectorAll('img'));
+                  for(const img of imgs){
+                    try{
+                      const alt = (img.getAttribute('alt') || img.getAttribute('data-player-name') || '').toString();
+                      if(alt && norm(alt).includes(target)){ playerImg = img.src; break; }
+                      const p = img.closest && img.closest('div') || img.parentElement;
+                      const txt = p ? (p.textContent||'') : '';
+                      if(txt && norm(txt).includes(target)){ playerImg = img.src; break; }
+                    }catch(_e){}
+                  }
+
+                  if(!playerImg && teamName){
+                    const blocks = Array.from(document.querySelectorAll('div,section'));
+                    for(const b of blocks){
+                      try{
+                        if(!(b.textContent||'').toLowerCase().includes(teamName.toLowerCase())) continue;
+                        const imgs2 = Array.from(b.querySelectorAll('img'));
+                        for(const img of imgs2){
+                          try{
+                            const alt = (img.getAttribute('alt') || img.getAttribute('data-player-name') || '').toString();
+                            if(alt && norm(alt).includes(target)){ playerImg = img.src; break; }
+                            const p = img.closest && img.closest('div') || img.parentElement;
+                            const txt = p ? (p.textContent||'') : '';
+                            if(txt && norm(txt).includes(target)){ playerImg = img.src; break; }
+                          }catch(_e){}
+                        }
+                        if(playerImg) break;
+                      }catch(_e){}
+                    }
+                  }
+                }
+              }
+            }catch(_e){}
+
+            // build substitution header if applicable
+            const buildSubHeader = (() => {
+              try{
+                if(etype !== 'substitution') return null;
+                const text = String(description || event.description || event.raw && event.raw.description || '').replace(/\s+/g,' ').trim();
+                const tryMatch = (re) => { const m = text.match(re); if(m && m[1] && m[2]) return [m[2].trim(), m[1].trim()]; return null; };
+                let res = tryMatch(/(.*?)\s*(?:off|out)\s*[,\-]?\s*(.*?)\s*(?:on|in)/i) || tryMatch(/(.*?)\s*replaced\s*by\s*(.*?)/i) || tryMatch(/(.*?)\s*->\s*(.*?)/i);
+                if(!res) return null;
+                const [inName, outName] = res;
+                const resolveImg = (nm) => {
+                  if(!nm) return '';
+                  const n = (nm||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+                  try{ if(matchCtx && matchCtx._playersMap){ const p = matchCtx._playersMap[nm] || matchCtx._playersMap[nm.toLowerCase()] || matchCtx._playersMap[n]; if(p) return p.player_image || p.player_photo || p.photo || p.strThumb || p.strThumbBig || p.player_pic || p.img || p.avatar || p.headshot || ''; } }catch(_e){}
+                  try{ if(typeof document !== 'undefined'){ const imgs = Array.from(document.querySelectorAll('img')); for(const im of imgs){ try{ const alt = (im.getAttribute('alt')||im.getAttribute('data-player-name')||'').toString(); if(alt && alt.toLowerCase().includes(n)) return im.src; const p = im.closest && im.closest('div') || im.parentElement; const txt = p ? (p.textContent||'') : ''; if(txt && txt.toLowerCase().includes(n)) return im.src; }catch(_e){} } } }catch(_e){}
+                  return '';
+                };
+                const inImg = resolveImg(inName); const outImg = resolveImg(outName);
+                if(!inImg && !outImg) return null;
+                const inBlock = inImg? `<div style="display:flex;flex-direction:column;align-items:center;margin-right:8px"><div style="width:48px;height:48px;overflow:hidden;border-radius:8px;background:#f3f4f6"><img src="${inImg}" style="width:48px;height:48px;object-fit:cover;display:block" onerror="this.onerror=null;this.remove();"/></div><div style="margin-top:6px;font-size:11px;color:#e5e7eb">In<br/><span style="color:#9ca3af;font-size:11px">${escapeHtml(inName||'')}</span></div></div>` : '';
+                const outBlock = outImg? `<div style="display:flex;flex-direction:column;align-items:center;margin-right:8px"><div style="width:48px;height:48px;overflow:hidden;border-radius:8px;background:#f3f4f6"><img src="${outImg}" style="width:48px;height:48px;object-fit:cover;display:block" onerror="this.onerror=null;this.remove();"/></div><div style="margin-top:6px;font-size:11px;color:#e5e7eb">Out<br/><span style="color:#9ca3af;font-size:11px">${escapeHtml(outName||'')}</span></div></div>` : '';
+                return `<div style="display:flex;align-items:center;gap:8px">${inBlock}${outBlock}</div>`;
+              }catch(_e){ return null; }
+            })();
+
+            const titleParts = [];
+            if(playerImg){
+              // try player image, on error fall back to teamLogo if available
+              titleParts.push(`<div style="width:56px;height:56px;overflow:hidden;border-radius:8px;flex-shrink:0;background:#f3f4f6"><img src=\"${playerImg}\" style=\"width:56px;height:56px;object-fit:cover;display:block\" onerror=\"this.onerror=null;${teamLogo ? `this.src='${teamLogo}';` : `this.remove();`}\"/></div>`);
+            } else if(teamLogo){
+              titleParts.push(`<div style="width:56px;height:56px;overflow:hidden;border-radius:8px;flex-shrink:0;background:#f3f4f6"><img src=\"${teamLogo}\" style=\"width:56px;height:56px;object-fit:contain;display:block\" onerror=\"this.remove()\"/></div>`);
+            }
+            const nameLabel = (event.player || event.player_name || event.playerName || event.player_fullname) ? `<div style=\"margin-left:8px;font-weight:700;color:#e5e7eb\">${escapeHtml(String(event.player || event.player_name || event.playerName || ''))}</div>` : '';
+            const headerHtml = `<div style=\"display:flex;align-items:center;gap:8px;\">${titleParts.join('')}${nameLabel}</div>`;
+            // small image debug link (click to open the resolved image URL)
+            const imgLinkHtml = playerImg ? `<div style=\"margin-top:6px\"><a href=\"${playerImg}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:#9ca3af;font-size:11px\">Open player image</a></div>` : (teamLogo ? `<div style=\"margin-top:6px\"><a href=\"${teamLogo}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:#9ca3af;font-size:11px\">Open team logo</a></div>` : '');
+            try{ console.log('tooltip image lookup', {playerImg, teamLogo, event}); }catch(_e){}
+            d.innerHTML = `${headerHtml}${imgLinkHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px\">Summarizing…</div>`;
+            d.style.display = 'block';
+            positionEventTooltip(dot);
+
+            try{
+              const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
+              d.innerHTML = `${headerHtml}${imgLinkHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px;white-space:normal\">${escapeHtml(String(brief || description || etype))}</div>`;
+              positionEventTooltip(dot);
+            }catch(_e){
+              d.innerHTML = `${headerHtml}${imgLinkHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px\">${escapeHtml(String(description || etype))}</div>`;
+              positionEventTooltip(dot);
+            }
+          }catch(_err){
+            try{ showEventTooltip(dot, 'Summarizing…'); }catch(_e){}
+          }
         };
         const onLeave = ()=> hideEventTooltip();
         const onMove = ()=> positionEventTooltip(dot);
@@ -376,7 +589,15 @@
   function getTagColor(tag){ const t = String(tag).toLowerCase(); if(t.includes('goal')) return '#10b981'; if(t.includes('card')) return '#f59e0b'; if(t.includes('substitution')) return '#8b5cf6'; if(t.includes('penalty')) return '#ef4444'; return '#6b7280'; }
 
   function normalizeEventTags(evt){
-    const candidates = []; if(evt){ if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags); if(evt.predictedTags !== undefined) candidates.push(evt.predictedTags); if(evt.tags !== undefined) candidates.push(evt.tags); if(evt.labels !== undefined) candidates.push(evt.labels); if(evt.labels_list !== undefined) candidates.push(evt.labels_list); }
+    // Prefer provider `tags` first for display (don't show model `predicted_tags` when provider tags exist).
+    const candidates = [];
+    if(evt){
+      if(evt.tags !== undefined) candidates.push(evt.tags);
+      if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
+      if(evt.predictedTags !== undefined) candidates.push(evt.predictedTags);
+      if(evt.labels !== undefined) candidates.push(evt.labels);
+      if(evt.labels_list !== undefined) candidates.push(evt.labels_list);
+    }
     let raw = [];
     for(const c of candidates){ if(c === undefined || c === null) continue; if(Array.isArray(c) && c.length>0){ raw = c; break; } if(typeof c === 'string' && c.trim()){ raw = [c]; break; } if(typeof c === 'object' && !Array.isArray(c)){ raw = [c]; break; } }
     const out = []; if(!raw) return out; try{ if(!Array.isArray(raw)){ if(typeof raw === 'string') raw = [raw]; else if(typeof raw === 'object') raw = [raw]; else raw = []; } }catch(e){ return out; }
@@ -1567,6 +1788,24 @@
       });
   // Raw view for players
   attachRawToggle(playersBody, rr, 'players');
+        // Build a normalized players map on the event object so tooltips can find images by player name
+        try{
+          const allPlayers = [];
+          rr.forEach(r => {
+            if(r && r.status === 'fulfilled' && r.value){ const v = r.value; const arr = v.data?.result || v.data?.results || v.data?.players || v.data || v.result || v.players || []; if(Array.isArray(arr)) allPlayers.push(...arr); }
+          });
+          if(allPlayers.length>0){
+            // attach to ev for local lookup
+            const map = {};
+            allPlayers.forEach(p=>{
+              const name = (p.player_name || p.name || p.strPlayer || p.player || '').trim();
+              if(!name) return;
+              map[name] = p;
+              map[name.toLowerCase()] = p;
+            });
+            ev._playersMap = map;
+          }
+        }catch(_e){ /* ignore */ }
     }catch(e){ playersBody.textContent = 'Players error: '+e.message; }
 
     // League table
