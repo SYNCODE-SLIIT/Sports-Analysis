@@ -1,12 +1,14 @@
 """
 RouterCollector — single front door that decides which provider agent to call.
 
-Policy (initial, simple):
-  • TSDB (CollectorAgentV2) is PRIMARY for: leagues.*, seasons.list, teams.*, events.list, event.get,
-    league.table, video.highlights, venue.get
-  • AllSports (AllSportsRawAgent) is PRIMARY for: players.*, odds.*, probabilities.*, comments.*, events.live / livescore.list
+Updated policy (AllSports-first):
+  • AllSports (AllSportsRawAgent) is PRIMARY for all intents it supports, including:
+    leagues.list, seasons.list, teams.*, players.*, events.list, event.get, events.live / livescore.list,
+    league.table, video.highlights, odds.*, probabilities.list, comments.list, h2h
+  • TSDB (CollectorAgentV2) is ONLY used as fallback, and as PRIMARY for intents not supported by AllSports,
+    such as: sports.list, venue.get, event.tv, and TSDB-specific player extras (honours, former_teams, milestones, contracts, player.results).
   • Fallback: if PRIMARY returns ok=False or "empty-ish" data, try the other provider when it has a near-equivalent.
-  • Absolutely no normalization: we return the chosen provider's raw "data" payload.
+  • Absolutely no normalization: return the chosen provider's raw "data" payload.
 
 This module exposes a single class: RouterCollector, with .handle({intent, args}).
 """
@@ -376,23 +378,31 @@ class RouterCollector:
         Returns (primary tuple, fallback tuple|None)
         Each tuple: (provider_name, call_fn)
         """
-        tsdb_first = {
-            "league.get", "seasons.list",
-            "teams.list", "team.get",
-            "events.list", "event.get",
-            "league.table",
-            "venue.get", "event.results", "event.tv",
-        }
+        # AllSports supports these intents (primary):
         allsports_first = {
-            "leagues.list",  # Moved from tsdb_first to get all 975 leagues
+            # competitions
+            "leagues.list", "seasons.list",
+            # teams & players
+            "teams.list", "team.get",
             "players.list", "player.get",
-            "odds.list", "odds.live",
-            "probabilities.list",
-            "comments.list",
+            # events
+            "events.list", "event.get", "events.live", "livescore.list",
+            # standings & media & analytics
+            "league.table", "video.highlights",
+            # odds/probabilities/comments
+            "odds.list", "odds.live", "probabilities.list", "comments.list",
+            # h2h
             "h2h",
-            "events.live", "livescore.list",
-            "video.highlights",
-            # you can add "fixtures.list" here if you want ASAPI-by-date to be primary
+        }
+
+        # TSDB-only or better on TSDB (primary there):
+        tsdb_first = {
+            # Not available on AllSports RAW agent
+            "sports.list", "venue.get", "event.tv",
+            # TSDB-specific player extras
+            "player.honours", "player.former_teams", "player.milestones", "player.contracts", "player.results",
+            # Aggregated past results helper
+            "event.results",
         }
 
         if intent in allsports_first:
@@ -400,8 +410,8 @@ class RouterCollector:
         if intent in tsdb_first:
             return (("tsdb", self._call_tsdb), ("allsports", self._call_allsports))
 
-        # Unknown → default to TSDB then fallback to ASAPI
-        return (("tsdb", self._call_tsdb), ("allsports", self._call_allsports))
+        # Unknown → default to AllSports then fallback to TSDB
+        return (("allsports", self._call_allsports), ("tsdb", self._call_tsdb))
 
     # ---- empty heuristics (RAW-friendly) ----
     def _is_empty(self, data: Any) -> bool:
@@ -480,9 +490,13 @@ class RouterCollector:
             # AllSports livescore shape uses 'result'
             live_list = data.get("result") or data.get("events") or []
 
-        # 2. Finished matches: we will call events.list for the date (TSDB primary)
-        finished_req = {"intent": "events.list", "args": {"date": target_date}}
-        finished_resp = self.handle(finished_req)
+        # 2. Finished matches: prefer AllSports fixtures.list with from/to=day; fallback to standard router flow
+        as_finished = self._call_allsports('fixtures.list', {'from': target_date, 'to': target_date})
+        if as_finished.get('ok') and not self._is_empty(as_finished.get('data')):
+            finished_resp = as_finished
+        else:
+            finished_req = {"intent": "events.list", "args": {"date": target_date}}
+            finished_resp = self.handle(finished_req)
         trace.append({"step": "finished_fetch", "ok": finished_resp.get("ok"), "date": target_date})
         finished_list = []
         if finished_resp.get("ok"):
@@ -621,7 +635,8 @@ class RouterCollector:
         for d in date_list:
             # Direct provider calls bypass router fallback to get raw sets
             tsdb_resp = self._call_tsdb('events.list', {'date': d})
-            as_resp = self._call_allsports('events.list', {'date': d})
+            # AllSports: prefer fixtures.list with from/to=day to ensure provider returns matches for that day
+            as_resp = self._call_allsports('fixtures.list', {'from': d, 'to': d})
             trace.append({"step": "history_dual_fetch", "date": d, "tsdb_ok": tsdb_resp.get('ok'), "allsports_ok": as_resp.get('ok')})
             tsdb_events = extract_events(tsdb_resp)
             as_events = extract_events(as_resp)
@@ -725,7 +740,8 @@ class RouterCollector:
 
         for d in date_list:
             tsdb_resp = self._call_tsdb('events.list', {'date': d})
-            as_resp = self._call_allsports('events.list', {'date': d})
+            # AllSports: prefer fixtures.list with explicit from/to
+            as_resp = self._call_allsports('fixtures.list', {'from': d, 'to': d})
             trace.append({"step": "history_raw_fetch", "date": d, "tsdb_ok": bool(tsdb_resp.get('ok')), "allsports_ok": bool(as_resp.get('ok'))})
 
             ts_events = extract_events(tsdb_resp)

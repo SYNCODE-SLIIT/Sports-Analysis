@@ -15,9 +15,11 @@
     </nav>
     <div class="controls">
       <label>Days Back <input type="number" id="daysInput" min="1" max="31" value="7" /></label>
+      <label>Start Date <input type="date" id="startDate" /></label>
       <label>End Date <input type="date" id="endDate" /></label>
       <label>League <select id="leagueSelect"><option value="__ALL__">All Leagues</option></select></label>
       <button id="fetchLeagueBtn" title="Fetch matches only for selected league over range">Fetch League</button>
+      <button id="flatBtn" title="Show flat list (no league grouping)">Flat Matches</button>
       <button id="loadBtn">Load</button>
       <span id="status" class="status"></span>
     </div>

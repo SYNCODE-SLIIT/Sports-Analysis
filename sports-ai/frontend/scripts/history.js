@@ -9,9 +9,11 @@
 
   const contentEl = document.getElementById('content');
   const daysInput = document.getElementById('daysInput');
+  const startDateInput = document.getElementById('startDate');
   const endDateInput = document.getElementById('endDate');
   const leagueSelect = document.getElementById('leagueSelect');
   const fetchLeagueBtn = document.getElementById('fetchLeagueBtn');
+  const flatBtn = document.getElementById('flatBtn');
   const loadBtn = document.getElementById('loadBtn');
   const statusEl = document.getElementById('status');
 
@@ -33,17 +35,17 @@
 
   // Set default end date to today
   endDateInput.value = new Date().toISOString().split('T')[0];
+  // Default start date = end date (single day) unless user changes it
+  startDateInput.value = endDateInput.value;
 
   // Load leagues on page load
   loadLeagues();
 
-  // Load sample data immediately for testing
-  setTimeout(() => {
-    console.log('Loading sample data for testing...');
-    showSampleData();
-  }, 1000);
+  // NOTE: Sample data auto-load removed to prevent overriding real results.
+  // If needed during development, call showSampleData() manually from console.
 
   loadBtn.addEventListener('click', loadHistoryMatches);
+  if(flatBtn) flatBtn.addEventListener('click', loadFlatMatches);
   fetchLeagueBtn.addEventListener('click', fetchLeagueMatches);
 
   function setStatus(text, isError = false) {
@@ -124,34 +126,48 @@
       return 1000; // Low priority for non-popular leagues
     }
 
-    // Sort leagues: popular ones first, then alphabetically
-    const sortedLeagues = [...allLeagues].sort((a, b) => {
+    // Deduplicate leagues by stable id (league_key|league_id); fallback to country+name pair
+    const uniqMap = new Map();
+    (allLeagues || []).forEach(L => {
+      const id = String(L.league_key || L.league_id || `${L.country_name || ''}|${L.league_name || ''}`);
+      if (!uniqMap.has(id)) uniqMap.set(id, L);
+    });
+    const uniqLeagues = Array.from(uniqMap.values());
+
+    // Sort leagues: popular ones first (by raw league_name), then alphabetically by display label "Country — League"
+    const sortedLeagues = uniqLeagues.sort((a, b) => {
       const nameA = a.league_name || '';
       const nameB = b.league_name || '';
-      
+      const dispA = ((a.country_name ? (a.country_name + ' — ') : '') + nameA).trim();
+      const dispB = ((b.country_name ? (b.country_name + ' — ') : '') + nameB).trim();
+
       const priorityA = getLeaguePriority(nameA);
       const priorityB = getLeaguePriority(nameB);
-      
-      // If both are popular or both are non-popular, sort alphabetically
+
+      // If both are popular or both are non-popular, sort alphabetically by display name including country
       if (priorityA === priorityB) {
-        return nameA.toLowerCase().localeCompare(nameB.toLowerCase());
+        return dispA.toLowerCase().localeCompare(dispB.toLowerCase());
       }
-      
+
       // Otherwise, sort by priority
       return priorityA - priorityB;
     });
 
-    // Add league options
+    // Add league options with Country — League display label
     sortedLeagues.forEach((league, index) => {
       const option = document.createElement('option');
       option.value = league.league_key || league.league_id || '';
-      option.textContent = league.league_name || 'Unknown League';
-      
+      const country = league.country_name || league.strCountry || '';
+      const lname = league.league_name || league.strLeague || 'Unknown League';
+      const label = country ? `${country} — ${lname}` : lname;
+      option.textContent = label;
+      option.title = label;
+
       // Add visual separator after popular leagues
-      const priority = getLeaguePriority(league.league_name || '');
+      const priority = getLeaguePriority(lname);
       if (index > 0 && priority >= 1000) {
         const prevLeague = sortedLeagues[index - 1];
-        const prevPriority = getLeaguePriority(prevLeague.league_name || '');
+        const prevPriority = getLeaguePriority(prevLeague.league_name || prevLeague.strLeague || '');
         if (prevPriority < 1000) {
           // Add a separator option
           const separator = document.createElement('option');
@@ -162,9 +178,18 @@
           leagueSelect.appendChild(separator);
         }
       }
-      
+
       leagueSelect.appendChild(option);
     });
+  }
+
+  function _rangeToDays(start, end){
+    try{
+      const s = new Date(start);
+      const e = new Date(end);
+      const ms = e.setHours(0,0,0,0) - s.setHours(0,0,0,0);
+      return Math.max(1, Math.min(31, Math.floor(ms / (24*3600*1000)) + 1));
+    }catch(_e){ return null; }
   }
 
   async function loadHistoryMatches() {
@@ -172,8 +197,10 @@
       setStatus('Loading history matches...');
       contentEl.innerHTML = '';
       
-      const days = parseInt(daysInput.value) || 7;
       const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
+      const startDate = startDateInput.value || '';
+      let days = parseInt(daysInput.value) || 7;
+      if(startDate){ const d = _rangeToDays(startDate, endDate); if(d) days = d; }
       
       const url = `${apiBase}/matches/history?days=${days}&end_date=${endDate}`;
       console.log('Loading from URL:', url);
@@ -198,6 +225,54 @@
     }
   }
 
+  // New: Flat matches (no league grouping) — includes internationals
+  async function loadFlatMatches() {
+    try {
+      setStatus('Loading flat matches...');
+      contentEl.innerHTML = '';
+
+      const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
+      const startDate = startDateInput.value || '';
+      let days = parseInt(daysInput.value) || 7;
+      if(startDate){ const d = _rangeToDays(startDate, endDate); if(d) days = d; }
+
+      const url = `${apiBase}/matches/history_raw?days=${days}&end_date=${endDate}`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      // Router returns raw object with top-level matches array
+      const ok = !!(data && (data.ok === true || typeof data.ok === 'undefined'));
+      const matches = (data && (data.matches || (data.data && data.data.matches))) || [];
+
+      if(!ok) throw new Error('Failed to load flat matches');
+
+      // Group by date (newest first) for readability, but do NOT group by league
+      const byDate = {};
+      matches.forEach(m => {
+        const d = m.event_date || m.dateEvent || m.date || 'Unknown Date';
+        (byDate[d] = byDate[d] || []).push(m);
+      });
+
+      const dates = Object.keys(byDate).sort().reverse();
+
+      // Header
+      const hdr = document.createElement('h2');
+      hdr.textContent = `Flat Matches — ${matches.length} total`;
+      hdr.style.margin = '16px';
+      contentEl.appendChild(hdr);
+
+      dates.forEach(d => {
+        const section = createDateSection(d, byDate[d]);
+        contentEl.appendChild(section);
+      });
+
+      setStatus(`Loaded flat matches for ${dates.length} dates`);
+    } catch (error) {
+      console.error('Error loading flat matches:', error);
+      setStatus('Error loading flat matches: ' + (error && error.message ? error.message : String(error)), true);
+    }
+  }
+
   async function fetchLeagueMatches() {
     const selectedLeague = leagueSelect.value;
     if (selectedLeague === '__ALL__') {
@@ -208,46 +283,42 @@
     try {
       setStatus('Loading league matches...');
       contentEl.innerHTML = '';
-      
-      const days = parseInt(daysInput.value) || 7;
-      const endDate = endDateInput.value || new Date().toISOString().split('T')[0];
-      
-      // Calculate start date
-      const end = new Date(endDate);
-      const start = new Date(end);
-      start.setDate(start.getDate() - days + 1);
-      
-      const startDate = start.toISOString().split('T')[0];
-      
-      // Fetch matches for the specific league
-      const url = `${apiBase}/collect`;
-      const requestBody = {
-        intent: "fixtures.list",
-        args: {
-          leagueId: selectedLeague,
-          from: startDate,
-          to: endDate
-        }
+
+      const callIntent = async (intent, args) => {
+        const resp = await fetch(`${apiBase}/collect`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({intent, args}) });
+        if(!resp.ok) throw new Error(`HTTP ${resp.status} for ${intent}`);
+        return resp.json();
       };
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-      
-      const data = await response.json();
-      
-      if (data.ok && data.data && data.data.result) {
-        const matches = data.data.result;
-        const selectedLeagueName = leagueSelect.options[leagueSelect.selectedIndex].textContent;
-        displayLeagueMatches(matches, selectedLeagueName);
-        setStatus(`Loaded ${matches.length} matches for ${selectedLeagueName}`);
-      } else {
-        throw new Error('Failed to load league matches');
+
+      const selectedLeagueName = leagueSelect.options[leagueSelect.selectedIndex].textContent;
+
+      // Build explicit date window (AllSports responds reliably when from/to are provided)
+      const endDate = (endDateInput.value || new Date().toISOString().slice(0,10));
+      let startDate = startDateInput.value || '';
+      if(!startDate){
+        const days = parseInt(daysInput.value || '7', 10) || 7;
+        const end = new Date(endDate);
+        const start = new Date(end);
+        start.setDate(start.getDate() - days + 1);
+        startDate = start.toISOString().slice(0,10);
       }
+
+      const args = { leagueId: selectedLeague, from: startDate, to: endDate };
+      let res = await callIntent('events.list', args);
+      let matches = [];
+      if(res && res.ok && res.data){
+        matches = res.data.result || res.data.events || res.data.results || [];
+      }
+      if((!Array.isArray(matches) || matches.length === 0)){
+        // Try fixtures.list alias with same params
+        res = await callIntent('fixtures.list', args);
+        if(res && res.ok && res.data){
+          matches = res.data.result || res.data.events || res.data.results || [];
+        }
+      }
+
+      displayLeagueMatches(Array.isArray(matches) ? matches : [], selectedLeagueName);
+      setStatus(`Loaded ${Array.isArray(matches)?matches.length:0} matches for ${selectedLeagueName} (${startDate} → ${endDate})`);
     } catch (error) {
       console.error('Error loading league matches:', error);
       setStatus('Error loading league matches: ' + error.message, true);
@@ -306,7 +377,7 @@
 
   function createDateSection(date, matches) {
     const dateNode = dateTemplate.content.firstElementChild.cloneNode(true);
-    dateNode.querySelector('.dateHeading').textContent = formatDate(date);
+    dateNode.querySelector('.dateHeading').textContent = formatDate(date || 'Unknown Date');
     
     const matchesContainer = dateNode.querySelector('.matches');
     
@@ -320,11 +391,12 @@
 
   function createMatchRow(match) {
     const matchNode = matchRowTemplate.content.firstElementChild.cloneNode(true);
-    
-    const homeTeam = match.event_home_team || match.strHomeTeam || 'Unknown';
-    const awayTeam = match.event_away_team || match.strAwayTeam || 'Unknown';
-    const time = match.event_time || match.strTime || '';
-    const status = match.event_status || match.status || '';
+    const pick = (obj, keys) => { for(const k of keys){ if(obj && obj[k] != null && obj[k] !== '') return obj[k]; } return ''; };
+    const homeTeam = pick(match, ['event_home_team','strHomeTeam','home_team','homeTeam','home','localteam','homeTeamName']);
+    const awayTeam = pick(match, ['event_away_team','strAwayTeam','away_team','awayTeam','away','visitorteam','awayTeamName']);
+    const time = pick(match, ['event_time','strTime','match_time','time']);
+    const status = pick(match, ['event_status','status','match_status']);
+    const date = pick(match, ['event_date','dateEvent','match_date','date']);
     
     // Format score
     let score = '-';
@@ -341,14 +413,14 @@
     matchNode.innerHTML = `
       <div class="match-info">
         <div class="teams">
-          <span class="home-team">${homeTeam}</span>
+          <span class="home-team">${homeTeam || 'Unknown'}</span>
           <span class="vs">vs</span>
-          <span class="away-team">${awayTeam}</span>
+          <span class="away-team">${awayTeam || 'Unknown'}</span>
         </div>
         <div class="match-details">
-          <span class="time">${time}</span>
+          <span class="time">${time || ''}</span>
           <span class="score">${score}</span>
-          <span class="status">${status}</span>
+          <span class="status">${status || ''}</span>
         </div>
       </div>
       <div style="margin-top:8px"><button class="detailsBtn">Details</button></div>
@@ -367,6 +439,10 @@
           <button id="augmentTagsBtn">Augment Timeline Tags</button>
           <button id="playerAnalyticsBtn">Player Analytics</button>
           <button id="multimodalBtn">Multimodal Extract</button>
+        </div>
+        <div id="summary_section" class="summary">
+          <h3>Match Summary</h3>
+          <div class="summary-body">Loading summary…</div>
         </div>
         <div id="details_info" class="details-info" style="margin-bottom:0.75rem"></div>
         <div id="highlights" class="highlights">
@@ -394,6 +470,12 @@
   renderEventDetails(ev, detailsInfo);
   // Auto-augment with model predictions (runs in background; will re-render when complete)
   setTimeout(()=> { try{ augmentEventTags(ev); }catch(e){ console.warn('auto augment failed', e); } }, 300);
+    // Fetch AI match summary
+    fetchMatchSummary(ev).catch(err => {
+      console.error('Summary error:', err);
+      const sumEl = modalBody.querySelector('#summary_section .summary-body');
+      if(sumEl) sumEl.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err));
+    });
     
     // wire new feature buttons
     const augmentBtn = modalBody.querySelector('#augmentTagsBtn');
@@ -724,7 +806,7 @@
     timelineContainer.style.cssText = 'position: relative;';
 
     timeline.forEach((event, index) => {
-      const eventElement = createTimelineEvent(event, index === timeline.length - 1);
+      const eventElement = createTimelineEvent(event, index === timeline.length - 1, ev);
       timelineContainer.appendChild(eventElement);
     });
 
@@ -849,7 +931,7 @@
     return out;
   }
 
-  function createTimelineEvent(event, isLast) {
+  function createTimelineEvent(event, isLast, matchCtx) {
     const eventDiv = document.createElement('div');
     eventDiv.style.cssText = `
       display: flex;
@@ -875,7 +957,7 @@
       flex-shrink: 0;
     `;
 
-    const dot = document.createElement('div');
+  const dot = document.createElement('div');
     dot.style.cssText = `
       width: 12px;
       height: 12px;
@@ -924,7 +1006,7 @@
     icon.textContent = getEventIcon(description, tags);
 
     eventHeader.appendChild(minuteSpan);
-    eventHeader.appendChild(icon);
+  eventHeader.appendChild(icon);
 
     const eventText = document.createElement('div');
     eventText.style.cssText = 'color: #374151; margin-bottom: 8px;';
@@ -986,11 +1068,91 @@
     content.appendChild(rawToggle);
     content.appendChild(rawPre);
 
+    // Hover brief on the movement dot for special events
+    try{
+      const etype = deriveEventType(description, tags, event);
+      if(etype){
+        dot.style.cursor = 'help';
+        const onEnter = async ()=>{
+          showEventTooltip(dot, 'Summarizing…');
+          try{
+            const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
+            showEventTooltip(dot, brief);
+          }catch(err){ showEventTooltip(dot, description || etype); }
+        };
+        const onLeave = ()=> hideEventTooltip();
+        const onMove = ()=> positionEventTooltip(dot);
+        dot.addEventListener('mouseenter', onEnter);
+        dot.addEventListener('mouseleave', onLeave);
+        dot.addEventListener('mousemove', onMove);
+      }
+    }catch(_e){ /* ignore hover errors */ }
+
     eventDiv.appendChild(timeline);
     eventDiv.appendChild(content);
 
     return eventDiv;
   }
+
+  // ---- Event brief tooltip helpers (shared) ----
+  const _eventBriefCache = new Map();
+  function _briefKey(etype, payload){
+    const p = payload||{}; return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::');
+  }
+  function deriveEventType(description, tags, ev){
+    const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase());
+    const d = String(description||'').toLowerCase();
+    if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) return 'goal';
+    if(t.includes('red')) return 'red card';
+    if(t.includes('yellow')) return 'yellow card';
+    if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) return 'substitution';
+    return null;
+  }
+  async function getEventBrief(etype, payload, matchCtx){
+    const key = _briefKey(etype, payload);
+    if(_eventBriefCache.has(key)) return _eventBriefCache.get(key);
+    const ev = (payload && payload.event) || {};
+    const tags = payload && payload.tags || [];
+    // Build context
+    const home = matchCtx?.event_home_team || matchCtx?.strHomeTeam || matchCtx?.home_team || '';
+    const away = matchCtx?.event_away_team || matchCtx?.strAwayTeam || matchCtx?.away_team || '';
+    const payloadBody = {
+      provider: 'auto',
+      eventId: String(matchCtx?.idEvent || matchCtx?.event_key || matchCtx?.id || matchCtx?.match_id || '' ) || undefined,
+      eventName: (home && away) ? `${home} vs ${away}` : undefined,
+      date: matchCtx?.event_date || matchCtx?.dateEvent || matchCtx?.date || undefined,
+      events: [{
+        minute: payload.minute || ev.minute || ev.time || '',
+        type: etype,
+        description: payload.description || ev.description || ev.text || ev.event || '',
+        player: ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '',
+        team: ev.team || '',
+        tags: Array.isArray(tags)? tags.slice(0,6) : undefined,
+      }]
+    };
+    let brief = '';
+    try{
+      const loc = window.location; let apiBase = loc.origin; if(loc.port && loc.port !== '8000'){ apiBase = loc.protocol + '//' + loc.hostname + ':8000'; }
+      const r = await fetch(apiBase + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)});
+      if(r.ok){ const j = await r.json(); brief = (j && j.items && j.items[0] && j.items[0].brief) || ''; }
+    }catch(_e){ /* ignore */ }
+    if(!brief){
+      const minute = payload.minute || ev.minute || ev.time || '';
+      const player = ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '';
+      if(etype==='goal') brief = `${player||'Unknown'} scores at ${minute||'?'}.'`;
+      else if(etype==='yellow card') brief = `Yellow card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='red card') brief = `Red card for ${player||'unknown'} at ${minute||'?'}.`;
+      else if(etype==='substitution') brief = payload.description || 'Substitution.';
+      else brief = payload.description || etype;
+    }
+    _eventBriefCache.set(key, brief);
+    return brief;
+  }
+  let _evtTooltip;
+  function ensureTooltip(){ if(_evtTooltip) return _evtTooltip; const d = document.createElement('div'); d.style.cssText = 'position:fixed;z-index:9999;max-width:320px;background:#111827;color:#e5e7eb;padding:8px 10px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.25);font-size:12px;line-height:1.4;pointer-events:none;display:none;'; document.body.appendChild(d); _evtTooltip = d; return d; }
+  function showEventTooltip(anchor, text){ const d=ensureTooltip(); d.textContent = String(text||''); d.style.display='block'; positionEventTooltip(anchor); }
+  function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
+  function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
 
   function getEventIcon(description, tags) {
     const desc = String(description).toLowerCase();
@@ -2513,6 +2675,82 @@
 
   let currentEventContext = null;
 
+  // --- AI Match Summary ---
+  async function fetchMatchSummary(ev){
+    const container = modalBody.querySelector('#summary_section .summary-body');
+    if(!container) return;
+    container.textContent = 'Loading summary…';
+
+    // Build payload: prefer eventId; fallback to event name and date
+    const payload = { provider: 'auto' };
+    const eventId = ev.idEvent || ev.event_key || ev.match_id || ev.id;
+    if(eventId) payload.eventId = String(eventId);
+    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+    const name = ev.strEvent || (home && away ? `${home} vs ${away}` : '');
+    if(name) payload.eventName = name;
+    const date = ev.event_date || ev.dateEvent || ev.date || '';
+    if(date) payload.date = date;
+
+    try{
+      const resp = await fetch(apiBase + '/summarizer/summarize', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+      });
+      if(!resp.ok){
+        const txt = await resp.text().catch(()=> '');
+        throw new Error(`HTTP ${resp.status} ${txt}`.trim());
+      }
+      const j = await resp.json();
+      renderSummary(j, container);
+    }catch(e){
+      container.textContent = 'Unable to load summary.';
+      console.error('fetchMatchSummary error:', e);
+    }
+  }
+
+  function renderSummary(summary, container){
+    if(!container) return;
+    container.innerHTML = '';
+    if(!summary || summary.ok === false){
+      container.textContent = 'No summary available.';
+      return;
+    }
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,0.08);';
+
+    if(summary.headline){
+      const h = document.createElement('h4');
+      h.style.cssText = 'margin:0 0 8px 0;color:#111827;font-size:18px;';
+      h.textContent = summary.headline;
+      wrap.appendChild(h);
+    }
+
+    if(summary.one_paragraph){
+      const p = document.createElement('p');
+      p.style.cssText = 'margin:0 0 10px 0;color:#374151;line-height:1.4;';
+      p.textContent = summary.one_paragraph;
+      wrap.appendChild(p);
+    }
+
+    if(Array.isArray(summary.bullets) && summary.bullets.length){
+      const ul = document.createElement('ul');
+      ul.style.cssText = 'margin:8px 0 0 1rem;color:#374151;';
+      summary.bullets.slice(0,6).forEach(b=>{ const li=document.createElement('li'); li.textContent=String(b); ul.appendChild(li); });
+      wrap.appendChild(ul);
+    }
+
+    const meta = summary.source_meta || {};
+    const bundle = meta.bundle || {};
+    const metaLine = document.createElement('div');
+    metaLine.style.cssText = 'margin-top:8px;font-size:12px;color:#6b7280;';
+    const prov = meta.provider_used ? `via ${meta.provider_used}` : '';
+    const idInfo = bundle.event_id ? `id ${bundle.event_id}` : '';
+    metaLine.textContent = [prov, idInfo].filter(Boolean).join(' · ');
+    if(metaLine.textContent) wrap.appendChild(metaLine);
+
+    container.appendChild(wrap);
+  }
+
   function addEventHighlightSearchUI(container, ev){
     currentEventContext = ev;
     if(container.querySelector('.event-highlight-search')) return;
@@ -2687,12 +2925,49 @@
         args.idLeague = leagueId;
         args.leagueKey = leagueId;
       } else if(leagueName) args.leagueName = leagueName;
-      const j = await callIntent('league.table', args);
-      if(j && j.ok){ 
+      let j = await callIntent('league.table', args);
+      let okTable = (j && j.ok) ? (function(payload){
+        try{
+          const d = payload.data || payload.result || payload || {};
+          if(Array.isArray(d)) return d.length>0;
+          const arrs = ['total','table','result','standings','rows','league_table'];
+          return arrs.some(k => Array.isArray(d[k]) && d[k].length>0) || (d.data && Array.isArray(d.data.total) && d.data.total.length>0);
+        }catch(e){ return false; }
+      })(j) : false;
+
+      // Fallback: if empty, try season-specific calls derived from event date or fields
+      if(!okTable){
+        const yearStr = (ev.event_date || ev.dateEvent || '').slice(0,4);
+        const leagueSeason = ev.league_season || ev.season || ev.league_year || '';
+        const yr = parseInt(yearStr || '', 10);
+        const cands = [];
+        if(leagueSeason) cands.push(String(leagueSeason));
+        if(yr && !Number.isNaN(yr)){
+          cands.push(String(yr));
+          cands.push(`${yr-1}/${yr}`);
+          cands.push(`${yr}/${yr+1}`);
+        }
+        for(const s of cands){
+          try{
+            const j2 = await callIntent('league.table', { ...args, season: s });
+            const d2 = j2 && (j2.data || j2.result || j2 || {});
+            const nonEmpty = (()=>{
+              if(Array.isArray(d2)) return d2.length>0;
+              const arrs=['total','table','result','standings','rows','league_table'];
+              return arrs.some(k => Array.isArray(d2[k]) && d2[k].length>0) || (d2.data && Array.isArray(d2.data.total) && d2.data.total.length>0);
+            })();
+            if(nonEmpty){ j = j2; okTable = true; break; }
+          }catch(_e){ /* try next */ }
+        }
+      }
+
+      if(okTable){
         const tableCard = createLeagueTableCard(j.data || j.result || {});
         tableBody.innerHTML = '';
         tableBody.appendChild(tableCard);
-      } else tableBody.textContent = 'No table available';
+      } else {
+        tableBody.textContent = 'No table available';
+      }
       // debug league.table raw
       try{
         const dbgT = document.createElement('details'); dbgT.style.marginTop='8px';
