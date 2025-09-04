@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Match Details — Sports AI</title>
+  <link rel="stylesheet" href="../styles/index.css" />
+  <link rel="stylesheet" href="../styles/matches.css" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">Sports AI</div>
+    <nav class="nav">
+      <a href="./index.html">Home</a>
+      <a href="./matches.html">Live</a>
+      <a href="./history_matches.html">History</a>
+    </nav>
+    <div class="spacer"></div>
+    <a href="javascript:history.back()" class="nav back-link" style="text-decoration:none"><span style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:8px;">← Back</span></a>
+  </header>
+
+  <main style="padding:16px;max-width:1100px;margin:0 auto">
+    <section id="matchHeader" class="matches-area" style="padding:16px">
+      <div class="matches-head">
+        <h3 id="matchTitle">Loading match…</h3>
+        <span id="pageStatus" class="status"></span>
+      </div>
+      <div id="matchInfo"></div>
+    </section>
+
+    <section class="matches-area" style="padding:16px">
+      <div class="details-controls" style="margin-bottom:.75rem;display:flex;gap:.5rem;flex-wrap:wrap;">
+        <button id="augmentTagsBtn">Augment Timeline Tags</button>
+        <button id="playerAnalyticsBtn">Player Analytics</button>
+        <button id="multimodalBtn">Multimodal Extract</button>
+      </div>
+
+      <div id="summary" class="summary">
+        <h3>Match Summary</h3>
+        <div class="summary-body">Loading summary…</div>
+      </div>
+
+      <div id="details_info" class="details-info" style="margin:12px 0"></div>
+
+      <div id="highlights" class="highlights">
+        <h3>Highlights</h3>
+        <div class="hl-body">Loading highlights…</div>
+      </div>
+
+      <div id="extras" class="extras" style="margin-top:12px">
+        <h3 style="margin:12px 0;color:#0f172a">Extras</h3>
+        <div class="extras-body">
+          <div id="teams_section" class="extra-section"><h4>Teams</h4><div class="body">Loading…</div></div>
+          <div id="players_section" class="extra-section"><h4>Players</h4><div class="body">Loading…</div></div>
+          <div id="league_table_section" class="extra-section"><h4>League Table</h4><div class="body">Loading…</div></div>
+          <div id="odds_section" class="extra-section"><h4>Odds</h4><div class="body">Loading…</div></div>
+          <div id="prob_section" class="extra-section"><h4>Probabilities</h4><div class="body">Loading…</div></div>
+          <div id="comments_section" class="extra-section"><h4>Comments</h4><div class="body">Loading…</div></div>
+          <div id="seasons_section" class="extra-section"><h4>Seasons</h4><div class="body">Loading…</div></div>
+          <div id="h2h_section" class="extra-section"><h4>H2H</h4><div class="body">Loading…</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="../scripts/match.js"></script>
+</body>
+  
+</html>
+
