@@ -68,19 +68,25 @@ if app is None:
     print("ERROR: 'app' not found in backend.app.main")
     sys.exit(1)
 
-if args.debug:
-    print("Loaded module:", mod)
-    print("Found app object:", app)
-    print("Environment minimal check: fastapi version loaded OK")
-    # Show relevant env vars (mask API key partially)
-    api_key = os.environ.get('API_KEY') or os.environ.get('API_FOOTBALL_KEY')
-    base_url = os.environ.get('BASE_URL')
-    if api_key:
-        masked = api_key[:4] + '...' + api_key[-4:]
-    else:
-        masked = '<not set>'
-    print(f"API_KEY: {masked}")
-    print(f"BASE_URL: {base_url}")
+    if args.debug:
+        print("Loaded module:", mod)
+        print("Found app object:", app)
+        print("Environment minimal check: fastapi version loaded OK")
+        # Show relevant env vars (mask API key partially)
+        api_key = os.environ.get('API_KEY') or os.environ.get('API_FOOTBALL_KEY')
+        base_url = os.environ.get('BASE_URL')
+        # Also show GROQ key presence for debugging LLM configuration
+        groq_key = os.environ.get('GROQ_API_KEY')
+        if api_key:
+            masked = api_key[:4] + '...' + api_key[-4:]
+        else:
+            masked = '<not set>'
+        print(f"API_KEY: {masked}")
+        print(f"BASE_URL: {base_url}")
+        if groq_key:
+            print(f"GROQ_API_KEY: {groq_key[:4]}...{groq_key[-4:]}")
+        else:
+            print("GROQ_API_KEY: <not set>")
 
 print(f"Starting server on http://{args.host}:{args.port} (reload={args.reload})")
 try:
