@@ -55,3 +55,15 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
 .timeline-event .minute{background:#f1f5f9;padding:4px 8px;border-radius:8px;font-weight:700;color:#475569}
 .timeline-event .desc{color:#0f172a}
 @media (max-width:600px){.match-grid{grid-template-columns:1fr;} body{font-size:14px;} .match-card{min-height:auto;}}
+
+
+/* --- Probabilities block (details modal) --- */
+#prob_section .body { display: flex; flex-direction: column; gap: 8px; }
+.prob-row { display: grid; grid-template-columns: 120px 1fr 56px; gap: 8px; align-items: center; }
+.prob-row .label { font-weight: 600; color: #0f172a; }
+.prob-row .bar { height: 10px; background: #e5e7eb; border-radius: 6px; overflow: hidden; }
+.prob-row .bar .fill { display: block; height: 100%; background: #3b82f6; transition: width 0.3s ease; }
+.prob-row .value { text-align: right; font-variant-numeric: tabular-nums; color: #0f172a; }
+.prob-meta { margin-top: 6px; font-size: 12px; color: #475569; }
+.prob-error { color: #ef4444; }
+.prob-loading { color: #6b7280; }

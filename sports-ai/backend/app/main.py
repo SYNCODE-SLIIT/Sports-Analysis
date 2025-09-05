@@ -200,38 +200,76 @@ def matches_debug_list():  # pragma: no cover
 
 app.include_router(matches_router)
 
-# --- Analysis endpoints ---
+# --- Analysis endpoints (JSON, UI-consistent) ---
 @app.get("/analysis/match-insights")
-def api_match_insights(eventId: str = Query(...)):
-    try:
-        res = analysis_agent.match_insights(eventId)
-        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+@app.get("/analysis/match_insights")
+def api_match_insights(eventId: str = Query(..., description="Match eventId")):
+    out = router.analysis.handle("analysis.match_insights", {"eventId": str(eventId)})
+    if not out.get("ok"):
+        raise HTTPException(status_code=502, detail=out.get("error") or "Analysis error")
+    return out
 
 @app.get("/analysis/winprob")
-def api_winprob(eventId: str = Query(...)):
-    try:
-        res = analysis_agent.win_probabilities(eventId)
-        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+def api_winprob(
+    eventId: str = Query(..., description="Match eventId"),
+    source: str = Query("auto", pattern="^(auto|odds|h2h|form)$"),
+    lookback: int = Query(10, ge=1, le=50),
+    half_life: float | None = Query(None, description="Optional recency half-life override"),
+    venue_weight: float | None = Query(None, description="Optional home advantage weight (1.0 = neutral)"),
+):
+    args = {
+        "eventId": str(eventId),
+        "source": source,
+        "lookback": lookback,
+    }
+    if half_life is not None:
+        try:
+            args["half_life"] = float(half_life)
+        except Exception:
+            pass
+    if venue_weight is not None:
+        try:
+            args["venue_weight"] = float(venue_weight)
+        except Exception:
+            pass
+    out = router.analysis.handle("analysis.winprob", args)
+    # Ensure output uses 'probs' (plural) not 'prob' (singular)
+    if out.get("ok") and out.get("data"):
+        if "prob" in out["data"] and "probs" not in out["data"]:
+            out["data"]["probs"] = out["data"].pop("prob")
+    if not out.get("ok"):
+        raise HTTPException(status_code=502, detail=out.get("error") or "Analysis error")
+    return out
 
 @app.get("/analysis/form")
-def api_form(teamId: str = Query(...)):
-    try:
-        res = analysis_agent.team_form(teamId)
-        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+def api_form(
+    eventId: str = Query(..., description="Match eventId to infer teams"),
+    lookback: int = Query(5, ge=1, le=50),
+):
+    out = router.analysis.handle("analysis.form", {
+        "eventId": str(eventId),
+        "lookback": lookback,
+    })
+    if not out.get("ok"):
+        raise HTTPException(status_code=502, detail=out.get("error") or "Analysis error")
+    return out
 
 @app.get("/analysis/h2h")
-def api_h2h(teamA: str = Query(...), teamB: str = Query(...)):
-    try:
-        res = analysis_agent.head_to_head(teamA, teamB)
-        return res.model_dump() if hasattr(res, "model_dump") else res.dict()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+def api_h2h(
+    eventId: str | None = Query(None, description="Match eventId (preferred)"),
+    teamA: str | None = Query(None, description="Team A (fallback if no eventId)"),
+    teamB: str | None = Query(None, description="Team B (fallback if no eventId)"),
+    lookback: int = Query(10, ge=1, le=50),
+):
+    if eventId:
+        out = router.analysis.handle("analysis.h2h", {"eventId": str(eventId), "lookback": lookback})
+    else:
+        if not (teamA and teamB):
+            raise HTTPException(status_code=400, detail="Provide eventId or teamA+teamB")
+        out = router.handle({"intent": "analysis.h2h", "args": {"teamA": teamA, "teamB": teamB, "lookback": lookback}})
+    if not out.get("ok"):
+        raise HTTPException(status_code=502, detail=out.get("error") or "Analysis error")
+    return out
 
 # Global debug route to inspect all registered paths
 @app.get("/_debug/routes")
