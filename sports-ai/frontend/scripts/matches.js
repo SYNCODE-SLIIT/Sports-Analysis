@@ -2042,9 +2042,7 @@
 
   // default date = today
   const today = new Date().toISOString().slice(0,10); datePicker.value = today;
+  // Initial load
   fetchSummary();
-  // auto refresh live every 60s
-  setInterval(()=> { if(!document.hidden) fetchSummary(); }, 60000);
 
 })();
-
