@@ -93,6 +93,7 @@
             <div id="league_table_section" class="extra-section"><h4>League Table</h4><div class="body">Loading…</div></div>
             <div id="odds_section" class="extra-section"><h4>Odds</h4><div class="body">Loading…</div></div>
             <div id="prob_section" class="extra-section"><h4>Probabilities</h4><div class="body">Loading…</div></div>
+            <div id="form_section" class="extra-section"><h4>Recent Form</h4><div class="body">Loading…</div></div>
             <div id="comments_section" class="extra-section"><h4>Comments</h4><div class="body">Loading…</div></div>
             <div id="seasons_section" class="extra-section"><h4>Seasons</h4><div class="body">Loading…</div></div>
           </div>
@@ -132,6 +133,7 @@
     });
     // Ensure probabilities come from our Analysis Agent (not provider probabilities.list)
     fetchWinprobOverride(ev).catch(err => console.error('Winprob override error:', err));
+    fetchRecentForm(ev).catch(err => console.error('Recent form error:', err));
   }
 
   // Override renderer for Probabilities section using Analysis Agent
@@ -139,9 +141,9 @@
     const probBody = modalBody.querySelector('#prob_section .body');
     if(!probBody) return;
 
-  // If a previous analysis card exists, clear and replace it with the override result
-  const existing = probBody.querySelector('[data-agent-prob="1"]');
-  if (existing) { probBody.innerHTML = ''; }
+    // If a previous analysis card exists, clear and replace it with the override result
+    const existing = probBody.querySelector('[data-agent-prob="1"]');
+    if (existing) { probBody.innerHTML = ''; }
 
     probBody.innerHTML = '<div class="prob-loading">Loading probabilities…</div>';
 
@@ -178,7 +180,7 @@
       };
       const derivedHomeName = home || _inferFromLogo(hLogo) || 'Home';
       const derivedAwayName = away || _inferFromLogo(aLogo) || 'Away';
-      const card = createProbabilitiesCard({
+      const card = createProbabilitiesCardEnhanced({
         __from: 'override',
         event_key: eventId,
         event_home_team: home,
@@ -196,6 +198,220 @@
       probBody.innerHTML = '<div class="prob-error">Failed to load probabilities</div>';
     }
   }
+
+  // Build the Analysis-Agent-driven probabilities card with logos and explicit labels
+  function createProbabilitiesCardEnhanced(ctx){
+    const { res } = ctx || {};
+    const ok = !!(res && (res.ok === true || typeof res.ok === 'undefined'));
+    const data = (res && res.data) || {};
+
+    // Pull probs
+    const probs = data.probs || {};
+    let pH = Number(probs.home || 0), pD = Number(probs.draw || 0), pA = Number(probs.away || 0);
+    // Guard and normalize (sum may deviate a bit due to rounding)
+    const sum = pH + pD + pA;
+    if(sum > 0){ pH/=sum; pD/=sum; pA/=sum; }
+    const pct = v => (Number(v*100).toFixed(1));
+
+    // Names + logos from agent (preferred) or event context (fallbacks passed via ctx)
+    const homeName = (data.home_team && (data.home_team.name || data.home_team.short_name)) || ctx.home_team_name || ctx.event_home_team || 'Home';
+    const awayName = (data.away_team && (data.away_team.name || data.away_team.short_name)) || ctx.away_team_name || ctx.event_away_team || 'Away';
+    const hLogo = (data.home_team && data.home_team.logo) || ctx.home_team_logo || '';
+    const aLogo = (data.away_team && data.away_team.logo) || ctx.away_team_logo || '';
+
+    // Improved venue role detection fallback
+    let neutral = !!(data.venue && (data.venue.neutral === true));
+    if (data.venue == null || typeof data.venue.neutral === 'undefined'){
+      try{
+        const vinf = inferVenueInfo({
+          country_name: ctx.country_name,
+          event_home_team: homeName,
+          event_away_team: awayName
+        });
+        neutral = !!vinf.neutral;
+      }catch(_e){}
+    }
+    const homeRole = neutral ? 'Neutral' : 'Home';
+    const awayRole = neutral ? 'Neutral' : 'Away';
+
+    // Root card
+    const card = document.createElement('div');
+    card.className = 'prob-card';
+    card.setAttribute('data-agent-prob','1');
+
+    // Headline with logos
+    const head = document.createElement('div');
+    head.className = 'prob-headline';
+    head.innerHTML = `
+      <div class="side side-left">
+        ${hLogo? `<img class="logo" src="${hLogo}" alt="${homeName} logo" onerror="this.remove()">` : ''}
+        <span class="name">${homeName}</span>
+        <span class="role" style="font-size:11px;color:#64748b;">(${homeRole})</span>
+      </div>
+      <div class="middle">${homeName} (${homeRole}) ${pct(pH)}% | Draw ${pct(pD)}% | ${awayName} (${awayRole}) ${pct(pA)}%</div>
+      <div class="side side-right">
+        <span class="role" style="font-size:11px;color:#64748b;">(${awayRole})</span>
+        <span class="name">${awayName}</span>
+        ${aLogo? `<img class="logo" src="${aLogo}" alt="${awayName} logo" onerror="this.remove()">` : ''}
+      </div>`;
+    card.appendChild(head);
+
+    // Stacked bar
+    const stacked = document.createElement('div');
+    stacked.className = 'prob-stacked';
+    const wH = Math.max(0, Math.min(100, Number(pH*100).toFixed(1)));
+    const wD = Math.max(0, Math.min(100, Number(pD*100).toFixed(1)));
+    let wA = Math.max(0, Math.min(100, Number(pA*100).toFixed(1)));
+    // ensure total exactly 100.0 by adjusting away
+    const totalRounded = Number(wH) + Number(wD) + Number(wA);
+    if(totalRounded !== 100){ wA = (100 - Number(wH) - Number(wD)).toFixed(1); }
+    stacked.innerHTML = `
+      <span class="seg home" style="width:${wH}%;"></span>
+      <span class="seg draw" style="width:${wD}%;"></span>
+      <span class="seg away" style="width:${wA}%;"></span>`;
+    card.appendChild(stacked);
+
+    // Inline labels under the bar (one-line legend)
+    const labels = document.createElement('div');
+    labels.className = 'prob-labels';
+    labels.innerHTML = `
+      <span class="lbl">${homeName} (${homeRole}) ${Number(wH).toFixed(1)}%</span>
+      <span class="lbl">Draw ${Number(wD).toFixed(1)}%</span>
+      <span class="lbl">${awayName} (${awayRole}) ${Number(wA).toFixed(1)}%</span>`;
+    card.appendChild(labels);
+
+    // Mini rows (Home / Draw / Away)
+    const mkMini = (key, label, width) => {
+      const row = document.createElement('div'); row.className='prob-mini';
+      row.innerHTML = `
+        <div class="label">${label}</div>
+        <div class="bar"><span class="fill ${key}" style="width:${width}%"></span></div>
+        <div class="value">${Number(width).toFixed(1)}%</div>`;
+      return row;
+    };
+    card.appendChild(mkMini('home', `${homeName} ${neutral? '(Neutral)':'(Home)'}`, wH));
+    card.appendChild(mkMini('draw', 'Draw', wD));
+    card.appendChild(mkMini('away', `${awayName} ${neutral? '(Neutral)':'(Away)'}`, wA));
+
+    // Meta + Show Raw toggle
+    const meta = document.createElement('div'); meta.className='prob-meta';
+    const method = data.method || 'unknown';
+    const sample = (data.inputs && (data.inputs.sample_size || data.inputs.effective_weight)) || undefined;
+    const leftMeta = document.createElement('div');
+    leftMeta.textContent = `Method: ${method}${sample? ` • n=${sample}`:''}`;
+    const btnMeta = document.createElement('button'); btnMeta.className='raw-toggle'; btnMeta.textContent='Show raw';
+    const pre = document.createElement('pre');
+    try{ pre.textContent = JSON.stringify(res, null, 2); }catch(_e){ pre.textContent = String(res); }
+    btnMeta.addEventListener('click', ()=>{ const shown = pre.style.display==='block'; pre.style.display = shown?'none':'block'; btnMeta.textContent = shown? 'Show raw':'Hide raw'; });
+    meta.appendChild(leftMeta); meta.appendChild(btnMeta);
+    card.appendChild(meta); card.appendChild(pre);
+
+    return card;
+  }
+
+  // ---- Recent Form (analysis.form) ----
+  async function fetchRecentForm(ev){
+    const formBody = modalBody.querySelector('#form_section .body');
+    if(!formBody) return;
+
+    // Clear any previous form card
+    const prev = formBody.querySelector('[data-agent-form="1"]');
+    if(prev) formBody.innerHTML = '';
+
+    formBody.textContent = 'Loading recent form…';
+
+    const eventId = getEventId(ev);
+    if(!eventId){ formBody.innerHTML = '<div class="prob-error">Missing eventId</div>'; return; }
+
+    try{
+      const url = new URL(apiBase + '/analysis/form');
+      url.searchParams.set('eventId', String(eventId));
+      url.searchParams.set('lookback', '5');
+      const resp = await fetch(url.toString());
+      const res = await resp.json().catch(()=> ({}));
+      if(!resp.ok || !res || res.ok === false){
+        throw new Error(res && res.error && (res.error.message || res.error.code) || ('HTTP '+resp.status));
+      }
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const hLogo = ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '';
+      const aLogo = ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '';
+
+      formBody.innerHTML = '';
+      const card = createFormCard({ res, homeName: home, awayName: away, hLogo, aLogo });
+      formBody.appendChild(card);
+    }catch(e){
+      console.error('fetchRecentForm error', e);
+      formBody.innerHTML = '<div class="prob-error">Failed to load recent form</div>';
+    }
+  }
+
+  function createFormCard(ctx){
+    const { res, homeName, awayName, hLogo, aLogo } = ctx || {};
+    const data = (res && res.data) || {};
+
+    const home = data.home_team || {}; const away = data.away_team || {};
+    const hm = data.home_metrics || {}; const am = data.away_metrics || {};
+    const lookback = (hm.games || am.games || 0);
+
+    const HN = home.name || homeName || 'Home';
+    const AN = away.name || awayName || 'Away';
+
+    // Root
+    const card = document.createElement('div'); card.className='form-card'; card.setAttribute('data-agent-form','1');
+
+    // Grid with per-team panels
+    const grid = document.createElement('div'); grid.className='form-grid'; card.appendChild(grid);
+
+    const mkChips = (arr)=>{
+      const wrap = document.createElement('div'); wrap.className='chips';
+      (Array.isArray(arr)?arr:[]).forEach(x=>{
+        const t = String(x||'').trim().toUpperCase();
+        const span = document.createElement('span'); span.className='chip ' + (t==='W'?'win':(t==='D'?'draw':'loss')); span.textContent = t || '?';
+        wrap.appendChild(span);
+      });
+      if(!wrap.children.length){ const empty=document.createElement('div'); empty.style.cssText='font-size:12px;color:#64748b'; empty.textContent='No recent results'; wrap.appendChild(empty); }
+      return wrap;
+    };
+
+    const mkTeam = (side)=>{
+      const isHome = side==='home';
+      const team = isHome? home : away; const met = isHome? hm : am;
+      const nm = isHome? HN : AN; const logo = isHome? (home.logo || hLogo) : (away.logo || aLogo);
+      const role = isHome? 'Home' : 'Away';
+
+      const box = document.createElement('div'); box.className='form-team';
+      const hdr = document.createElement('div'); hdr.className='hdr';
+      hdr.innerHTML = `${logo? `<img class="logo" src="${logo}" alt="${nm} logo" onerror="this.remove()">` : ''}<span class="name">${nm}</span> <span class="role">(${role})</span>`; box.appendChild(hdr);
+
+      const summary = document.createElement('div'); summary.className='form-summary'; summary.textContent = (team.summary || ''); box.appendChild(summary);
+      box.appendChild(mkChips(met.last_results));
+
+      const tbl = document.createElement('table'); tbl.className='metric-table';
+      const addRow = (k, v)=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td class="k">${k}</td><td class="v">${v}</td>`; tbl.appendChild(tr); };
+      addRow('Games', met.games ?? '—');
+      addRow('Wins / Draws / Losses', `${met.wins ?? '—'} / ${met.draws ?? '—'} / ${met.losses ?? '—'}`);
+      addRow('Goals For / Against', `${met.gf ?? '—'} / ${met.ga ?? '—'}`);
+      addRow('Goal Difference', `${met.gd ?? '—'}`);
+      box.appendChild(tbl);
+      return box;
+    };
+
+    grid.appendChild(mkTeam('home'));
+    grid.appendChild(mkTeam('away'));
+
+    const footer = document.createElement('div'); footer.className='form-footer';
+    const left = document.createElement('div'); left.textContent = `Lookback: ${lookback || 5} games`;
+    const btn = document.createElement('button'); btn.className='raw-toggle'; btn.textContent='Show raw';
+    const pre = document.createElement('pre'); try{ pre.textContent = JSON.stringify(res, null, 2);}catch(_e){ pre.textContent = String(res);} btn.addEventListener('click', ()=>{ const shown = pre.style.display==='block'; pre.style.display = shown? 'none':'block'; btn.textContent = shown? 'Show raw':'Hide raw'; });
+    footer.appendChild(left); footer.appendChild(btn); card.appendChild(footer); card.appendChild(pre);
+
+    return card;
+  }
+
+  // make accessible just in case of scope issues
+  window.fetchRecentForm = fetchRecentForm;
+  window.createFormCard  = createFormCard;
 
   // ----- Match Summary via backend summarizer -----
   async function fetchMatchSummary(ev){

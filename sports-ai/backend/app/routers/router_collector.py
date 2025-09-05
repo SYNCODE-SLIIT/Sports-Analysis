@@ -256,7 +256,12 @@ class RouterCollector:
                         "data": None,
                         "meta": {"source": {"primary": "analysis", "fallback": None}, "trace": trace},
                     }
-                resp = self.analysis.handle("analysis.winprob", {"eventId": str(event_id)})
+                call_args = {"eventId": str(event_id)}
+                for k in ("source", "lookback", "half_life", "venue_weight"):
+                    v = args.get(k)
+                    if v is not None:
+                        call_args[k] = v
+                resp = self.analysis.handle("analysis.winprob", call_args)
                 return resp
 
             elif intent in ("analysis.form", "analysis.team_form"):

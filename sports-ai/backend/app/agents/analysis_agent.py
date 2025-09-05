@@ -97,6 +97,9 @@ class EventInfo:
     away_team_id: str
     home_team_name: Optional[str] = None
     away_team_name: Optional[str] = None
+    home_team_logo: Optional[str] = None
+    away_team_logo: Optional[str] = None
+    country_name: Optional[str] = None
     scheduled_utc: Optional[str] = None
     status: Optional[str] = None
     odds_decimal: Optional[Dict[str, float]] = None  # keys: "home","draw","away"
@@ -241,6 +244,17 @@ class AnalysisAgent:
         home_name = obj.get("event_home_team") or obj.get("homeTeam") or obj.get("home_team") or None
         away_name = obj.get("event_away_team") or obj.get("awayTeam") or obj.get("away_team") or None
 
+        # --- New: extract logos and country ---
+        home_logo = (
+            obj.get("home_team_logo") or obj.get("team_home_badge") or obj.get("strHomeTeamBadge")
+            or obj.get("homeBadge") or obj.get("home_logo")
+        ) or None
+        away_logo = (
+            obj.get("away_team_logo") or obj.get("team_away_badge") or obj.get("strAwayTeamBadge")
+            or obj.get("awayBadge") or obj.get("away_logo")
+        ) or None
+        country_name = obj.get("country_name") or obj.get("event_country") or obj.get("country") or None
+
         league_id = str(obj.get("league_key") or obj.get("league_id") or obj.get("leagueId") or "") or None
         # Try to combine date+time when available to a UTC-ish ISO string if provider only gives local date/time.
         start_date = obj.get("event_date") or obj.get("match_date") or obj.get("scheduled") or None
@@ -261,6 +275,8 @@ class AnalysisAgent:
             event_id=eid, league_id=league_id,
             home_team_id=home_id, away_team_id=away_id,
             home_team_name=home_name, away_team_name=away_name,
+            home_team_logo=home_logo, away_team_logo=away_logo,
+            country_name=country_name,
             scheduled_utc=scheduled_utc, status=status, odds_decimal=odds
         )
 
@@ -422,6 +438,10 @@ class AnalysisAgent:
                     "effective_weight": round(wH + wD + wA, 6),
                 },
             }
+            # Add team/venue context
+            out["home_team"] = {"id": ev.home_team_id, "name": ev.home_team_name, "logo": getattr(ev, "home_team_logo", None)}
+            out["away_team"] = {"id": ev.away_team_id, "name": ev.away_team_name, "logo": getattr(ev, "away_team_logo", None)}
+            out["venue"] = {"neutral": False, "country_name": getattr(ev, "country_name", None)}
             return out, tlocal
 
         def _res_odds() -> Tuple[Optional[Dict[str, Any]], List[Any]]:
@@ -429,12 +449,16 @@ class AnalysisAgent:
             if ev.odds_decimal:
                 probs = implied_probs_from_decimal_odds(ev.odds_decimal)
                 tlocal.append({"step": "odds->probs", "odds": ev.odds_decimal, "probs": probs})
-                return {
+                out = {
                     "eventId": ev.event_id,
                     "method": "odds_implied",
                     "probs": probs,
                     "inputs": {"odds_decimal": ev.odds_decimal},
-                }, tlocal
+                }
+                out["home_team"] = {"id": ev.home_team_id, "name": ev.home_team_name, "logo": getattr(ev, "home_team_logo", None)}
+                out["away_team"] = {"id": ev.away_team_id, "name": ev.away_team_name, "logo": getattr(ev, "away_team_logo", None)}
+                out["venue"] = {"neutral": False, "country_name": getattr(ev, "country_name", None)}
+                return out, tlocal
             return None, tlocal
 
         def _res_form() -> Tuple[Dict[str, Any], List[Any]]:
@@ -456,6 +480,9 @@ class AnalysisAgent:
                 "probs": probs,
                 "inputs": {"home_metrics": home, "away_metrics": away},
             }
+            out["home_team"] = {"id": ev.home_team_id, "name": ev.home_team_name, "logo": getattr(ev, "home_team_logo", None)}
+            out["away_team"] = {"id": ev.away_team_id, "name": ev.away_team_name, "logo": getattr(ev, "away_team_logo", None)}
+            out["venue"] = {"neutral": False, "country_name": getattr(ev, "country_name", None)}
             return out, t
 
         # Source selection / fallback chain
