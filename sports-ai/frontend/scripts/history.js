@@ -818,51 +818,44 @@
   function synthesizeTimelineFromEvent(ev){
     try{
       const out = [];
-      // scorers / goals (many provider shapes)
-      const scorers = ev.scorers || ev.goals || ev.goal_scorers || ev.scorers_list || ev.goals_list || [];
-      if(Array.isArray(scorers) && scorers.length>0){
-        scorers.forEach(s => {
-          const minute = s.minute || s.time || s.minute_display || s.m || s.match_minute || '';
-          const name = s.name || s.player || s.scorer || s.player_name || s.player_fullname || '';
-          const team = s.team || s.side || s.club || '';
-          const desc = s.description || s.text || (name ? `Goal by ${name}` : 'Goal');
-          const tags = s.tags || s.predicted_tags || s.predictedTags || s.labels || (s.type? [s.type]: []);
-          out.push({ minute, description: desc, player: name, team, type: s.type || 'goal', predicted_tags: tags, raw: s });
-        });
-      }
-
-      // comments / play-by-play as timeline entries (take first few)
-      const comments = ev.comments || ev.comments_list || ev.match_comments || ev.play_by_play || ev.commentary || [];
-      if(Array.isArray(comments) && comments.length>0){
-        comments.slice(0,8).forEach(c => {
-          const minute = c.time || c.minute || c.comments_time || c.match_minute || '';
-          const desc = c.text || c.comment || c.comments_text || c.body || '';
-          const tags = c.tags || c.predicted_tags || c.predictedTags || c.labels || [];
-          if(desc) out.push({ minute, description: desc, predicted_tags: tags, raw: c });
-        });
-      }
-
-      // fallback: create an entry for final result
-      if(out.length === 0){
-        const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || ev.homeName || '';
-        const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || ev.awayName || '';
-        const score = ev.event_final_result || ev.event_ft_result || (ev.home_score!=null && ev.away_score!=null ? `${ev.home_score} - ${ev.away_score}` : '');
-        if(home || away || score){
-          out.push({ minute: '', description: `${home} vs ${away} ${score}`, predicted_tags: [], raw: ev });
-        }
-      }
-
-      // If entries exist but have no tags, run a small heuristic detector to surface likely tags
-      const enriched = out.map(entry => {
-        const hasTags = entry.predicted_tags && Array.isArray(entry.predicted_tags) && entry.predicted_tags.length>0;
-        if(!hasTags){
-          const inferred = detectTagsFromText(entry.description || '');
-          entry.predicted_tags = inferred;
-        }
-        return entry;
+      // Goals / goalscorers (accept common provider shapes)
+      const goals = ev.goalscorers || ev.scorers || ev.goals || ev.goal_scorers || ev.scorers_list || ev.goals_list || [];
+      (goals || []).forEach(g => {
+        const minute = g.time || g.minute || g.minute_display || g.m || g.match_minute || '';
+        const player = g.home_scorer || g.away_scorer || g.scorer || g.player || g.name || '';
+        const assist = g.home_assist || g.away_assist || g.assist || '';
+        const team = g.team || (g.away_scorer ? ev.event_away_team : (g.home_scorer ? ev.event_home_team : ''));
+        const score = g.score || '';
+        out.push({ minute, type: 'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] });
       });
 
-      return enriched;
+      // Substitutions
+      const subs = ev.substitutes || ev.subs || ev.substitutions || [];
+      (subs||[]).forEach(s => {
+        const minute = s.time || '';
+        // home_scorer object can contain in/out
+        if(s.home_scorer && typeof s.home_scorer === 'object' && Object.keys(s.home_scorer).length>0){
+          out.push({ minute, type: 'substitution', player_in: s.home_scorer.in, player_out: s.home_scorer.out, team: ev.event_home_team || 'home', description: `${minute} — ${s.home_scorer.in} ON for ${s.home_scorer.out} (${ev.event_home_team})`, tags: ['substitution'] });
+        }
+        if(s.away_scorer && typeof s.away_scorer === 'object' && Object.keys(s.away_scorer).length>0){
+          out.push({ minute, type: 'substitution', player_in: s.away_scorer.in, player_out: s.away_scorer.out, team: ev.event_away_team || 'away', description: `${minute} — ${s.away_scorer.in} ON for ${s.away_scorer.out} (${ev.event_away_team})`, tags: ['substitution'] });
+        }
+      });
+
+      // Cards
+      const cards = ev.cards || [];
+      (cards||[]).forEach(c => {
+        const minute = c.time || '';
+        const player = c.home_fault || c.away_fault || '';
+        const cardType = (c.card || '').toLowerCase();
+        const team = c.home_fault? ev.event_home_team : (c.away_fault? ev.event_away_team : '');
+        out.push({ minute, type: 'card', player, card: cardType, team, description: `${minute} — ${cardType} for ${player} (${team})`, tags: [cardType] });
+      });
+
+      // Sort by minute (handle '90+4' as 90.04 to keep order)
+      function minuteSortKey(m){ if(!m) return 0; const plus = m.includes('+'); if(plus){ const parts = m.split('+'); return Number(parts[0]) + Number(parts[1]) / 100; } return Number(m)||0; }
+      out.sort((a,b)=> minuteSortKey(a.minute) - minuteSortKey(b.minute));
+      return out;
     }catch(e){ return []; }
   }
 
@@ -888,16 +881,13 @@
   // Build a clean, minimal timeline from provider event JSON focusing on goals, subs, and cards
   function buildCleanTimeline(ev){
     const out = [];
-    // Goals / goalscorers
-    const goals = ev.goalscorers || ev.goals || ev.goalscorer || ev.goalscorers_list || ev.goalscorers_list || ev.goalscorers || ev.goalscorers || ev.goals || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || [];
-    // Use the canonical names used in your sample
-    const goalsCanonical = ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || [];
-    const goalsSrc = ev.goalscorers || ev.goals || ev.goalscorer || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || ev.goalscorers || [];
-    (goalsSrc||[]).forEach(g => {
-      const minute = g.time || g.minute || '';
-      const player = g.home_scorer || g.away_scorer || g.scorer || g.player || '';
+    // Goals / goalscorers (accept common provider shapes)
+    const goals = ev.goalscorers || ev.scorers || ev.goals || ev.goal_scorers || ev.scorers_list || ev.goals_list || [];
+    (goals || []).forEach(g => {
+      const minute = g.time || g.minute || g.minute_display || g.m || g.match_minute || '';
+      const player = g.home_scorer || g.away_scorer || g.scorer || g.player || g.name || '';
       const assist = g.home_assist || g.away_assist || g.assist || '';
-      const team = (g.away_scorer? ev.event_away_team : (g.home_scorer? ev.event_home_team : ''));
+      const team = g.team || (g.away_scorer ? ev.event_away_team : (g.home_scorer ? ev.event_home_team : ''));
       const score = g.score || '';
       out.push({ minute, type: 'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] });
     });
@@ -1074,11 +1064,318 @@
       if(etype){
         dot.style.cursor = 'help';
         const onEnter = async ()=>{
-          showEventTooltip(dot, 'Summarizing…');
+          // Build a small rich tooltip showing player image and team logo (if available), then a brief summary.
           try{
-            const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
-            showEventTooltip(dot, brief);
-          }catch(err){ showEventTooltip(dot, description || etype); }
+            const d = ensureTooltip();
+            // try common player image fields
+            let playerImg = event.player_image || event.player_photo || event.playerImage || event.photo || event.thumb || event.strThumb || event.strThumbBig || event.thumbnail || event.photo_url || event.player_cutout || event.player_pic || event.img || event.avatar || event.headshot || event.cutout || event.image || (event.player && (event.player.photo || event.player.player_image || event.player.image || event.player.playerImage || event.player.photo_url)) || (event.raw && (event.raw.player_image || event.raw.player_photo || event.raw.photo || event.raw.thumb || event.raw.image || event.raw.playerImage || event.raw.photo_url || event.raw.player_cutout || event.raw.strThumb || event.raw.strCutout || event.raw.thumbnail || event.raw.img || event.raw.avatar || event.raw.headshot || event.raw.player_pic));
+            // try common team logo fields, fall back to match context logos when team matches
+            let teamLogo = event.team_logo || event.teamLogo || event.team_logo_url || event.team_image || (event.raw && (event.raw.team_logo || event.raw.teamLogo));
+            if(!teamLogo && matchCtx){
+              const home = matchCtx.event_home_team || matchCtx.strHomeTeam || matchCtx.home_team || '';
+              const away = matchCtx.event_away_team || matchCtx.strAwayTeam || matchCtx.away_team || '';
+              if(event.team && home && String(event.team).trim() === String(home).trim()){
+                teamLogo = matchCtx.home_team_logo || matchCtx.strHomeTeamBadge || matchCtx.homeLogo || '';
+              } else if(event.team && away && String(event.team).trim() === String(away).trim()){
+                teamLogo = matchCtx.away_team_logo || matchCtx.strAwayTeamBadge || matchCtx.awayLogo || '';
+              }
+            }
+
+            // If no direct player image on the event, try to build/find a players map from matchCtx (so we can find images without waiting for fetchExtras)
+            try{
+              if(matchCtx && !matchCtx._playersMap){
+                try{
+                  const allPlayers = [];
+                  for(const k of Object.keys(matchCtx||{})){
+                    const v = matchCtx[k];
+                    if(Array.isArray(v) && v.length>0 && typeof v[0] === 'object'){
+                      const s = v[0];
+                      if(s.player_name || s.name || s.strPlayer || s.player || s.player_fullname || s.playerId || s.idPlayer) allPlayers.push(...v);
+                    }
+                  }
+                  if(allPlayers.length>0){ const map = {}; const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase(); allPlayers.forEach(p=>{ const name = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim(); if(!name) return; const nm = name; const low = nm.toLowerCase(); const norm = normalize(nm); map[nm] = p; map[low] = p; map[norm] = p; // also add last-name and initial+last variants to help matching "I. Sarr" -> "Ibrahima Sarr"
+                    try{ const parts = norm.split(' ').filter(Boolean); if(parts.length){ const last = parts[parts.length-1]; if(last) map[last] = map[last] || p; if(parts.length>=2){ const initLast = parts[0].charAt(0) + ' ' + last; const initLastNoSpace = parts[0].charAt(0) + last; map[initLast] = map[initLast] || p; map[initLastNoSpace] = map[initLastNoSpace] || p; } } }catch(_e){} }); matchCtx._playersMap = map; }
+                }catch(_e){ /* ignore build errors */ }
+              }
+              if(!playerImg && matchCtx && matchCtx._playersMap){
+                const lookupNameRaw = (event.player || event.player_name || event.playerName || event.player_fullname || '').trim();
+                if(lookupNameRaw){
+                  // Normalizer: lower-case, remove dots, collapse spaces
+                  const norm = s => (s || '').toString().replace(/[\.]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                  const lookupNorm = norm(lookupNameRaw);
+
+                  // Fast direct map hits
+                  let p = matchCtx._playersMap[lookupNameRaw] || matchCtx._playersMap[lookupNameRaw.toLowerCase()] || matchCtx._playersMap[lookupNorm];
+
+                  // If no direct hit, try smarter matching across map values
+                  if(!p){
+                    const vals = Object.values(matchCtx._playersMap || {});
+                    const lookupParts = lookupNorm.split(' ').filter(Boolean);
+                    const lookupLast = lookupParts.length ? lookupParts[lookupParts.length-1] : '';
+                    const lookupFirst = lookupParts.length ? lookupParts[0] : '';
+
+                    for(const cand of vals){
+                      try{
+                        const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
+                        const candNorm = norm(candName);
+                        if(!candNorm) continue;
+
+                        // Exact or substring matches
+                        if(candNorm === lookupNorm || candNorm.includes(lookupNorm) || lookupNorm.includes(candNorm)) { p = cand; break; }
+
+                        // Last-name match (e.g. "I. Sarr" -> match "Ibrahima Sarr")
+                        const candParts = candNorm.split(' ').filter(Boolean);
+                        const candLast = candParts.length ? candParts[candParts.length-1] : '';
+                        if(lookupLast && candLast && lookupLast === candLast){ p = cand; break; }
+
+                        // Initials match: lookup like "i sarr" or "i.sarr" => check first initial + last name
+                        if(lookupParts.length >= 2 && lookupFirst.length === 1){
+                          const candFirst = candParts.length ? candParts[0].charAt(0) : '';
+                          if(candFirst === lookupFirst && candLast === lookupLast){ p = cand; break; }
+                        }
+
+                        // Check id-based matching when possible
+                        const lookupId = event.player_id || event.playerId || event.player_key || event.player_id || event.player_key || (event.raw && (event.raw.player_id || event.raw.idPlayer || event.raw.player_key));
+                        const candId = cand.idPlayer || cand.player_id || cand.playerKey || cand.player_key || cand.id || cand.playerId;
+                        if(lookupId && candId && String(lookupId) === String(candId)){ p = cand; break; }
+                      }catch(_e){ /* ignore per-candidate errors */ }
+                    }
+                  }
+
+                  if(p){
+                    playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
+                  }
+                }
+              }
+            }catch(_e){ /* ignore */ }
+
+            // If we still don't have a player image, attempt a lightweight fetch of the team's players
+            // using the existing callIntent helper (if available) and populate matchCtx._playersMap,
+            // then retry the same fuzzy lookup. This helps resolve abbreviated names like "I. Sarr".
+            try{
+              if(!playerImg && matchCtx && event.team && typeof callIntent === 'function'){
+                try{
+                  if(!matchCtx._playersPromise){ matchCtx._playersPromise = callIntent('players.list', { teamName: String(event.team) }); }
+                  const playersRes = await matchCtx._playersPromise;
+                  let arr = [];
+                  if(playersRes){ arr = playersRes.data?.result || playersRes.data?.results || playersRes.data?.players || playersRes.data || playersRes.result || playersRes.players || playersRes; }
+                  if(!Array.isArray(arr) && playersRes && Array.isArray(playersRes.data)) arr = playersRes.data;
+                  if(Array.isArray(arr) && arr.length>0){
+                    matchCtx._playersMap = matchCtx._playersMap || {};
+                    const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+                    arr.forEach(p=>{
+                      try{
+                        const name = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim(); if(!name) return;
+            const nm = name; const low = nm.toLowerCase(); const norm = normalize(nm);
+            matchCtx._playersMap[nm] = p; matchCtx._playersMap[low] = p; matchCtx._playersMap[norm] = p;
+            // also add forms that strip dots and initials to match providers like 'I. Sarr' or 'I Sarr'
+            const normNoDots = (nm||'').replace(/\./g,'').toLowerCase();
+            matchCtx._playersMap[normNoDots] = matchCtx._playersMap[normNoDots] || p;
+            const parts = norm.split(' ').filter(Boolean);
+            if(parts.length){ const last = parts[parts.length-1]; if(last) matchCtx._playersMap[last] = matchCtx._playersMap[last] || p; if(parts.length>=2){ const firstInitial = parts[0].charAt(0); const initLast = firstInitial + ' ' + last; const initLastNoSpace = firstInitial + last; matchCtx._playersMap[initLast] = matchCtx._playersMap[initLast] || p; matchCtx._playersMap[initLastNoSpace] = matchCtx._playersMap[initLastNoSpace] || p; // also dotted form
+              matchCtx._playersMap[firstInitial + '.' + ' ' + last] = matchCtx._playersMap[firstInitial + '.' + ' ' + last] || p; matchCtx._playersMap[firstInitial + '.' + last] = matchCtx._playersMap[firstInitial + '.' + last] || p; } }
+                      }catch(_e){}
+                    });
+
+                    // retry lookup with the newly populated map
+                    try{
+                      const lookupNameRaw = (event.player || event.player_name || event.playerName || event.player_fullname || '').trim();
+                      if(lookupNameRaw){
+                        const norm = s => (s || '').toString().replace(/[\.]?/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                        const lookupNorm = norm(lookupNameRaw);
+                        let p = matchCtx._playersMap[lookupNameRaw] || matchCtx._playersMap[lookupNameRaw.toLowerCase()] || matchCtx._playersMap[lookupNorm];
+                        if(!p){
+                          const vals = Object.values(matchCtx._playersMap || {});
+                          const lookupParts = lookupNorm.split(' ').filter(Boolean);
+                          const lookupLast = lookupParts.length ? lookupParts[lookupParts.length-1] : '';
+                          const lookupFirst = lookupParts.length ? lookupParts[0] : '';
+                          for(const cand of vals){
+                            try{
+                              const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
+                              const candNorm = normalize(candName);
+                              if(!candNorm) continue;
+                              if(candNorm === lookupNorm || candNorm.includes(lookupNorm) || lookupNorm.includes(candNorm)) { p = cand; break; }
+                              const candParts = candNorm.split(' ').filter(Boolean);
+                              const candLast = candParts.length ? candParts[candParts.length-1] : '';
+                              if(lookupLast && candLast && lookupLast === candLast){ p = cand; break; }
+                              if(lookupParts.length >= 2 && lookupFirst.length === 1){ const candFirst = candParts.length ? candParts[0].charAt(0) : ''; if(candFirst === lookupFirst && candLast === lookupLast){ p = cand; break; } }
+                              const lookupId = event.player_id || event.playerId || event.player_key || (event.raw && (event.raw.player_id || event.raw.idPlayer || event.raw.player_key));
+                              const candId = cand.idPlayer || cand.player_id || cand.playerKey || cand.player_key || cand.id || cand.playerId;
+                              if(lookupId && candId && String(lookupId) === String(candId)){ p = cand; break; }
+                            }catch(_e){ }
+                          }
+                        }
+                        if(p){ playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || ''; }
+                      }
+                    }catch(_e){}
+                  }
+                }catch(_e){ /* ignore network errors */ }
+              }
+            }catch(_e){}
+
+            // DOM-scrape fallback: if we still don't have a player image, try to find an <img>
+            // for the player inside the rendered Players section on the page. This re-uses
+            // already-fetched UI content (seen in the Players panel) when API lookups fail.
+            try{
+              if(!playerImg && typeof document !== 'undefined'){
+                const norm = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+                const rawLookup = (event.player || event.player_name || '').toString();
+                const target = norm(rawLookup);
+                const teamName = (event.team || '').toString().trim();
+                const lookupParts = target.split(' ').filter(Boolean);
+                const lookupFirst = lookupParts.length ? lookupParts[0] : '';
+                const lookupLast = lookupParts.length > 1 ? lookupParts[lookupParts.length-1] : '';
+                const isInitialStyle = lookupFirst && lookupFirst.length === 1;
+                if(target){
+                  // First, look for imgs with alt or data attributes mentioning the player
+                  const imgs = Array.from(document.querySelectorAll('img'));
+                  for(const img of imgs){
+                    try{
+                      const altRaw = (img.getAttribute('alt') || img.getAttribute('data-player-name') || '').toString();
+                      const alt = norm(altRaw);
+                      if(alt){
+                        // direct normalized match
+                        if(alt.includes(target) || target.includes(alt)) { playerImg = img.src; break; }
+                        // if lookup is initial+last (e.g. 'i sarr'), match cand whose normalized first initial and last match
+                        if(isInitialStyle && lookupLast){
+                          const candParts = alt.split(' ').filter(Boolean);
+                          const candFirstInit = candParts.length ? candParts[0].charAt(0) : '';
+                          const candLast = candParts.length ? candParts[candParts.length-1] : '';
+                          if(candFirstInit === lookupFirst && candLast === lookupLast){ playerImg = img.src; break; }
+                        }
+                      }
+                      // check nearby text in parent/grandparent
+                      const p = img.closest && img.closest('div') || img.parentElement;
+                      const txt = p ? norm(p.textContent||'') : '';
+                      if(txt){
+                        if(txt.includes(target) || target.includes(txt)) { playerImg = img.src; break; }
+                        if(isInitialStyle && lookupLast){ const parts = txt.split(' ').filter(Boolean); const firstInit = parts.length ? parts[0].charAt(0) : ''; const last = parts.length ? parts[parts.length-1] : ''; if(firstInit === lookupFirst && last === lookupLast){ playerImg = img.src; break; } }
+                      }
+                      const gp = p && p.parentElement;
+                      if(gp && gp.textContent){ const gtxt = norm(gp.textContent||''); if(gtxt.includes(target) || (isInitialStyle && lookupLast && gtxt.split(' ').filter(Boolean).slice(-1)[0] === lookupLast)){ playerImg = img.src; break; } }
+                    }catch(_e){}
+                  }
+
+                  // Second, restrict to a team block if team name is available to improve accuracy
+                  if(!playerImg && teamName){
+                    const blocks = Array.from(document.querySelectorAll('div,section'));
+                    for(const b of blocks){
+                      try{
+                        if(!(b.textContent||'').toLowerCase().includes(teamName.toLowerCase())) continue;
+                        const imgs2 = Array.from(b.querySelectorAll('img'));
+                        for(const img of imgs2){
+                          try{
+                            const altRaw = (img.getAttribute('alt') || img.getAttribute('data-player-name') || '').toString();
+                            const alt = norm(altRaw);
+                            if(alt){ if(alt.includes(target) || target.includes(alt)){ playerImg = img.src; break; } if(isInitialStyle && lookupLast){ const candParts = alt.split(' ').filter(Boolean); const candFirstInit = candParts.length ? candParts[0].charAt(0) : ''; const candLast = candParts.length ? candParts[candParts.length-1] : ''; if(candFirstInit === lookupFirst && candLast === lookupLast){ playerImg = img.src; break; } } }
+                            const p = img.closest && img.closest('div') || img.parentElement;
+                            const txt = p ? norm(p.textContent||'') : '';
+                            if(txt){ if(txt.includes(target) || (isInitialStyle && lookupLast && txt.split(' ').filter(Boolean).slice(-1)[0] === lookupLast)){ playerImg = img.src; break; } }
+                          }catch(_e){}
+                        }
+                        if(playerImg) break;
+                      }catch(_e){}
+                    }
+                  }
+                }
+              }
+            }catch(_e){}
+
+            // build substitution header if applicable — always render names; try many lookup keys for images
+            const buildSubHeader = (() => {
+              try{
+                if(etype !== 'substitution') return null;
+                const text = String(description || event.description || (event.raw && event.raw.description) || '').replace(/\s+/g,' ').trim();
+                const tryMatch = (re) => { const m = text.match(re); if(m && m[1] && m[2]) return [m[2].trim(), m[1].trim()]; return null; };
+                let res = tryMatch(/(.*?)\s*(?:off|out)\s*[,\-]?\s*(.*?)\s*(?:on|in)/i) || tryMatch(/(.*?)\s*replaced\s*by\s*(.*?)/i) || tryMatch(/(.*?)\s*->\s*(.*?)/i);
+                if(!res) return null;
+                const [inName, outName] = res;
+
+                const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+                const initialsFrom = s => (s||'').toString().split(/\s+/).filter(Boolean).map(p=>p[0]||'').slice(0,2).join('').toUpperCase() || '';
+
+                const resolveImg = (nm) => {
+                  if(!nm) return '';
+                  const raw = nm.toString();
+                  const lower = raw.toLowerCase();
+                  const norm = normalize(raw);
+                  const parts = raw.replace(/\./g,'').split(/\s+/).filter(Boolean);
+                  const last = parts.length ? parts[parts.length-1].toLowerCase() : '';
+                  const initialLast = parts.length ? (parts[0][0] + parts[parts.length-1]).toLowerCase() : '';
+
+                  try{
+                    if(matchCtx && matchCtx._playersMap){
+                      const map = matchCtx._playersMap;
+                      // try exact keys and common normalizations
+                      const tries = [raw, lower, norm, last, initialLast];
+                      for(const k of tries){ if(k && map[k]){ const p = map[k]; return p && (p.player_image || p.player_photo || p.photo || p.strThumb || p.strThumbBig || p.player_pic || p.img || p.avatar || p.headshot || ''); } }
+                      // fuzzy: find any key that contains the last name or normalized string
+                      for(const key of Object.keys(map||{})){
+                        try{ const kk = key.toLowerCase(); if((last && kk.includes(last)) || (norm && kk.includes(norm))){ const p = map[key]; if(p) return p.player_image || p.player_photo || p.photo || p.strThumb || p.strThumbBig || p.player_pic || p.img || p.avatar || p.headshot || ''; } }catch(_e){}
+                      }
+                    }
+                  }catch(_e){}
+
+                  // DOM-scrape fallback
+                  try{
+                    if(typeof document !== 'undefined'){
+                      const imgs = Array.from(document.querySelectorAll('img'));
+                      for(const im of imgs){
+                        try{
+                          const alt = (im.getAttribute('alt')||im.getAttribute('data-player-name')||'').toString().toLowerCase();
+                          if(alt && (alt.includes(norm) || alt.includes(last) || alt.includes(lower))) return im.src;
+                          const p = im.closest && im.closest('div') || im.parentElement;
+                          const txt = p ? (p.textContent||'').toString().toLowerCase() : '';
+                          if(txt && (txt.includes(norm) || txt.includes(last) || txt.includes(lower))) return im.src;
+                        }catch(_e){}
+                      }
+                    }
+                  }catch(_e){}
+                  return '';
+                };
+
+                const inImg = resolveImg(inName);
+                const outImg = resolveImg(outName);
+
+                const inInitials = initialsFrom(inName);
+                const outInitials = initialsFrom(outName);
+
+                const inBlock = `<div style="display:flex;flex-direction:column;align-items:center;margin-right:8px"><div style="width:48px;height:48px;overflow:hidden;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center">${ inImg ? `<img src=\"${inImg}\" style=\"width:48px;height:48px;object-fit:cover;display:block\" onerror=\"this.onerror=null;this.remove();\"/>` : `<div style=\"font-size:14px;color:#374151;font-weight:600\">${escapeHtml(inInitials||'')}</div>` }</div><div style="margin-top:6px;font-size:11px;color:#e5e7eb">In<br/><span style="color:#9ca3af;font-size:11px">${escapeHtml(inName||'')}</span></div></div>`;
+                const outBlock = `<div style="display:flex;flex-direction:column;align-items:center;margin-right:8px"><div style="width:48px;height:48px;overflow:hidden;border-radius:8px;background:#f3f4f6;display:flex;align-items:center;justify-content:center">${ outImg ? `<img src=\"${outImg}\" style=\"width:48px;height:48px;object-fit:cover;display:block\" onerror=\"this.onerror=null;this.remove();\"/>` : `<div style=\"font-size:14px;color:#374151;font-weight:600\">${escapeHtml(outInitials||'')}</div>` }</div><div style="margin-top:6px;font-size:11px;color:#e5e7eb">Out<br/><span style="color:#9ca3af;font-size:11px">${escapeHtml(outName||'')}</span></div></div>`;
+
+                return `<div style="display:flex;align-items:center;gap:8px;margin-top:8px">${inBlock}${outBlock}</div>`;
+              }catch(_e){ return null; }
+            })();
+
+            const titleParts = [];
+            if(playerImg){
+              titleParts.push(`<div style=\"width:56px;height:56px;overflow:hidden;border-radius:8px;flex-shrink:0;background:#f3f4f6\"><img src=\"${playerImg}\" style=\"width:56px;height:56px;object-fit:cover;display:block\" onerror=\"this.onerror=null;${teamLogo ? `this.src='${teamLogo}';` : `this.remove();`}\"/></div>`);
+            } else if(teamLogo){
+              titleParts.push(`<div style="width:56px;height:56px;overflow:hidden;border-radius:8px;flex-shrink:0;background:#f3f4f6"><img src=\"${teamLogo}\" style=\"width:56px;height:56px;object-fit:contain;display:block\" onerror=\"this.remove()\"/></div>`);
+            }
+            const nameLabel = (event.player || event.player_name || event.playerName || event.player_fullname) ? `<div style=\"margin-left:8px;font-weight:700;color:#e5e7eb\">${escapeHtml(String(event.player || event.player_name || event.playerName || ''))}</div>` : '';
+            // include substitution header (if any) after the main title block
+            const subHeaderHtml = buildSubHeader || '';
+            const headerHtml = `<div style=\"display:flex;align-items:center;gap:8px;\">${titleParts.join('')}${nameLabel}</div>${subHeaderHtml}`;
+
+            const imgLinkHtml = playerImg ? `<div style=\"margin-top:6px\"><a href=\"${playerImg}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:#9ca3af;font-size:11px\">Open player image</a></div>` : (teamLogo ? `<div style=\"margin-top:6px\"><a href=\"${teamLogo}\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:#9ca3af;font-size:11px\">Open team logo</a></div>` : '');
+            try{ console.log('tooltip image lookup', {playerImg, teamLogo, event}); }catch(_e){}
+            d.innerHTML = `${headerHtml}${imgLinkHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px\">Summarizing…</div>`;
+            d.style.display = 'block';
+            positionEventTooltip(dot);
+
+            // fetch brief and update tooltip
+            try{
+              const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
+              d.innerHTML = `${headerHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px;white-space:normal\">${escapeHtml(String(brief || description || etype))}</div>`;
+              positionEventTooltip(dot);
+            }catch(_e){
+              d.innerHTML = `${headerHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px\">${escapeHtml(String(description || etype))}</div>`;
+              positionEventTooltip(dot);
+            }
+          }catch(_err){
+            try{ showEventTooltip(dot, 'Summarizing…'); }catch(_e){}
+          }
         };
         const onLeave = ()=> hideEventTooltip();
         const onMove = ()=> positionEventTooltip(dot);
@@ -1191,12 +1488,12 @@
   // Normalize tags into objects: { text, source, confidence, isModel }
   function normalizeEventTags(evt){
     // Accept multiple naming conventions and nested shapes
-    // Prefer the first non-empty candidate so an empty `predicted_tags` doesn't mask provider `tags`.
+    // Prefer provider `tags` first for display (don't show model `predicted_tags` when provider tags exist).
     const candidates = [];
     if(evt){
+      if(evt.tags !== undefined) candidates.push(evt.tags);
       if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
       if(evt.predictedTags !== undefined) candidates.push(evt.predictedTags);
-      if(evt.tags !== undefined) candidates.push(evt.tags);
       if(evt.labels !== undefined) candidates.push(evt.labels);
       if(evt.labels_list !== undefined) candidates.push(evt.labels_list);
     }
@@ -2565,6 +2862,7 @@
     }catch(e){ if(hlBody) hlBody.textContent = 'Augment error: ' + (e && e.message ? e.message : String(e)); }
   }
 
+ 
   async function runPlayerAnalytics(ev){
     // Ask user for player name or id
     let player = '';
@@ -2630,47 +2928,6 @@
       item.appendChild(meta); list.appendChild(item);
     });
     container.appendChild(list);
-  }
-
-  async function fetchHighlights(ev){
-    const container = modalBody.querySelector('#highlights .hl-body');
-    if(!container) return;
-    container.textContent = 'Loading highlights...';
-    const args = {};
-    if(ev.idEvent) args.eventId = ev.idEvent;
-    else if(ev.event_key) args.eventId = ev.event_key;
-    const evtName = ev.strEvent || (ev.event_home_team && ev.event_away_team ? `${ev.event_home_team} vs ${ev.event_away_team}` : '');
-    if(evtName) args.eventName = evtName;
-    try{
-      const resp = await fetch(apiBase + '/collect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({intent:'video.highlights', args}) });
-      if(!resp.ok){ container.textContent = 'Highlights request failed: HTTP ' + resp.status; return; }
-      const j = await resp.json();
-      if(!j || !j.ok){ const msg = (j && j.error && j.error.message) ? j.error.message : 'No highlights available'; container.textContent = 'No highlights: ' + msg; return; }
-      const body = j.data || {};
-      let vids = body.videos || body.result || body.results || body.event || body.events || [];
-      if(!Array.isArray(vids)) vids = [];
-      if(vids.length === 0){ container.textContent = 'No highlights found.'; return; }
-      renderHighlights(vids, container);
-      addEventHighlightSearchUI(container, ev);
-    }catch(e){ container.textContent = 'Highlights fetch error: ' + (e && e.message ? e.message : String(e)); }
-  }
-
-  function renderHighlights(vids, container){
-    container.innerHTML = '';
-    const list = document.createElement('div'); list.className = 'hl-list';
-    vids.forEach(v => {
-      const item = document.createElement('div'); item.className = 'hl-item';
-      const title = v.title || v.strTitle || v.strVideo || v.name || v.video_title || v.title_short || '';
-      const url = v.strVideo || v.url || v.link || v.video_url || v.strYoutube || v.strYoutubeUrl || v.video || v.source || '';
-      const thumb = v.strThumb || v.thumbnail || v.thumb || v.strThumbBig || v.cover || '';
-      if(thumb){ const img = document.createElement('img'); img.className = 'hl-thumb'; img.src = thumb; img.alt = title || 'highlight'; img.onerror = () => img.remove(); item.appendChild(img); }
-      const meta = document.createElement('div'); meta.className = 'hl-meta'; const t = document.createElement('div'); t.className = 'hl-title'; t.textContent = title || (url ? url : 'Video'); meta.appendChild(t);
-      if(url){ const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'Open'; a.className = 'hl-link'; meta.appendChild(a); }
-      const info = document.createElement('div'); info.className = 'hl-info'; if(v.source) info.textContent = v.source; else if(v._source) info.textContent = v._source; else if(v._sources) info.textContent = String(v._sources.join(',')); if(v.duration) info.textContent += (info.textContent ? ' • ' : '') + String(v.duration); if(info.textContent) meta.appendChild(info);
-      item.appendChild(meta); list.appendChild(item);
-    });
-    container.appendChild(list);
-    addEventHighlightSearchUI(container, currentEventContext);
   }
 
   let currentEventContext = null;
@@ -2801,12 +3058,108 @@
     const links = document.createElement('div'); links.className='ehs-links'; links.style.marginTop='.5rem'; const yt = document.createElement('a'); yt.href = j.results.youtube_search_url; yt.target='_blank'; yt.rel='noopener'; yt.textContent='Open YouTube Search'; links.appendChild(yt); const web = document.createElement('a'); web.href = j.results.duckduckgo_search_url; web.target='_blank'; web.rel='noopener'; web.style.marginLeft='1rem'; web.textContent='Open Web Search'; links.appendChild(web); root.appendChild(links);
   }
 
+  // --- Highlights (ported from matches.js) ---
+  function buildBaseQuery(ev, minute, player, eventType){
+    const home = ev.event_home_team || ev.strHomeTeam || '';
+    const away = ev.event_away_team || ev.strAwayTeam || '';
+    const date = ev.event_date || '';
+    const year = date.slice(0,4);
+    const parts = [home + ' vs ' + away];
+    if(minute) parts.push(minute + "'");
+    if(player) parts.push(player);
+    if(eventType) parts.push(eventType);
+    if(year) parts.push(year);
+    return parts.filter(Boolean).join(' ');
+  }
+
+  async function fetchHighlights(ev){
+    const container = modalBody.querySelector('#highlights .hl-body');
+    if(!container) return;
+    container.textContent = 'Loading highlights...';
+
+    const args = {};
+    if(ev.idEvent) args.eventId = ev.idEvent; else if(ev.event_key) args.eventId = ev.event_key;
+    const evtName = ev.strEvent || (ev.event_home_team && ev.event_away_team ? `${ev.event_home_team} vs ${ev.event_away_team}` : '');
+    if(evtName) args.eventName = evtName;
+
+    try{
+      const resp = await fetch(apiBase + '/collect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ intent: 'video.highlights', args }) });
+      if(!resp.ok){ container.textContent = 'Highlights request failed: HTTP ' + resp.status; return; }
+      const j = await resp.json();
+      if(!j || !j.ok){
+        const msg = (j && j.error && j.error.message) ? j.error.message : 'No highlights available';
+        container.textContent = 'No highlights: ' + msg;
+        return;
+      }
+      const body = j.data || {};
+      let vids = body.videos || body.result || body.results || body.event || body.events || [];
+      if(!Array.isArray(vids)) vids = [];
+      if(vids.length === 0){ container.textContent = 'No highlights found.'; return; }
+
+      renderHighlights(vids, container);
+      addEventHighlightSearchUI(container, ev);
+    }catch(e){
+      container.textContent = 'Highlights fetch error: ' + (e && e.message ? e.message : String(e));
+    }
+  }
+
+  function renderHighlights(vids, container){
+    if(!container) return;
+    container.innerHTML = '';
+    const list = document.createElement('div');
+    list.className = 'hl-list';
+    vids.forEach(v => {
+      const item = document.createElement('div'); item.className = 'hl-item';
+      const title = v.title || v.strTitle || v.strVideo || v.name || v.video_title || v.title_short || '';
+      const url = v.strVideo || v.url || v.link || v.video_url || v.strYoutube || v.strYoutubeUrl || v.video || v.source || '';
+      const thumb = v.strThumb || v.thumbnail || v.thumb || v.strThumbBig || v.cover || '';
+
+      if(thumb){
+        const img = document.createElement('img'); img.className = 'hl-thumb'; img.src = thumb; img.alt = title || 'highlight'; img.onerror = () => img.remove();
+        item.appendChild(img);
+      }
+
+      const meta = document.createElement('div'); meta.className = 'hl-meta';
+      const t = document.createElement('div'); t.className = 'hl-title'; t.textContent = title || (url ? url : 'Video');
+      meta.appendChild(t);
+      if(url){ const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = 'Open'; a.className = 'hl-link'; meta.appendChild(a); }
+      const info = document.createElement('div'); info.className = 'hl-info';
+      if(v.source) info.textContent = v.source; else if(v._source) info.textContent = v._source; else if(v._sources) info.textContent = String(v._sources.join(','));
+      if(v.duration) info.textContent += (info.textContent ? ' • ' : '') + String(v.duration);
+      if(info.textContent) meta.appendChild(info);
+
+      item.appendChild(meta);
+      list.appendChild(item);
+    });
+    container.appendChild(list);
+    // Also inject the search UI for manual highlight lookup
+    try{ addEventHighlightSearchUI(container, currentEventContext || {}); }catch(_e){}
+  }
+
   // small helper used by fetchExtras
   function _pick(obj, keys){ for(const k of keys) if(obj && obj[k]) return obj[k]; return undefined; }
 
   async function fetchExtras(ev){
     const extrasRoot = modalBody.querySelector('#extras');
     if(!extrasRoot) return;
+
+    // Ensure section existence; return the ".body" node
+    function _createSection(title){
+      const sec = document.createElement('div');
+      sec.className = 'extra-section';
+      const h = document.createElement('h4'); h.textContent = title; sec.appendChild(h);
+      const body = document.createElement('div'); body.className = 'body'; body.textContent = 'Loading...'; sec.appendChild(body);
+      return { sec, body };
+    }
+    function ensureSection(id, title){
+      const extrasBody = modalBody.querySelector('#extras .extras-body');
+      if(!extrasBody) return null;
+      let sec = modalBody.querySelector('#'+id);
+      if(!sec){ const s = _createSection(title); sec = s.sec; sec.id = id; extrasBody.appendChild(sec); return s.body; }
+      let body = sec.querySelector('.body');
+      if(!body){ body = document.createElement('div'); body.className = 'body'; body.textContent = 'Loading...'; sec.appendChild(body); }
+      return body;
+    }
 
   const get = (klist) => _pick(ev, klist) || '';
   const eventId = get(['idEvent','event_key','id', 'event_key']);
@@ -2857,8 +3210,8 @@
     }
 
     // Teams: try to fetch team.get / teams.list for home and away
-    const teamsBody = modalBody.querySelector('#teams_section .body');
-    teamsBody.textContent = 'Loading teams...';
+    const teamsBody = ensureSection('teams_section','Teams');
+    if(teamsBody) teamsBody.textContent = 'Loading teams...';
     try{
       const p = [];
   // Prefer team IDs when available (AllSports uses home_team_key / away_team_key)
@@ -2867,11 +3220,11 @@
   if(awayKey && String(awayKey).match(/^\d+$/)) p.push(callIntent('team.get', {teamId: String(awayKey)}));
   else if(awayName) p.push(callIntent('team.get', {teamName: awayName}));
       const res = await Promise.allSettled(p);
-      teamsBody.innerHTML = '';
+      if(teamsBody) teamsBody.innerHTML = '';
       res.forEach((r, idx)=>{
         const title = idx===0 ? (homeName||'Home') : (awayName||'Away');
         const teamCard = createTeamCard(title, r);
-        teamsBody.appendChild(teamCard);
+        if(teamsBody) teamsBody.appendChild(teamCard);
       });
   // debug raw responses
       try{
@@ -2879,15 +3232,15 @@
         const summary = document.createElement('summary'); summary.textContent = 'Show raw teams responses'; dbg.appendChild(summary);
         const pre = document.createElement('pre'); pre.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; pre.textContent = JSON.stringify(res, null, 2);
         dbg.appendChild(pre);
-        teamsBody.appendChild(dbg);
+        if(teamsBody) teamsBody.appendChild(dbg);
       }catch(e){}
   // hide section if no data
   try{ const teamsSectionEl = modalBody.querySelector('#teams_section'); if(teamsSectionEl) teamsSectionEl.style.display = _responseHasData(res[0]) || _responseHasData(res[1]) ? 'block' : 'none'; }catch(e){}
-    }catch(e){ teamsBody.textContent = 'Teams error: '+e.message; }
+    }catch(e){ if(teamsBody) teamsBody.textContent = 'Teams error: '+e.message; }
 
     // Players: try players.list for each teamName if available
-    const playersBody = modalBody.querySelector('#players_section .body');
-    playersBody.textContent = 'Loading players...';
+    const playersBody = ensureSection('players_section','Players');
+    if(playersBody) playersBody.textContent = 'Loading players...';
     try{
       const tasks = [];
   // Prefer team IDs for players.list
@@ -2896,11 +3249,11 @@
   if(awayKey && String(awayKey).match(/^\d+$/)) tasks.push(callIntent('players.list',{teamId: String(awayKey)}));
   else if(awayName) tasks.push(callIntent('players.list',{teamName: awayName}));
       const rr = await Promise.allSettled(tasks);
-      playersBody.innerHTML = '';
+      if(playersBody) playersBody.innerHTML = '';
       rr.forEach((r, idx)=>{
         const lbl = idx===0 ? (homeName||'Home') : (awayName||'Away');
         const playerCard = createPlayersCard(lbl, r);
-        playersBody.appendChild(playerCard);
+        if(playersBody) playersBody.appendChild(playerCard);
       });
         // debug raw players responses
         try{
@@ -2908,15 +3261,15 @@
           const summaryP = document.createElement('summary'); summaryP.textContent = 'Show raw players responses'; dbgP.appendChild(summaryP);
           const preP = document.createElement('pre'); preP.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preP.textContent = JSON.stringify(rr, null, 2);
           dbgP.appendChild(preP);
-          playersBody.appendChild(dbgP);
+          if(playersBody) playersBody.appendChild(dbgP);
         }catch(e){}
     // hide players section if no results
     try{ const playersSectionEl = modalBody.querySelector('#players_section'); if(playersSectionEl) playersSectionEl.style.display = (_responseHasData(rr[0]) || _responseHasData(rr[1])) ? 'block' : 'none'; }catch(e){}
-    }catch(e){ playersBody.textContent = 'Players error: '+e.message; }
+    }catch(e){ if(playersBody) playersBody.textContent = 'Players error: '+e.message; }
 
     // League table
-    const tableBody = modalBody.querySelector('#league_table_section .body');
-    tableBody.textContent = 'Loading league table...';
+    const tableBody = ensureSection('league_table_section','League Table');
+    if(tableBody) tableBody.textContent = 'Loading league table...';
     try{
       const args = {};
       // league.table may accept leagueId, idLeague or leagueKey depending on backend
@@ -2963,10 +3316,9 @@
 
       if(okTable){
         const tableCard = createLeagueTableCard(j.data || j.result || {});
-        tableBody.innerHTML = '';
-        tableBody.appendChild(tableCard);
+        if(tableBody){ tableBody.innerHTML = ''; tableBody.appendChild(tableCard); }
       } else {
-        tableBody.textContent = 'No table available';
+        if(tableBody) tableBody.textContent = 'No table available';
       }
       // debug league.table raw
       try{
@@ -2974,28 +3326,28 @@
         const summaryT = document.createElement('summary'); summaryT.textContent = 'Show raw league.table response'; dbgT.appendChild(summaryT);
         const preT = document.createElement('pre'); preT.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preT.textContent = JSON.stringify(j, null, 2);
         dbgT.appendChild(preT);
-        tableBody.appendChild(dbgT);
+        if(tableBody) tableBody.appendChild(dbgT);
       }catch(e){}
   // hide league table section when empty
   try{ const tableSectionEl = modalBody.querySelector('#league_table_section'); if(tableSectionEl) tableSectionEl.style.display = _responseHasData(j) ? 'block' : 'none'; }catch(e){}
-    }catch(e){ tableBody.textContent = 'League table error: '+e.message; }
+    }catch(e){ if(tableBody) tableBody.textContent = 'League table error: '+e.message; }
 
     // Odds (list + live)
-    const oddsBody = modalBody.querySelector('#odds_section .body');
-    oddsBody.textContent = 'Loading odds...';
+    const oddsBody = ensureSection('odds_section','Odds');
+    if(oddsBody) oddsBody.textContent = 'Loading odds...';
     try{
   const args = {};
   // supply multiple common param names so different intent implementations accept them
   if(eventId){ args.matchId = eventId; args.eventId = eventId; args.fixtureId = eventId; args.event_key = eventId; }
   else if(ev.event_date) args.date = ev.event_date;
       const [listJ, liveJ] = await Promise.allSettled([callIntent('odds.list', args), callIntent('odds.live', args)]);
-      oddsBody.innerHTML = '';
+      if(oddsBody) oddsBody.innerHTML = '';
 
   const hasList = _responseHasData(listJ);
   const hasLive = _responseHasData(liveJ);
-  if(hasList){ const oddsCard = createOddsCard('Pre-Match Odds', listJ); oddsBody.appendChild(oddsCard); }
-  if(hasLive){ const oddsCard = createOddsCard('Live Odds', liveJ); oddsBody.appendChild(oddsCard); }
-  if(!hasList && !hasLive){ const noOdds = document.createElement('div'); noOdds.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noOdds.textContent = 'No odds available'; oddsBody.appendChild(noOdds); }
+  if(hasList && oddsBody){ const oddsCard = createOddsCard('Pre-Match Odds', listJ); oddsBody.appendChild(oddsCard); }
+  if(hasLive && oddsBody){ const oddsCard = createOddsCard('Live Odds', liveJ); oddsBody.appendChild(oddsCard); }
+  if(!hasList && !hasLive && oddsBody){ const noOdds = document.createElement('div'); noOdds.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noOdds.textContent = 'No odds available'; oddsBody.appendChild(noOdds); }
   try{ const oddsSectionEl = modalBody.querySelector('#odds_section'); if(oddsSectionEl) oddsSectionEl.style.display = (hasList || hasLive) ? 'block' : 'none'; }catch(e){}
       // debug raw odds responses
       try{
@@ -3003,13 +3355,13 @@
         const summaryO = document.createElement('summary'); summaryO.textContent = 'Show raw odds responses'; dbgO.appendChild(summaryO);
         const preO = document.createElement('pre'); preO.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preO.textContent = JSON.stringify([listJ, liveJ], null, 2);
         dbgO.appendChild(preO);
-        oddsBody.appendChild(dbgO);
+        if(oddsBody) oddsBody.appendChild(dbgO);
       }catch(e){}
-    }catch(e){ oddsBody.textContent = 'Odds error: '+e.message; }
+    }catch(e){ if(oddsBody) oddsBody.textContent = 'Odds error: '+e.message; }
 
     // Probabilities
-    const probBody = modalBody.querySelector('#prob_section .body');
-    probBody.textContent = 'Loading probabilities...';
+    const probBody = ensureSection('prob_section','Probabilities');
+    if(probBody) probBody.textContent = 'Loading probabilities...';
     try{
   const args = {};
   if(eventId) { args.matchId = eventId; args.eventId = eventId; args.fixtureId = eventId; }
@@ -3017,46 +3369,44 @@
       const j = await callIntent('probabilities.list', args);
       if(j && j.ok) {
         const probCard = createProbabilitiesCard(j.data || j.result || {});
-        probBody.innerHTML = '';
-        probBody.appendChild(probCard);
-      } else probBody.textContent = 'No probabilities';
+        if(probBody){ probBody.innerHTML = ''; probBody.appendChild(probCard); }
+      } else if(probBody) probBody.textContent = 'No probabilities';
       // debug probabilities raw
       try{
         const dbgPr = document.createElement('details'); dbgPr.style.marginTop='8px';
         const summaryPr = document.createElement('summary'); summaryPr.textContent = 'Show raw probabilities response'; dbgPr.appendChild(summaryPr);
         const prePr = document.createElement('pre'); prePr.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; prePr.textContent = JSON.stringify(j, null, 2);
         dbgPr.appendChild(prePr);
-        probBody.appendChild(dbgPr);
+        if(probBody) probBody.appendChild(dbgPr);
       }catch(e){}
-  }catch(e){ probBody.textContent = 'Probabilities error: '+e.message; }
+  }catch(e){ if(probBody) probBody.textContent = 'Probabilities error: '+e.message; }
   try{ const probSectionEl = modalBody.querySelector('#prob_section'); if(probSectionEl) probSectionEl.style.display = _responseHasData(j) ? 'block' : 'none'; }catch(e){}
 
     // Comments
-    const commBody = modalBody.querySelector('#comments_section .body');
-    commBody.textContent = 'Loading comments...';
+    const commBody = ensureSection('comments_section','Comments');
+    if(commBody) commBody.textContent = 'Loading comments...';
     try{
       const args = {};
       if(eventId) args.matchId = eventId; else if(ev.event_home_team) args.eventName = ev.event_home_team + ' vs ' + (ev.event_away_team || '');
       const j = await callIntent('comments.list', args);
       if(j && j.ok) {
         const commentsCard = createCommentsCard(j.data || j.result || {});
-        commBody.innerHTML = '';
-        commBody.appendChild(commentsCard);
-      } else commBody.textContent = 'No comments';
+        if(commBody){ commBody.innerHTML = ''; commBody.appendChild(commentsCard); }
+      } else if(commBody) commBody.textContent = 'No comments';
       // debug comments raw
       try{
         const dbgC = document.createElement('details'); dbgC.style.marginTop='8px';
         const summaryC = document.createElement('summary'); summaryC.textContent = 'Show raw comments response'; dbgC.appendChild(summaryC);
         const preC = document.createElement('pre'); preC.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preC.textContent = JSON.stringify(j, null, 2);
         dbgC.appendChild(preC);
-        commBody.appendChild(dbgC);
+        if(commBody) commBody.appendChild(dbgC);
       }catch(e){}
-  }catch(e){ commBody.textContent = 'Comments error: '+e.message; }
+  }catch(e){ if(commBody) commBody.textContent = 'Comments error: '+e.message; }
   try{ const commentsSectionEl = modalBody.querySelector('#comments_section'); if(commentsSectionEl) commentsSectionEl.style.display = _responseHasData(j) ? 'block' : 'none'; }catch(e){}
 
     // Seasons (leagues.list raw)
-    const seasBody = modalBody.querySelector('#seasons_section .body');
-    seasBody.textContent = 'Loading seasons...';
+    const seasBody = ensureSection('seasons_section','Seasons');
+    if(seasBody) seasBody.textContent = 'Loading seasons...';
     let seasonsResp = null;
     try{
       const args = {};
@@ -3064,18 +3414,17 @@
       seasonsResp = await callIntent('seasons.list', args);
       if(seasonsResp && seasonsResp.ok) {
         const seasonsCard = createSeasonsCard(seasonsResp.data || seasonsResp.result || {});
-        seasBody.innerHTML = '';
-        seasBody.appendChild(seasonsCard);
-      } else seasBody.textContent = 'No seasons info';
+        if(seasBody){ seasBody.innerHTML = ''; seasBody.appendChild(seasonsCard); }
+      } else if(seasBody) seasBody.textContent = 'No seasons info';
       // debug seasons raw
       try{
         const dbgS = document.createElement('details'); dbgS.style.marginTop='8px';
         const summaryS = document.createElement('summary'); summaryS.textContent = 'Show raw seasons response'; dbgS.appendChild(summaryS);
         const preS = document.createElement('pre'); preS.style.cssText='max-height:240px;overflow:auto;padding:8px;background:#0b1220;color:#e6eef6;border-radius:6px;margin-top:6px'; preS.textContent = JSON.stringify(seasonsResp, null, 2);
         dbgS.appendChild(preS);
-        seasBody.appendChild(dbgS);
+        if(seasBody) seasBody.appendChild(dbgS);
       }catch(e){}
-  }catch(e){ seasBody.textContent = 'Seasons error: '+e.message; }
+  }catch(e){ if(seasBody) seasBody.textContent = 'Seasons error: '+e.message; }
   try{ const seasonsSectionEl = modalBody.querySelector('#seasons_section'); if(seasonsSectionEl) seasonsSectionEl.style.display = _responseHasData(seasonsResp) ? 'block' : 'none'; }catch(e){}
 
     // H2H (Head-to-Head) — use AllSports via intent 'h2h'

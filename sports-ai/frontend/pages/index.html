@@ -2,499 +2,77 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sports Collector HM — Test UI</title>
-  <style>
-    :root {
-      --bg: #0b0d12;
-      --panel: #121621;
-      --muted: #a9b1c3;
-      --text: #e9eef9;
-      --accent: #6ea8fe;
-      --border: #222938;
-      --green: #35c46a;
-      --red: #ff6b6b;
-      --orange: #ffb86c;
-    }
-    * { box-sizing: border-box }
-    html, body { height: 100% }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-      background: linear-gradient(180deg, #0a0d14 0%, #0b0d12 20%, #0b0d12 100%);
-      color: var(--text);
-    }
-
-    /* Layout */
-    header {
-      position: sticky; top: 0; z-index: 10;
-      backdrop-filter: saturate(160%) blur(8px);
-      background: rgba(9, 12, 18, 0.7);
-      border-bottom: 1px solid var(--border);
-    }
-    header .bar {
-      max-width: 1400px; margin: 0 auto; padding: 12px 16px;
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    }
-    header .bar .title { font-weight: 700; letter-spacing: .2px; }
-    header input[type="text"] { width: 360px }
-
-    .main {
-      max-width: 1400px; margin: 0 auto; padding: 16px; display: grid;
-      grid-template-columns: 1.05fr 1.2fr; gap: 16px; min-height: calc(100vh - 64px);
-    }
-
-    .card {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-      box-shadow: 0 0 0 1px rgba(255,255,255,0.02) inset, 0 10px 30px rgba(0,0,0,.30);
-    }
-
-    .left { display: grid; gap: 16px; align-content: start }
-    .right { position: sticky; top: 76px; height: calc(100vh - 92px) }
-
-    .card .head { padding: 12px 14px; border-bottom: 1px solid var(--border); display:flex; align-items:center; gap:8px }
-    .card .head h3 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; color: var(--muted); }
-    .card .body { padding: 14px }
-
-    /* Controls */
-    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px }
-    .row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr }
-    .row-3 { display: grid; gap: 10px; grid-template-columns: 1fr 1fr 1fr }
-
-    select, input[type="text"], textarea {
-      width: 100%;
-      background: #0f1320; border: 1px solid var(--border); color: var(--text);
-      padding: 10px 12px; border-radius: 10px; outline: none;
-    }
-    textarea { min-height: 110px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px }
-
-    .btn {
-      appearance: none; border: 1px solid var(--border); background: #0f1422; color: var(--text);
-      padding: 10px 12px; border-radius: 10px; cursor: pointer; font-weight: 600;
-    }
-    .btn:hover { border-color: #2b3347 }
-    .btn.primary { background: linear-gradient(180deg, #2b63f7, #2947ca); border: none }
-    .btn.success { background: linear-gradient(180deg, #2ca86d, #238c5b); border: none }
-    .btn.warn { background: linear-gradient(180deg, #e08a31, #c06c1d); border: none }
-
-    .muted { color: var(--muted) }
-    .small { font-size: 12px }
-    .tiny { font-size: 11px }
-
-    /* Output */
-    .output-panel { height: 100%; display: flex; flex-direction: column }
-    .output-toolbar { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border) }
-    .output-toolbar .spacer { flex: 1 }
-    .output pre {
-      margin: 0; padding: 14px; height: 100%; overflow: auto; white-space: pre-wrap; word-break: break-word;
-      font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0b0f1a;
-    }
-
-    details.trace { border-top: 1px dashed var(--border) }
-    details.trace[open] { border-top-style: solid }
-    details.trace summary { cursor: pointer; padding: 10px 12px }
-    details.trace pre { background: #0e1422 }
-
-    .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius: 999px; background:#0e1320; border:1px solid var(--border) }
-    .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; background: #0e1422; border:1px solid #1b2131; padding:2px 6px; border-radius: 6px }
-
-    .hint { padding: 10px 12px; background: #0d1220; border:1px dashed var(--border); border-radius: 10px }
-  </style>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sports AI — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles/index.css" />
 </head>
 <body>
-  <header>
-    <div class="bar">
-      <div class="title">⚽ Sports Collector HM — <span class="muted">Test UI</span></div>
-      <div class="pill">
-        <span class="muted tiny">Backend URL</span>
-        <input id="baseUrl" type="text" value="http://localhost:8000" placeholder="http://localhost:8000" />
-      </div>
-      <button class="btn" id="btnPing">Health Check</button>
-      <span id="pingState" class="tiny muted"></span>
-      <span class="spacer"></span>
-      <span class="tiny muted">Tip: press <span class="kbd">⌘</span>/<span class="kbd">Ctrl</span> + <span class="kbd">Enter</span> to run Custom Request</span>
-    </div>
+  <header class="site-header">
+    <div class="brand">Sports AI</div>
+    <nav class="nav">
+      <a href="./index.html" class="active">Home</a>
+      <a href="./matches.html">Live</a>
+      <a href="./history_matches.html">History</a>
+    </nav>
+    <div class="spacer"></div>
   </header>
 
-  <main class="main">
-    <section class="left">
-      <!-- Step 1: Leagues & Seasons -->
-      <div class="card">
-        <div class="head"><h3>1) Browse Leagues → Seasons</h3></div>
-        <div class="body">
-          <div class="row">
-            <div>
-              <label>Leagues (Soccer)</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <select id="selLeague"></select>
-                <button class="btn" id="btnLoadLeagues">Fetch</button>
-              </div>
-              <div class="tiny muted" id="leagueMeta"></div>
-            </div>
-            <div>
-              <label>Seasons for League</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <select id="selSeason"></select>
-                <button class="btn" id="btnLoadSeasons">Fetch</button>
-              </div>
-            </div>
-          </div>
-
-          <div style="margin-top: 12px" class="row">
-            <div>
-              <label>Teams in League</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <select id="selTeam"></select>
-                <button class="btn" id="btnLoadTeams">Fetch</button>
-              </div>
-            </div>
-            <div>
-              <label>Players in Team</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <select id="selPlayer"></select>
-                <button class="btn" id="btnLoadPlayers">Fetch</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="hint" style="margin-top: 12px;">
-            This follows your agent intents exactly: <code>leagues.list → seasons.list → teams.list → players.list</code>.
-            Each fetch also prints the raw JSON and the <em>trace</em> on the right.
-          </div>
+  <main class="home">
+    <!-- Live ticker -->
+    <section class="ticker" aria-label="Live matches">
+      <div class="ticker-head">
+        <h2>Today's Games</h2>
+        <div class="ticker-meta">
+          <label class="toggle" title="Show only live games">
+            <input id="liveOnlyToggle" type="checkbox" />
+            <span>Live games</span>
+          </label>
+          <button id="refreshTickerBtn" type="button">Refresh</button>
+          <span id="tickerStatus" class="status"></span>
         </div>
       </div>
-
-      <!-- Step 2: Events -->
-      <div class="card">
-        <div class="head"><h3>2) Events</h3></div>
-        <div class="body">
-          <div class="row-3">
-            <div>
-              <label>By League + Season</label>
-              <button class="btn" id="btnEventsBySeason">Fetch Events</button>
-            </div>
-            <div>
-              <label>By Team (Last / Next)</label>
-              <div class="row" style="grid-template-columns: 1fr 1fr auto; gap: 8px;">
-                <select id="selEventKind">
-                  <option value="last">last</option>
-                  <option value="next">next</option>
-                </select>
-                <select id="selTeamForEvents"></select>
-                <button class="btn" id="btnEventsByTeam">Fetch</button>
-              </div>
-            </div>
-            <div>
-              <label>By Date (YYYY-MM-DD)</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <input id="inDate" type="text" placeholder="2024-05-20" />
-                <button class="btn" id="btnEventsByDate">Fetch</button>
-              </div>
-            </div>
-          </div>
-
-          <div style="margin-top: 12px">
-            <label>Search Event by Name (optionally expand)</label>
-            <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-              <input id="inEventName" type="text" placeholder="Liverpool vs Swansea" />
-              <button class="btn" id="btnEventByName">Search</button>
-            </div>
-            <div style="margin-top:8px; display:flex; gap:12px; align-items:center">
-              <span class="tiny muted">Expand:</span>
-              <label class="tiny"><input type="checkbox" id="cbTimeline"> timeline</label>
-              <label class="tiny"><input type="checkbox" id="cbStats"> stats</label>
-              <label class="tiny"><input type="checkbox" id="cbLineup"> lineup</label>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Step 3: Direct Lookup Helpers -->
-      <div class="card">
-        <div class="head"><h3>3) Direct Lookups</h3></div>
-        <div class="body">
-          <div class="row-3">
-            <div>
-              <label>Get League (by ID or Name)</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <input id="inLeagueId" type="text" placeholder="id or name" />
-                <button class="btn" id="btnLeagueGet">Run</button>
-              </div>
-            </div>
-            <div>
-              <label>Get Team (by ID or Name)</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <input id="inTeam" type="text" placeholder="id or name" />
-                <button class="btn" id="btnTeamGet">Run</button>
-              </div>
-            </div>
-            <div>
-              <label>Get Player (by ID or Name)</label>
-              <div class="row" style="grid-template-columns: 1fr auto; gap: 8px;">
-                <input id="inPlayer" type="text" placeholder="id or name" />
-                <button class="btn" id="btnPlayerGet">Run</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Step 4: Custom JSON Request -->
-      <div class="card">
-        <div class="head"><h3>4) Custom Request</h3></div>
-        <div class="body">
-          <label>POST /collect body</label>
-          <textarea id="customBody">{
-  "intent": "leagues.list",
-  "args": {}
-}</textarea>
-          <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
-            <button class="btn primary" id="btnRunCustom">Run (⌘/Ctrl + Enter)</button>
-            <button class="btn" id="btnPretty">Prettify JSON</button>
-            <span class="tiny muted">Safe: request must be an object with <code>intent</code> and <code>args</code>.</span>
-          </div>
-        </div>
-      </div>
-
+      <div id="liveTicker" class="ticker-row" role="list"></div>
     </section>
 
-    <section class="right">
-      <div class="card output-panel">
-        <div class="output-toolbar">
-          <strong>Output</strong>
-          <span class="spacer"></span>
-          <button class="btn" id="btnCopy">Copy JSON</button>
-          <button class="btn warn" id="btnClear">Clear</button>
-        </div>
-        <div class="output" style="flex:1; overflow:auto">
-          <pre id="out">Ready.</pre>
-          <details class="trace" id="traceBox">
-            <summary class="tiny muted">HTTP Trace</summary>
-            <pre id="tracePre">(none)</pre>
-          </details>
+    <!-- Leagues row -->
+    <section class="leagues" aria-label="Leagues">
+      <div class="leagues-head">
+        <h3>Leagues</h3>
+        <div class="leagues-actions">
+          <input id="leagueSearch" type="search" placeholder="Search leagues" />
         </div>
       </div>
+      <div id="leaguesRow" class="leagues-row" role="list"></div>
+    </section>
+
+    <!-- Content area: matches + filters sidebar -->
+    <section class="content">
+      <div class="matches-area">
+        <div class="matches-head">
+          <h3 id="selectedLeagueTitle">Select a league</h3>
+          <span id="matchesStatus" class="status"></span>
+        </div>
+        <div id="leagueMatches" class="match-grid"></div>
+      </div>
+      <aside class="filters" aria-label="Filters">
+        <div class="panel">
+          <h4>Filter</h4>
+          <label class="field">
+            <span>Date</span>
+            <input id="datePicker" type="date" />
+          </label>
+          <button id="applyFilterBtn" type="button">Apply</button>
+        </div>
+        <div class="panel subtle">
+          <div class="hint">Filters apply to the selected league.</div>
+        </div>
+      </aside>
     </section>
   </main>
 
-  <script>
-    const $ = (sel) => document.querySelector(sel);
-    const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-
-    const baseUrlEl = $('#baseUrl');
-    const outPre = $('#out');
-    const traceBox = $('#traceBox');
-    const tracePre = $('#tracePre');
-    const pingState = $('#pingState');
-
-    const selLeague = $('#selLeague');
-    const selSeason = $('#selSeason');
-    const selTeam = $('#selTeam');
-    const selPlayer = $('#selPlayer');
-    const selTeamForEvents = $('#selTeamForEvents');
-
-    const btnLoadLeagues = $('#btnLoadLeagues');
-    const btnLoadSeasons = $('#btnLoadSeasons');
-    const btnLoadTeams = $('#btnLoadTeams');
-    const btnLoadPlayers = $('#btnLoadPlayers');
-
-    async function apiCollect(body) {
-      const res = await fetch(new URL('/collect', baseUrlEl.value).toString(), {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-      });
-      const json = await res.json();
-      return json;
-    }
-
-    function render(json) {
-      outPre.textContent = JSON.stringify(json, null, 2);
-      const trace = json?.meta?.trace || [];
-      if (trace.length) {
-        tracePre.textContent = JSON.stringify(trace, null, 2);
-        traceBox.open = true;
-      } else {
-        tracePre.textContent = '(none)';
-        traceBox.open = false;
-      }
-      // Scroll output to top so newest response is immediately visible
-      outPre.parentElement.scrollTop = 0;
-    }
-
-    function setOptions(select, items, { valueKey, labelKey }) {
-      select.innerHTML = '';
-      for (const it of items) {
-        const opt = document.createElement('option');
-        opt.value = (it[valueKey] ?? '').toString();
-        opt.textContent = it[labelKey] ?? it[valueKey] ?? '';
-        // stash full object for later (for leagueName, etc.)
-        opt.dataset.payload = JSON.stringify(it);
-        select.appendChild(opt);
-      }
-    }
-
-    function getSelectedPayload(select) {
-      const opt = select.options[select.selectedIndex];
-      if (!opt) return {};
-      try { return JSON.parse(opt.dataset.payload || '{}'); } catch { return {}; }
-    }
-
-    // Health check
-    $('#btnPing').addEventListener('click', async () => {
-      pingState.textContent = '…';
-      try {
-        const res = await fetch(new URL('/health', baseUrlEl.value).toString());
-        const json = await res.json();
-        pingState.textContent = json.ok ? 'Healthy ✅' : 'Unhealthy ❌';
-      } catch (e) {
-        pingState.textContent = 'Error connecting ❌';
-      }
-      setTimeout(() => pingState.textContent = '', 4000);
-    });
-
-    // Step 1: Leagues
-    btnLoadLeagues.addEventListener('click', async () => {
-      const resp = await apiCollect({ intent: 'leagues.list', args: {} });
-      render(resp);
-      const leagues = resp?.data?.leagues || [];
-      // sort by country then name for convenience
-      leagues.sort((a,b) => ((a.strCountry||'').localeCompare(b.strCountry||'')) || (a.strLeague||'').localeCompare(b.strLeague||''));
-      setOptions(selLeague, leagues, { valueKey: 'idLeague', labelKey: 'strLeague' });
-      $('#leagueMeta').textContent = leagues.length ? `${leagues.length} leagues` : '0 leagues';
-      // Clear downstream selects
-      setOptions(selSeason, [], { valueKey: 'strSeason', labelKey: 'strSeason' });
-      setOptions(selTeam, [], { valueKey: 'idTeam', labelKey: 'strTeam' });
-      setOptions(selPlayer, [], { valueKey: 'idPlayer', labelKey: 'strPlayer' });
-      setOptions(selTeamForEvents, [], { valueKey: 'idTeam', labelKey: 'strTeam' });
-    });
-
-    // Step 1b: Seasons for selected league
-    btnLoadSeasons.addEventListener('click', async () => {
-      const leagueId = selLeague.value;
-      if (!leagueId) return alert('Select a league first.');
-      const resp = await apiCollect({ intent: 'seasons.list', args: { leagueId } });
-      render(resp);
-      const seasons = (resp?.data?.seasons || []).map(s => ({ strSeason: s.strSeason }));
-      // Sort desc (latest first)
-      seasons.sort((a,b) => (b.strSeason||'').localeCompare(a.strSeason||''));
-      setOptions(selSeason, seasons, { valueKey: 'strSeason', labelKey: 'strSeason' });
-    });
-
-    // Step 1c: Teams in selected league
-    btnLoadTeams.addEventListener('click', async () => {
-      const leaguePayload = getSelectedPayload(selLeague);
-      const leagueName = leaguePayload?.strLeague;
-      if (!leagueName) return alert('Fetch and select a league first.');
-      const resp = await apiCollect({ intent: 'teams.list', args: { leagueName } });
-      render(resp);
-      const teams = resp?.data?.teams || [];
-      teams.sort((a,b) => (a.strTeam||'').localeCompare(b.strTeam||''));
-      setOptions(selTeam, teams, { valueKey: 'idTeam', labelKey: 'strTeam' });
-      setOptions(selTeamForEvents, teams, { valueKey: 'idTeam', labelKey: 'strTeam' });
-      // reset players list
-      setOptions(selPlayer, [], { valueKey: 'idPlayer', labelKey: 'strPlayer' });
-    });
-
-    // Step 1d: Players for selected team
-    btnLoadPlayers.addEventListener('click', async () => {
-      const teamId = selTeam.value;
-      if (!teamId) return alert('Select a team first.');
-      const resp = await apiCollect({ intent: 'players.list', args: { teamId } });
-      render(resp);
-      const players = resp?.data?.players || [];
-      players.sort((a,b) => (a.strPlayer||'').localeCompare(b.strPlayer||''));
-      setOptions(selPlayer, players, { valueKey: 'idPlayer', labelKey: 'strPlayer' });
-    });
-
-    // Step 2a: Events by league + season
-    $('#btnEventsBySeason').addEventListener('click', async () => {
-      const leagueId = selLeague.value;
-      const season = selSeason.value;
-      if (!leagueId || !season) return alert('Select league and season first.');
-      const resp = await apiCollect({ intent: 'events.list', args: { leagueId, season } });
-      render(resp);
-    });
-
-    // Step 2b: Events by team last/next
-    $('#btnEventsByTeam').addEventListener('click', async () => {
-      const teamId = selTeamForEvents.value;
-      const kind = $('#selEventKind').value;
-      if (!teamId) return alert('Select a team first.');
-      const resp = await apiCollect({ intent: 'events.list', args: { teamId, kind } });
-      render(resp);
-    });
-
-    // Step 2c: Events by date
-    $('#btnEventsByDate').addEventListener('click', async () => {
-      const d = $('#inDate').value.trim();
-      if (!d) return alert('Provide a date (YYYY-MM-DD).');
-      const resp = await apiCollect({ intent: 'events.list', args: { date: d } });
-      render(resp);
-    });
-
-    // Step 2d: Event search by name (with optional expansions)
-    $('#btnEventByName').addEventListener('click', async () => {
-      const eName = $('#inEventName').value.trim();
-      if (!eName) return alert('Provide an event name.');
-      const expand = [];
-      if ($('#cbTimeline').checked) expand.push('timeline');
-      if ($('#cbStats').checked) expand.push('stats');
-      if ($('#cbLineup').checked) expand.push('lineup');
-      const resp = await apiCollect({ intent: 'event.get', args: { eventName: eName, expand } });
-      render(resp);
-    });
-
-    // Step 3: Direct lookups
-    $('#btnLeagueGet').addEventListener('click', async () => {
-      const v = $('#inLeagueId').value.trim();
-      if (!v) return alert('Provide league id or name.');
-      // try id first, otherwise name
-      const isId = /^\d+$/.test(v);
-      const args = isId ? { leagueId: v } : { leagueName: v };
-      const resp = await apiCollect({ intent: 'league.get', args });
-      render(resp);
-    });
-
-    $('#btnTeamGet').addEventListener('click', async () => {
-      const v = $('#inTeam').value.trim();
-      if (!v) return alert('Provide team id or name.');
-      const isId = /^\d+$/.test(v);
-      const args = isId ? { teamId: v } : { teamName: v };
-      const resp = await apiCollect({ intent: 'team.get', args });
-      render(resp);
-    });
-
-    $('#btnPlayerGet').addEventListener('click', async () => {
-      const v = $('#inPlayer').value.trim();
-      if (!v) return alert('Provide player id or name.');
-      const isId = /^\d+$/.test(v);
-      const args = isId ? { playerId: v } : { playerName: v };
-      const resp = await apiCollect({ intent: 'player.get', args });
-      render(resp);
-    });
-
-    // Step 4: Custom JSON
-    $('#btnPretty').addEventListener('click', () => {
-      try { const o = JSON.parse($('#customBody').value); $('#customBody').value = JSON.stringify(o, null, 2); } catch {}
-    });
-    function runCustom() {
-      let bodyText = $('#customBody').value;
-      try { var payload = JSON.parse(bodyText); } catch (e) {
-        alert('Invalid JSON'); return; }
-      apiCollect(payload).then(render).catch(err => { outPre.textContent = String(err); });
-    }
-    $('#btnRunCustom').addEventListener('click', runCustom);
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runCustom(); }
-    });
-
-    // Output actions
-    $('#btnCopy').addEventListener('click', async () => {
-      try { await navigator.clipboard.writeText(outPre.textContent); } catch {}
-    });
-    $('#btnClear').addEventListener('click', () => { outPre.textContent = 'Ready.'; tracePre.textContent='(none)'; traceBox.open=false; });
-
-    // Auto-load leagues on start for convenience
-    window.addEventListener('load', () => btnLoadLeagues.click());
-  </script>
+  <script src="../scripts/index.js"></script>
 </body>
 </html>

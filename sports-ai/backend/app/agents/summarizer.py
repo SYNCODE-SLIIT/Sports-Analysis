@@ -7,6 +7,7 @@ import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -15,8 +16,9 @@ from pydantic import BaseModel, Field
 # -----------------------
 AGENT_MODE = os.getenv("AGENT_MODE", "local")  # "local" or "http"
 # If AGENT_MODE="http", set these to the microservice URLs for your agents
-TSDB_AGENT_URL = os.getenv("TSDB_AGENT_URL", "http://localhost:8000/agent")
-ALLSPORTS_AGENT_URL = os.getenv("ALLSPORTS_AGENT_URL", "http://localhost:8000/agent")
+# Default to the running app's /collect endpoint so single-process dev works without env overrides
+TSDB_AGENT_URL = os.getenv("TSDB_AGENT_URL", "http://127.0.0.1:8000/collect")
+ALLSPORTS_AGENT_URL = os.getenv("ALLSPORTS_AGENT_URL", "http://127.0.0.1:8000/collect")
 
 # LLM (Groq)
 try:
@@ -48,6 +50,12 @@ if AGENT_MODE == "local":
         except Exception:
             # Final fallback: leave as None so HTTP mode will be used
             pass
+
+# If AGENT_MODE was requested as 'local' but the local agent classes couldn't be
+# imported, switch to HTTP mode automatically so the app continues to function
+# when mounted in environments where local agents are not available.
+if AGENT_MODE == "local" and (CollectorAgentV2 is None or AllSportsRawAgent is None):
+    AGENT_MODE = "http"
 
 import httpx
 
@@ -110,6 +118,10 @@ class EventBriefItemOut(BaseModel):
     minute: Optional[str] = None
     type: Optional[str] = None
     brief: str
+    player_image: Optional[str] = None
+    team_logo: Optional[str] = None
+    player: Optional[str] = None
+    player_id: Optional[str] = None
 
 class EventBriefsOut(BaseModel):
     ok: bool
@@ -207,6 +219,96 @@ def _is_live_status(status: str | None) -> bool | None:
     return None
 
 
+async def _extract_image_from_player_response(resp: Dict[str, Any]) -> Optional[str]:
+    """Given a collector response for player.get / players.list, try to extract a usable image URL."""
+    try:
+        if not resp:
+            return None
+        # resp may be a dict with 'data' containing provider body
+        body = None
+        if isinstance(resp, dict):
+            body = resp.get('data') or resp.get('result') or resp
+        else:
+            body = resp
+        # common shapes: {'result': [player_obj,...]} or {'data': {'result':[...]} } or {'player': {...}}
+        if isinstance(body, dict) and isinstance(body.get('result'), list) and body.get('result'):
+            p = body['result'][0]
+        elif isinstance(body, list) and body:
+            p = body[0]
+        elif isinstance(body, dict) and body.get('data') and isinstance(body.get('data'), dict) and isinstance(body['data'].get('result'), list):
+            p = body['data']['result'][0]
+        elif isinstance(body, dict) and isinstance(body.get('player'), dict):
+            p = body.get('player')
+        else:
+            # try to find any dict in body that looks like a player
+            p = None
+            if isinstance(body, dict):
+                for v in body.values():
+                    if isinstance(v, dict):
+                        # if this nested dict directly contains image keys, use it
+                        p = v
+                        break
+                    if isinstance(v, list) and v and isinstance(v[0], dict):
+                        p = v[0]
+                        break
+        if not p or not isinstance(p, dict):
+            return None
+        # look for common image keys
+        for k in ('player_image','player_photo','photo','thumb','thumbnail','img','avatar','headshot','strThumb','strCutout','photo_url','player_cutout'):
+            v = p.get(k)
+            if v and isinstance(v, str) and v.strip():
+                return v.strip()
+        # nested under p.get('player')
+        nested = p.get('player') or p.get('attributes') or p.get('profile')
+        if isinstance(nested, dict):
+            for k in ('photo','player_image','img','avatar','headshot','photo_url'):
+                v = nested.get(k)
+                if v and isinstance(v, str) and v.strip():
+                    return v.strip()
+    except Exception:
+        pass
+    return None
+
+
+async def _resolve_player_images_for_items(items: List[Dict[str, Any]], trace: List[Dict[str, Any]]):
+    """For summarizer items: if item has player_id but no player_image, call collector player.get to fetch and set player_image when available."""
+    if not items:
+        return items
+    for it in items:
+        try:
+            if not isinstance(it, dict):
+                continue
+            if it.get('player_image'):
+                continue
+            pid = it.get('player_id') or (it.get('player') and None)
+            if not pid:
+                continue
+            # call collector player.get
+            try:
+                presp = await call_tsdb_agent({'intent': 'player.get', 'args': {'playerId': str(pid)}}, trace)
+                img = await _extract_image_from_player_response(presp)
+                if img:
+                    it['player_image'] = img
+                else:
+                    try:
+                        print(f"[summarizer-debug] player.get returned (no image) for pid={pid} keys={list((presp or {}).keys())} peek={str((presp or {}) )[:400]}")
+                    except Exception:
+                        pass
+                    # Fallback: try calling AllSports agent directly if TSDB returned empty
+                    try:
+                        asp = await call_allsports_agent({'intent': 'player.get', 'args': {'playerId': str(pid)}}, trace)
+                        aimg = await _extract_image_from_player_response(asp)
+                        if aimg:
+                            it['player_image'] = aimg
+                    except Exception:
+                        pass
+            except Exception:
+                continue
+        except Exception:
+            continue
+    return items
+
+
 def _latest_minute(timeline: list[dict]) -> str | None:
     for ev in reversed(timeline or []):
         m = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
@@ -219,9 +321,47 @@ async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]
     """Generate descriptive per-event briefs (1–3 sentences) for key timeline events.
     Uses Groq when available with compact, structured prompting; otherwise
     falls back to deterministic templates. Output is a list aligned to the
-    input order with minute, type, and brief fields.
+    input order with minute, type, brief, player_image and team_logo fields.
     """
-    # Fallback path (no LLM configured)
+    import json
+
+    def _extract_images_from_event(e: Dict[str, Any], ctx: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+        # Try many common keys across providers for player image and team/logo
+        player_img = None
+        team_logo = None
+        players = e.get("players") or e.get("player") or []
+        if isinstance(players, list) and players:
+            p = players[0]
+            if isinstance(p, dict):
+                for k in ("player_image", "player_photo", "photo", "thumb", "playerImage", "strThumb", "strCutout", "thumbnail", "img", "avatar", "headshot"):
+                    v = p.get(k)
+                    if v:
+                        player_img = v
+                        break
+        # event-level player image
+        if not player_img:
+            for k in ("player_image", "player_photo", "photo", "thumb", "img", "avatar", "headshot"):
+                if e.get(k):
+                    player_img = e.get(k)
+                    break
+
+        # team logos: check event.team or context teams/home/away
+        team = e.get("team") or e.get("side") or None
+        if isinstance(team, dict):
+            for k in ("logo", "team_logo", "badge", "crest", "teamLogo", "strTeamBadge", "logoUrl"):
+                if team.get(k):
+                    team_logo = team.get(k)
+                    break
+        # common top-level match logos
+        if not team_logo:
+            match = ctx.get("match") or ctx.get("metadata") or ctx or {}
+            for k in ("homeLogo", "awayLogo", "home_badge", "away_badge", "home_logo", "away_logo", "strTeamBadge"):
+                if match.get(k):
+                    team_logo = match.get(k)
+                    break
+        return player_img, team_logo
+
+    # If Groq unavailable, deterministic fallback but include image extraction
     if Groq is None or not GROQ_API_KEY:
         out: List[Dict[str, Any]] = []
         for ev in events:
@@ -231,16 +371,16 @@ async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]
             team = ev.get("team") or ""
             desc = ev.get("description") or ev.get("text") or ev.get("event") or ""
             brief = desc or f"{t.title()} at {minute or '?'} by {player or 'unknown'} {('('+team+')') if team else ''}".strip()
-            out.append({"minute": minute, "type": t or None, "brief": brief})
+            player_img, team_logo = _extract_images_from_event(ev, context)
+            out.append({"minute": minute, "type": t or None, "brief": brief, "player_image": player_img, "team_logo": team_logo})
         return out
 
-    # Prepare compact, context-aware prompt
+    # Build compact lines for events to include in the LLM prompt
     teams = context.get("teams") or {}
     score = context.get("score") or {}
     comp = context.get("competition") or ""
     header = f"{teams.get('home','')} vs {teams.get('away','')} — {comp} — score {score.get('home')}–{score.get('away')}"
     lines = []
-    idx_map = []
     for i, ev in enumerate(events):
         minute = ev.get("minute") or ev.get("time") or ""
         kind = ev.get("type") or ev.get("event") or ev.get("card") or ev.get("info") or ""
@@ -253,57 +393,72 @@ async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]
             or ""
         )
         team = ev.get("team") or ev.get("side") or ""
-        sub_on = ev.get("in_player") or ev.get("substitution") or ""
-        sub_off = ev.get("out_player") or ""
         note = ev.get("assist") or ev.get("score") or ev.get("result") or ev.get("description") or ""
-        extra = (f" | team={team}" if team else "") + (f" | in={sub_on} out={sub_off}" if (sub_on or sub_off) else "")
-        line = f"[{i}] {(str(minute)+'\u2032 ') if minute else ''}{kind}: {who} {note}{extra}".strip()
-        if len(line) > 150:
-            line = line[:149] + "…"
+        minute_label = (str(minute) + "′ ") if minute else ""
+        line = f"[{i}] {minute_label}{kind}: {who} {note} {(f'team={team}' if team else '')}".strip()
+        if len(line) > 200:
+            line = line[:199] + "…"
         lines.append(line)
-        idx_map.append(i)
 
     system = (
         "You are an insightful football analyst. For each event, write a clear, vivid brief in 1–3 sentences (aim 25–65 words). "
         "Be strictly factual and use only provided data. Mention the minute, player and team when available. "
         "For goals, clarify whether it opens the scoring, levels the match, or changes the lead if score info is present. "
-        "For cards, state impact (e.g., team down to 10 for reds). For substitutions, note the like-for-like or tactical feel only if implied (no guessing)."
+        "Return output as strict JSON with an 'items' array where each item has: index (int), brief (string), player_image (string|null), team_logo (string|null)."
     )
+
     user = (
         header
         + "\nEvents:\n- "
         + ("\n- ".join(lines) if lines else "None")
-        + "\n\nRespond ONLY as a JSON object with key 'items' containing an array of objects: "
-        + "{\"items\":[{\"index\":number,\"brief\":string}, ...]}."
+        + "\n\nRespond ONLY as a JSON object with key 'items' containing an array of objects: {\"items\":[{\"index\":number,\"brief\":string,\"player_image\":string|null,\"team_logo\":string|null}, ...]}."
     )
 
     client = Groq(api_key=GROQ_API_KEY)
-    import json
     try:
-        chat = await asyncio.to_thread(
-            client.chat.completions.create,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            model=GROQ_MODEL,
-            temperature=min(LLM_TEMPERATURE, 0.35),
-            response_format={"type": "json_object"},
-            max_tokens=800,
-        )
-        raw = chat.choices[0].message.content
-        # Expect an object like {"items":[{"index":0,"brief":"..."}, ...]} (prefer object to satisfy JSON mode)
-        parsed = json.loads(raw)
-        items = parsed.get("items") if isinstance(parsed, dict) else parsed
+        try:
+            chat = await asyncio.to_thread(
+                client.chat.completions.create,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                model=GROQ_MODEL,
+                temperature=min(LLM_TEMPERATURE, 0.35),
+                response_format={"type": "json_object"},
+                max_tokens=800,
+            )
+            raw = chat.choices[0].message.content
+            parsed = json.loads(raw)
+            items = parsed.get("items") if isinstance(parsed, dict) else parsed
+        except Exception as _e:
+            try:
+                print(f"[summarizer-error] Groq call/parse failed: {_e} raw_output={repr(raw)[:800]}")
+            except Exception:
+                print(f"[summarizer-error] Groq call/parse failed: {_e}")
+            items = None
+
         out: List[Dict[str, Any]] = []
         if isinstance(items, list):
             for it in items:
                 try:
-                    i = it.get("index") if isinstance(it, dict) else None
-                    brief = it.get("brief") if isinstance(it, dict) else None
+                    if not isinstance(it, dict):
+                        continue
+                    i = it.get("index")
+                    brief = it.get("brief")
+                    player_image = it.get("player_image") if "player_image" in it else None
+                    team_logo = it.get("team_logo") if "team_logo" in it else None
                     if isinstance(i, int) and isinstance(brief, str):
                         ev = events[i] if 0 <= i < len(events) else {}
+                        # fallback to extracting images from event/context when LLM returned null
+                        pi, tl = _extract_images_from_event(ev, context)
+                        if not player_image:
+                            player_image = pi
+                        if not team_logo:
+                            team_logo = tl
                         out.append({
                             "minute": ev.get("minute") or ev.get("time"),
                             "type": (ev.get("type") or ev.get("event") or ev.get("card") or "").lower() or None,
                             "brief": brief.strip(),
+                            "player_image": player_image,
+                            "team_logo": team_logo,
                         })
                 except Exception:
                     continue
@@ -313,7 +468,7 @@ async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]
         # fall through to templates
         pass
 
-    # Fallback template summaries (more descriptive)
+    # Fallback template summaries (more descriptive) with image extraction
     templated: List[Dict[str, Any]] = []
     for ev in events:
         t = (ev.get("type") or ev.get("event") or ev.get("card") or "").lower()
@@ -354,7 +509,8 @@ async def _llm_event_briefs(context: Dict[str, Any], events: List[Dict[str, Any]
             base = ev.get("description") or (t.title() if t else "Event")
             when = f"{minute or '?'}′"
             brief = f"{base} around {when}{(' ('+team+')') if team else ''}.".strip()
-        templated.append({"minute": minute, "type": t or None, "brief": brief})
+        pi, tl = _extract_images_from_event(ev, context)
+        templated.append({"minute": minute, "type": t or None, "brief": brief, "player_image": pi, "team_logo": tl})
     return templated
 
 
@@ -366,11 +522,40 @@ async def call_tsdb_agent(payload: Dict[str, Any], trace: List[Dict[str, Any]]) 
     trace.append({"step": "call_tsdb_agent", "mode": AGENT_MODE, "intent": payload.get("intent")})
     if AGENT_MODE == "local":
         if not CollectorAgentV2:
-            return {"ok": False, "error": {"code": "NO_LOCAL_TSDB", "message": "CollectorAgentV2 not importable"}}
-        agent = CollectorAgentV2()
-        return agent.handle(payload)
+            # Local agent not importable — fall through to HTTP behaviour
+            pass
+        try:
+            agent = CollectorAgentV2()
+            resp = agent.handle(payload)
+            # If local handler signals failure, fall back to HTTP
+            if isinstance(resp, dict) and resp.get("ok") is False:
+                raise RuntimeError("local-tsdb-failed")
+            return resp
+        except Exception:
+            # Try HTTP fallback when local mode fails at runtime
+            async with httpx.AsyncClient(timeout=25) as client:
+                r = await client.post(TSDB_AGENT_URL, json=payload)
+                return r.json()
     else:
+        # If the configured TSDB_AGENT_URL targets this same FastAPI app's /collect
+        # and we can import the main.collect handler, call it directly to avoid
+        # making a loopback HTTP request which may fail in single-process dev.
+        try:
+            if (TSDB_AGENT_URL and ("127.0.0.1" in TSDB_AGENT_URL or "localhost" in TSDB_AGENT_URL) and TSDB_AGENT_URL.rstrip('/').endswith('/collect')):
+                try:
+                    from backend.app.main import collect as main_collect
+                    # main.collect expects a request dict
+                    return main_collect(payload)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         async with httpx.AsyncClient(timeout=25) as client:
+            # Debug: log outgoing HTTP payload
+            try:
+                print(f"[summarizer-debug] POST TSDB_AGENT_URL={TSDB_AGENT_URL} payload={str(payload)[:800]}")
+            except Exception:
+                pass
             r = await client.post(TSDB_AGENT_URL, json=payload)
             return r.json()
 
@@ -379,11 +564,34 @@ async def call_allsports_agent(payload: Dict[str, Any], trace: List[Dict[str, An
     trace.append({"step": "call_allsports_agent", "mode": AGENT_MODE, "intent": payload.get("intent")})
     if AGENT_MODE == "local":
         if not AllSportsRawAgent:
-            return {"ok": False, "error": {"code": "NO_LOCAL_ASRAW", "message": "AllSportsRawAgent not importable"}}
-        agent = AllSportsRawAgent()
-        return agent.handle(payload)
+            # Local agent not importable — fall through to HTTP behaviour
+            pass
+        try:
+            agent = AllSportsRawAgent()
+            resp = agent.handle(payload)
+            if isinstance(resp, dict) and resp.get("ok") is False:
+                raise RuntimeError("local-allsports-failed")
+            return resp
+        except Exception:
+            async with httpx.AsyncClient(timeout=25) as client:
+                r = await client.post(ALLSPORTS_AGENT_URL, json=payload)
+                return r.json()
     else:
+        try:
+            if (ALLSPORTS_AGENT_URL and ("127.0.0.1" in ALLSPORTS_AGENT_URL or "localhost" in ALLSPORTS_AGENT_URL) and ALLSPORTS_AGENT_URL.rstrip('/').endswith('/collect')):
+                try:
+                    from backend.app.main import collect as main_collect
+                    return main_collect(payload)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         async with httpx.AsyncClient(timeout=25) as client:
+            # Debug: log outgoing HTTP payload
+            try:
+                print(f"[summarizer-debug] POST ALLSPORTS_AGENT_URL={ALLSPORTS_AGENT_URL} payload={str(payload)[:800]}")
+            except Exception:
+                pass
             r = await client.post(ALLSPORTS_AGENT_URL, json=payload)
             return r.json()
 
@@ -508,6 +716,124 @@ def _safe_int(x: Any) -> Optional[int]:
         return None
 
 
+def _find_player_image_in_bundle(bundle: Dict[str, Any], player_name: str) -> Optional[str]:
+    """Best-effort: search bundle.lineup, bundle.raw_event and other places for a player image URL matching player_name."""
+    if not bundle or not player_name:
+        return None
+    # Normalize lineup into a flat list of player dicts
+    lineup = bundle.get("lineup") or {}
+    lineup_players = []
+    if isinstance(lineup, dict):
+        # common shapes: {'home_team': {...}, 'away_team': {...}} or {'home_team': [...], 'away_team': [...]}
+        for side in ("home_team", "away_team", "home", "away"):
+            section = lineup.get(side)
+            if isinstance(section, dict):
+                # collect common arrays inside a section
+                for arr_k in ("starting_lineups", "starting", "players", "substitutes", "starting_lineup"):
+                    arr = section.get(arr_k) or []
+                    if isinstance(arr, list):
+                        lineup_players.extend(arr)
+            elif isinstance(section, list):
+                lineup_players.extend(section)
+    elif isinstance(lineup, list):
+        lineup_players = lineup
+
+    for p in (lineup_players or []):
+        try:
+            if not isinstance(p, dict):
+                continue
+            name = (p.get("name") or p.get("player") or p.get("full_name") or p.get("player_name") or p.get("player") or "").strip()
+            if not name:
+                continue
+            # simple case-insensitive contains match
+            if player_name.lower() in name.lower() or name.lower() in player_name.lower():
+                for k in ("player_image", "player_photo", "photo", "thumb", "thumbnail", "img", "avatar", "headshot", "strThumb", "strCutout", "cutout", "player_cutout", "photo_url"):
+                    v = p.get(k)
+                    if v:
+                        return v
+        except Exception:
+            continue
+
+    # check raw_event nested structures for common keys
+    raw = bundle.get("raw_event") or {}
+    # sometimes players are under 'players' or 'players_list' or 'goalscorers'
+    for key in ("players", "players_list", "squad", "lineups", "lineup", "goalscorers", "goals"):
+        arr = raw.get(key) or []
+        if isinstance(arr, list):
+            for p in arr:
+                try:
+                    if not isinstance(p, dict):
+                        continue
+                    name = (p.get("name") or p.get("player") or p.get("full_name") or p.get("player_name") or "").strip()
+                    if not name:
+                        continue
+                    if player_name.lower() in name.lower() or name.lower() in player_name.lower():
+                        for k in ("player_image", "player_photo", "photo", "thumb", "thumbnail", "img", "avatar", "headshot", "strThumb", "player_cutout", "photo_url"):
+                            v = p.get(k)
+                            if v:
+                                return v
+                except Exception:
+                    continue
+    return None
+
+
+def _find_player_id_in_bundle(bundle: Dict[str, Any], player_name: Optional[str] = None, minute: Optional[str] = None) -> Optional[str]:
+    """Try to locate a player id in the normalized bundle by matching timeline entries (scorer/assist) or lineup keys.
+    Returns the first non-empty id string found.
+    """
+    if not bundle:
+        return None
+    # 1) check timeline for matching scorer/assist entries
+    tl = bundle.get("timeline") or []
+    if isinstance(tl, list):
+        for ev in tl:
+            try:
+                # match by minute if provided
+                if minute and str(ev.get("time") or ev.get("minute") or ev.get("time_elapsed") or "").strip() != str(minute).strip():
+                    continue
+                for side in ("home", "away"):
+                    scorer = ev.get(f"{side}_scorer") or ev.get(f"{side}Scorer") or ev.get("scorer")
+                    scorer_id = ev.get(f"{side}_scorer_id") or ev.get(f"{side}ScorerId") or ev.get(f"{side}_scorerKey") or ev.get(f"{side}_scorer_id")
+                    if scorer and scorer_id:
+                        if not player_name or (player_name.lower() in str(scorer).lower() or str(scorer).lower() in player_name.lower()):
+                            return str(scorer_id)
+                # fallback generic id fields
+                for k in ("player_id", "playerKey", "player_key", "id"):
+                    if ev.get(k):
+                        return str(ev.get(k))
+            except Exception:
+                continue
+    # 2) check lineup for player_key-like fields
+    lineup = bundle.get("lineup") or {}
+    candidates = []
+    if isinstance(lineup, dict):
+        for section_key in ("home_team", "away_team", "home", "away"):
+            section = lineup.get(section_key) or {}
+            if isinstance(section, dict):
+                for arr_key in ("starting_lineups", "starting", "players", "substitutes", "starting_lineup"):
+                    arr = section.get(arr_key) or []
+                    if isinstance(arr, list):
+                        candidates.extend(arr)
+            elif isinstance(section, list):
+                candidates.extend(section)
+    elif isinstance(lineup, list):
+        candidates = lineup
+
+    for p in candidates:
+        try:
+            if not isinstance(p, dict):
+                continue
+            name = (p.get("player") or p.get("name") or p.get("player_name") or p.get("full_name") or "").strip()
+            if player_name and name and not (player_name.lower() in name.lower() or name.lower() in player_name.lower()):
+                continue
+            for k in ("player_key", "playerKey", "player_id", "playerId", "id", "player_key_id"):
+                if p.get(k):
+                    return str(p.get(k))
+        except Exception:
+            continue
+    return None
+
+
 # -----------------------
 # Orchestration
 # -----------------------
@@ -521,58 +847,17 @@ async def fetch_event_bundle(req: SummarizeRequest, trace: List[Dict[str, Any]])
     """
     raw_sources: Dict[str, Any] = {"tsdb": None, "allsports": None}
 
-    # 1) Try TSDB
-    if req.provider in ("auto", "tsdb"):
-        args = {}
-        if req.eventName:
-            args["eventName"] = req.eventName
-        if req.eventId:
-            args["eventId"] = req.eventId
-        if req.season:
-            args["season"] = req.season
-        if req.date:
-            args["dateEvent"] = req.date
-        args["expand"] = ["timeline", "stats", "lineup"]
-
-        tsdb_payload = {"intent": "event.get", "args": args}
-        tsdb = await call_tsdb_agent(tsdb_payload, trace)
-        raw_sources["tsdb"] = tsdb
-
-        if tsdb.get("ok"):
-            data = tsdb.get("data") or {}
-            # If TSDB successfully picked an event (data.event exists) or at least one candidate and expansions
-            if (data.get("event") or (data.get("candidates") and len(data.get("candidates")) == 1)):
-                norm = norm_tsdb_event(data)
-                # If score or timeline look empty and provider is auto, we may still consult AllSports
-                if req.provider == "auto":
-                    if not norm["score"]["home"] and not norm["score"]["away"] and not norm["timeline"]:
-                        trace.append({"step": "tsdb_thin_data_consult_allsports"})
-                    else:
-                        return norm, "tsdb", raw_sources
-                else:
-                    return norm, "tsdb", raw_sources
-
-    # 2) Try AllSports
-    if req.provider in ("auto", "allsports"):
+    # Use AllSports only
+    if req.provider in ("auto", "allsports", "tsdb"):
         as_args = {}
-        if req.eventId:     # in AllSports this is usually 'matchId' but your RawAgent maps eventId -> matchId
+        if req.eventId:     # RawAgent maps eventId -> matchId
             as_args["eventId"] = req.eventId
-        if req.eventName:
-            # RawAgent doesn't require name for event.get, but we can try fixtures.list if you want name-based
-            pass
         as_payload = {"intent": "event.get", "args": as_args}
         allsports = await call_allsports_agent(as_payload, trace)
         raw_sources["allsports"] = allsports
         if allsports.get("ok"):
             norm = norm_allsports_event(allsports)
-            # If venue missing, try to fill from TSDB event (if we queried it already)
-            if (not norm.get("venue")) and (raw_sources.get("tsdb") or {}).get("ok"):
-                tsdb_data = (raw_sources["tsdb"].get("data") or {})
-                tsdb_event = (tsdb_data.get("event") or {})
-                venue_tsdb = tsdb_event.get("strVenue")
-                if venue_tsdb:
-                    norm["venue"] = venue_tsdb
-            # If still super thin and we had TSDB candidates, keep TSDB as provider
+            # If venue missing, leave as-is; enrichment will try AllSports venue.get later
             if norm["teams"]["home"] or norm["teams"]["away"]:
                 return norm, "allsports", raw_sources
 
@@ -635,7 +920,7 @@ def build_llm_prompt(bundle: Dict[str, Any]) -> Tuple[str, str]:
     system = (
         "You are an elite football match reporter. Use ONLY the provided data; never invent names or stats. "
         "Write precise, vivid, factual prose that highlights momentum, turning points, and context. "
-        f"The one_paragraph MUST be between 300 and 400 words."
+        f"The one_paragraph MUST be between 200 and 300 words."
     )
 
     # Build timeline bullets (stringified) — include AllSports fields (trim to keep prompt small)
@@ -715,7 +1000,7 @@ Story hints:
 
 Write JSON only with keys:
 headline (short), one_paragraph (single paragraph, """ \
-+ f"""300-400 words, include: {'current state and likely themes so far' if is_live else 'result'}; phases (first half vs second half) when supported by data; minutes for the opening goal and equalizer if present; how momentum changed; any notable absences of data like venue/stats),""" \
++ f"""200-300 words, include: {'current state and likely themes so far' if is_live else 'result'}; phases (first half vs second half) when supported by data; minutes for the opening goal and equalizer if present; how momentum changed; any notable absences of data like venue/stats),""" \
 + """ bullets (3-6 crisp points), key_events (minute,type,player,note), star_performers (name,reason), numbers (home_score,away_score).
 
 Rules:
@@ -746,7 +1031,7 @@ async def run_llm(system: str, user: str) -> Dict[str, Any]:
         schema_hint = f"""Respond ONLY in JSON with keys:
 {{
   "headline": str,
-  "one_paragraph": str,   // MUST be between 300-400 words, single paragraph
+  "one_paragraph": str,   // MUST be between 200-300 words, single paragraph
   "bullets": [str, ...],  // 3-6 items
   "key_events": [{{"minute": str, "type": str, "player": str, "note": str}}, ...],
   "star_performers": [{{"name": str, "reason": str}}, ...],
@@ -799,10 +1084,10 @@ Do not add extra fields.
     # Enforce paragraph length once
     para = out.get("one_paragraph") or ""
     wc = word_count(para)
-    if wc < 300 or wc > 400:
+    if wc < 200 or wc > 300:
         reinforce = (
             system
-            + f" The one_paragraph MUST be between 300-400 words. "
+            + f" The one_paragraph MUST be between 200-300 words. "
               "Preserve facts; do not invent missing data. Expand with momentum and context only from provided info."
         )
         try:
@@ -848,6 +1133,17 @@ async def summarize(req: SummarizeRequest):
             "tsdb_err": (raw_sources.get("tsdb") or {}).get("error"),
             "allsports_err": (raw_sources.get("allsports") or {}).get("error"),
         }
+        # Helpful server-side log to correlate incoming browser requests with backend traces
+        try:
+            req_summary = req.model_dump() if hasattr(req, 'model_dump') else dict(req)
+        except Exception:
+            req_summary = str(req)
+        try:
+            ts_head = _short(str(raw_sources.get('tsdb'))[:800])
+            as_head = _short(str(raw_sources.get('allsports'))[:800])
+        except Exception:
+            ts_head = as_head = ''
+        print(f"[summarizer-log] missing bundle trace_id={trace_id} idempotency_key={idempotency_key} req={str(req_summary)[:800]} sources={src_notes} ts_head={ts_head} as_head={as_head}")
         raise HTTPException(
             status_code=404,
             detail={"reason": "Event not found or too little data to summarize", "sources": src_notes, "trace": trace},
@@ -894,8 +1190,8 @@ async def summarize(req: SummarizeRequest):
     return summary
 
 
-@app.post("/summarize/events", response_model=EventBriefsOut)
-async def summarize_events(req: EventBriefsRequest):
+@app.post("/summarize/events", response_model=EventBriefsOut, response_model_exclude_none=False)
+async def summarize_events(req: dict):
     """Summarize a list of timeline events (goals/cards/substitutions) into short natural-language briefs.
     This does not fetch provider data; it uses the given events and optional context only.
     """
@@ -905,44 +1201,154 @@ async def summarize_events(req: EventBriefsRequest):
         "score": {},
         "competition": "",
     }
-    # Attempt a tiny provider lookup to enrich context if eventId provided, but keep fully optional
-    # Avoid heavy calls; the LLM prompt stays compact.
+    # Attempt to enrich context by fetching the normalized event bundle when eventId/eventName present
     try:
-        if req.eventId or req.eventName:
-            # Build a thin args for TSDB in local mode when available; ignore errors/timeouts
-            args = {}
-            if req.eventId:
-                args["eventId"] = req.eventId
-            if req.eventName:
-                args["eventName"] = req.eventName
-            if req.date:
-                args["dateEvent"] = req.date
-            args["expand"] = []
-            payload = {"intent": "event.get", "args": args}
+        if req.get("eventId") or req.get("eventName"):
             trace: List[Dict[str, Any]] = []
-            tsdb = await call_tsdb_agent(payload, trace)
-            if tsdb.get("ok"):
-                data = tsdb.get("data") or {}
-                norm = norm_tsdb_event({
-                    "event": (data.get("event") or (data.get("candidates") or [None])[0] or {})
-                })
+            # Build a SummarizeRequest-like object to pass to fetch_event_bundle
+            sr = SummarizeRequest(
+                eventId=req.get("eventId"),
+                eventName=req.get("eventName"),
+                date=req.get("date"),
+                provider=req.get("provider") or "auto",
+            )
+            bundle, provider_used, raw_sources = await fetch_event_bundle(sr, trace)
+            if bundle:
+                # attach normalized bundle under context to allow fallback image/logo extraction
                 context.update({
-                    "teams": norm.get("teams") or {},
-                    "score": norm.get("score") or {},
-                    "competition": norm.get("competition") or "",
+                    "teams": bundle.get("teams") or {},
+                    "score": bundle.get("score") or {},
+                    "competition": bundle.get("competition") or "",
+                    "match": bundle,
                 })
     except Exception:
+        # best-effort only
         pass
 
-    # Only accept up to 24 events to keep prompt tight
-    events = list(req.events or [])[:24]
-    briefs = await _llm_event_briefs(context, events)
-    # map back to output items
-    items: List[Dict[str, Any]] = []
-    for i, b in enumerate(briefs):
-        items.append({
-            "minute": b.get("minute"),
-            "type": b.get("type"),
-            "brief": b.get("brief") or "",
-        })
-    return {"ok": True, "items": items}
+    try:
+        # Validate incoming shape explicitly to catch pre-handler issues
+        try:
+            parsed = EventBriefsRequest(**(req or {}))
+        except Exception as ve:
+            try:
+                print(f"[summarizer-error] summarize_events validation failed: {ve} req_raw={str(req)[:800]}")
+            except Exception:
+                pass
+            raise HTTPException(status_code=400, detail="Invalid request shape for summarize/events")
+
+        # Only accept up to 24 events to keep prompt tight
+        raw_events = list(parsed.events or [])[:24]
+        # Convert Pydantic models to plain dicts for downstream helpers
+        events: List[Dict[str, Any]] = []
+        for ev in raw_events:
+            try:
+                if hasattr(ev, "model_dump"):
+                    events.append(ev.model_dump())
+                elif hasattr(ev, "dict"):
+                    events.append(ev.dict())
+                else:
+                    events.append(dict(ev))
+            except Exception:
+                # fallback: coerce via str representation
+                try:
+                    events.append(dict(ev))
+                except Exception:
+                    events.append({})
+
+        # Generate briefs (LLM or fallback)
+        briefs = await _llm_event_briefs(context, events)
+        # backfill images/team logos from normalized bundle when possible
+        bundle = context.get("match") or {}
+
+        # map back to output items, with backfills
+        items: List[Dict[str, Any]] = []
+        for i, b in enumerate(briefs):
+            if not isinstance(b, dict):
+                b = {}
+            # pick up values the LLM returned (if any); default to empty string for stability
+            pi = b.get("player_image") if b.get("player_image") is not None else ""
+            tl = b.get("team_logo") if b.get("team_logo") is not None else ""
+
+            # Backfill player image from bundle using the primary player in the corresponding event
+            if not pi:
+                ev = events[i] if i < len(events) else {}
+                candidate_player = (
+                    ev.get("player")
+                    or ev.get("player_name")
+                    or ev.get("home_scorer")
+                    or ev.get("away_scorer")
+                    or ev.get("description")
+                    or ""
+                )
+                if candidate_player and bundle:
+                    found = _find_player_image_in_bundle(bundle, candidate_player)
+                    if found:
+                        pi = found
+
+            # Backfill team logo from known bundle keys if missing
+            if not tl and bundle:
+                # common normalized keys
+                for key in ("homeLogo", "awayLogo", "home_badge", "away_badge", "home_logo", "away_logo", "strTeamBadge"):
+                    v = bundle.get(key)
+                    if v:
+                        tl = v
+                        break
+                # fallback to raw_event search
+                if not tl:
+                    raw = bundle.get("raw_event") or {}
+                    for key in ("team_logo", "logo", "badge", "crest", "strTeamBadge"):
+                        v = raw.get(key)
+                        if v:
+                            tl = v
+                            break
+
+            # include primary player name so frontend can resolve images from Players endpoint
+            ev = events[i] if i < len(events) else {}
+            primary_player = (
+                ev.get("player") or ev.get("player_name") or ev.get("home_scorer") or ev.get("away_scorer") or None
+            )
+            # common player id keys if available in event shapes
+            player_id = (
+                ev.get("player_id") or ev.get("playerId") or ev.get("player_key") or ev.get("id") or ev.get("playerIdRef")
+            )
+            # If player_id missing, try to locate via bundle timeline/lineup
+            if not player_id and primary_player and bundle:
+                try:
+                    found_id = _find_player_id_in_bundle(bundle, primary_player, ev.get("minute") or ev.get("time"))
+                    if found_id:
+                        player_id = found_id
+                except Exception:
+                    pass
+            items.append({
+                "minute": b.get("minute"),
+                "type": b.get("type"),
+                "brief": b.get("brief") or "",
+                "player_image": pi,
+                "team_logo": tl,
+                "player": primary_player,
+                "player_id": player_id,
+            })
+
+        # Best-effort: resolve missing player images by calling player.get for returned player_ids
+        try:
+            trace2: List[Dict[str, Any]] = []
+            await _resolve_player_images_for_items(items, trace2)
+            # attach trace to top-level for debugging if needed
+            if trace2:
+                # include minimal trace in logs
+                try:
+                    print(f"[summarizer-debug] player image resolve trace: {trace2}")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Return raw JSON response to preserve keys exactly as provided
+        return JSONResponse(content={"ok": True, "items": items})
+    except Exception as e:
+        # Log server-side for diagnostics and return a helpful 500
+        try:
+            print(f"[summarizer-error] summarize_events failed: {str(e)}")
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail="Internal error while generating event briefs")
