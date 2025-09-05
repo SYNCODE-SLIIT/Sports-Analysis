@@ -173,24 +173,91 @@
   async function fetchMatchSummary(ev){
     if(!summaryEl) return;
     summaryEl.textContent = 'Loading summary…';
+  // Ensure the outer section heading is black
+  try{ const headerH3 = document.querySelector('#summary h3'); if(headerH3) headerH3.style.color = '#000'; }catch(_e){}
+
+    // Build best-effort payload (same as matches.js)
+    const payload = { provider: 'auto' };
+    const eventId = extractEventId(ev);
+    if(eventId) payload.eventId = String(eventId);
     const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
     const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
-    const payloadBody = {
-      provider: 'auto',
-      eventId: String(extractEventId(ev) || '' ) || undefined,
-      eventName: (home && away) ? `${home} vs ${away}` : undefined,
-      date: ev.event_date || ev.dateEvent || ev.date || undefined,
-      bundle: ev
-    };
+    if(home && away) payload.eventName = `${home} vs ${away}`;
+    const date = ev.event_date || ev.dateEvent || ev.date || '';
+    if(date) payload.date = date;
+
     try{
-      const r = await fetch(apiBase + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)});
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const j = await r.json();
-      const s = (j && (j.summary || j.data || j.result || j)) || {};
-      if(s.one_paragraph){ summaryEl.textContent = s.one_paragraph; }
-      else if(Array.isArray(s.bullets) && s.bullets.length){ summaryEl.innerHTML = '<ul>'+s.bullets.map(b=>`<li>${b}</li>`).join('')+'</ul>'; }
-      else { summaryEl.textContent = 'No summary available.'; }
+      const resp = await fetch(apiBase + '/summarizer/summarize', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+      });
+      if(!resp.ok){
+        const txt = await resp.text().catch(()=> '');
+        throw new Error('HTTP '+resp.status + (txt? (': '+txt):''));
+      }
+      let j;
+      try { j = await resp.json(); }
+      catch(jsonErr){
+        // Non-JSON fallback: try raw text as a minimal summary
+        try{
+          const txt = await resp.text();
+          if(txt && txt.trim() && !/^\s*\{/.test(txt)){
+            summaryEl.textContent = txt.trim();
+            return;
+          }
+        }catch(_e){}
+        throw jsonErr;
+      }
+
+      if(!j){ throw new Error('Empty response'); }
+      if(j.ok === false){
+        // Render minimal fallback if present
+        if(j.fallback && (j.fallback.one_paragraph || (Array.isArray(j.fallback.bullets) && j.fallback.bullets.length))){
+          renderSummary(j.fallback, summaryEl);
+          return;
+        }
+        throw new Error(j && j.detail ? (j.detail.reason || JSON.stringify(j.detail)) : 'No summary');
+      }
+
+      const s = j.summary || j.data || j.result || j;
+      renderSummary(s, summaryEl);
     }catch(e){ summaryEl.textContent = 'Summary error: '+(e && e.message ? e.message : String(e)); }
+  }
+
+  function renderSummary(s, container){
+    try{
+      container.innerHTML = '';
+      const card = document.createElement('div');
+      card.style.cssText = 'background:white;border-radius:16px;padding:20px;margin-bottom:16px;box-shadow:0 4px 20px rgba(0,0,0,0.08)';
+
+      const title = document.createElement('div');
+  title.style.cssText = 'font-size:18px;font-weight:700;color:#000;margin-bottom:8px;opacity:1;';
+      title.textContent = s.headline || 'Match Summary';
+      card.appendChild(title);
+
+      const para = document.createElement('div');
+      para.style.cssText = 'color:#374151;line-height:1.6;margin-bottom:12px;white-space:pre-wrap';
+      para.textContent = s.one_paragraph || '';
+      card.appendChild(para);
+
+      if(Array.isArray(s.bullets) && s.bullets.length){
+        const ul = document.createElement('ul'); ul.style.cssText = 'margin:0 0 8px 1rem;color:#374151';
+        s.bullets.slice(0,6).forEach(b=>{ const li=document.createElement('li'); li.textContent=b; ul.appendChild(li); });
+        card.appendChild(ul);
+      }
+
+      const meta = document.createElement('div');
+      meta.style.cssText = 'font-size:12px;color:#6b7280;margin-top:8px';
+      if(s.source_meta && s.source_meta.bundle){
+        const t = s.source_meta.bundle.teams || {}; const sc = s.source_meta.bundle.score || {};
+        meta.textContent = `${t.home||''} ${sc.home!=null?sc.home:''}–${sc.away!=null?sc.away:''} ${t.away||''}`;
+      }
+      if(meta.textContent) card.appendChild(meta);
+
+      container.appendChild(card);
+    }catch(_e){
+      // Fallback to paragraph only
+      container.textContent = s.one_paragraph || 'No summary available.';
+    }
   }
 
   // ---- Highlights ----
