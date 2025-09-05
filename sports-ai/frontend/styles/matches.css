@@ -55,3 +55,71 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
 .timeline-event .minute{background:#f1f5f9;padding:4px 8px;border-radius:8px;font-weight:700;color:#475569}
 .timeline-event .desc{color:#0f172a}
 @media (max-width:600px){.match-grid{grid-template-columns:1fr;} body{font-size:14px;} .match-card{min-height:auto;}}
+
+
+/* --- Probabilities block (details modal) --- */
+#prob_section .body { display: flex; flex-direction: column; gap: 8px; }
+.prob-row { display: grid; grid-template-columns: 120px 1fr 56px; gap: 8px; align-items: center; }
+.prob-row .label { font-weight: 600; color: #0f172a; }
+.prob-row .bar { height: 10px; background: #e5e7eb; border-radius: 6px; overflow: hidden; }
+.prob-row .bar .fill { display: block; height: 100%; background: #3b82f6; transition: width 0.3s ease; }
+.prob-row .value { text-align: right; font-variant-numeric: tabular-nums; color: #0f172a; }
+.prob-meta { margin-top: 6px; font-size: 12px; color: #475569; }
+.prob-error { color: #ef4444; }
+.prob-loading { color: #6b7280; }
+
+/* === Enhanced Probability UI === */
+.prob-card { background:#fff; color:#0f172a; border-radius:10px; padding:10px; border:1px solid rgba(15,23,42,0.06); }
+.prob-headline { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.prob-headline .side { display:flex; align-items:center; gap:8px; min-width:0; }
+.prob-headline .side .logo { width:22px; height:22px; object-fit:contain; background:#0f1419; border-radius:4px; padding:1px; }
+.prob-headline .side .name { font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.prob-headline .middle { flex:1; text-align:center; font-size:12px; color:#475569; }
+
+.prob-stacked { position:relative; height:18px; background:#e5e7eb; border-radius:8px; overflow:hidden; margin:6px 0 2px; display:flex; }
+.prob-stacked .seg { height:100%; display:block; }
+.prob-stacked .home { background:linear-gradient(90deg,#3b82f6,#1d4ed8); }
+.prob-stacked .draw { background:#9ca3af; }
+.prob-stacked .away { background:linear-gradient(90deg,#ef4444,#dc2626); }
+
+.prob-labels { display:flex; justify-content:space-between; gap:8px; font-size:12px; color:#334155; }
+.prob-labels .lbl { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* mini rows */
+.prob-mini { display:grid; grid-template-columns: 120px 1fr 56px; gap:8px; align-items:center; margin-top:6px; }
+.prob-mini .label { font-weight:600; }
+.prob-mini .bar { height:8px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
+.prob-mini .bar .fill.home { background:linear-gradient(90deg,#3b82f6,#1d4ed8); height:100%; }
+.prob-mini .bar .fill.draw { background:#9ca3af; height:100%; }
+.prob-mini .bar .fill.away { background:linear-gradient(90deg,#ef4444,#dc2626); height:100%; }
+.prob-mini .value { text-align:right; font-variant-numeric: tabular-nums; }
+
+.prob-meta { margin-top:6px; font-size:11px; color:#64748b; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.prob-meta .raw-toggle { background:transparent; border:1px dashed #cbd5e1; color:#475569; padding:2px 8px; border-radius:6px; cursor:pointer; font-size:11px; }
+.prob-meta pre { background:#0f1419; color:#e5e7eb; padding:8px; border-radius:8px; overflow:auto; max-height:240px; display:none; margin-top:8px; }
+/* === Recent Form UI === */
+.form-card{ background:#fff; color:#0f172a; border-radius:10px; padding:10px; border:1px solid rgba(15,23,42,0.06); }
+.form-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+.form-team{ background:#f8fafc; border-radius:8px; padding:10px; }
+.form-team .hdr{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.form-team .hdr .logo{ width:22px; height:22px; object-fit:contain; background:#0f1419; border-radius:4px; padding:1px; }
+.form-team .hdr .name{ font-weight:700; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.form-team .hdr .role{ font-size:11px; color:#64748b; }
+.form-summary{ font-size:12px; color:#334155; margin:6px 0; }
+.chips{ display:flex; gap:6px; flex-wrap:wrap; }
+.chip{ font-weight:700; font-size:12px; padding:2px 8px; border-radius:999px; color:#fff; }
+.chip.win{ background:linear-gradient(90deg,#22c55e,#16a34a); }
+.chip.draw{ background:#9ca3af; }
+.chip.loss{ background:linear-gradient(90deg,#ef4444,#dc2626); }
+.metric-table{ width:100%; border-collapse:collapse; margin-top:6px; font-size:12px; }
+.metric-table tr > td{ padding:4px 0; border-bottom:1px dashed rgba(15,23,42,0.06); }
+.metric-table tr:last-child > td{ border-bottom:none; }
+.metric-table .k{ width:54%; color:#475569; }
+.metric-table .v{ width:46%; text-align:right; font-variant-numeric: tabular-nums; }
+.mini{ display:grid; grid-template-columns: 90px 1fr 54px; gap:8px; align-items:center; margin-top:8px; font-size:12px; }
+.mini .bar{ height:8px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
+.mini .fill.home{ background:linear-gradient(90deg,#3b82f6,#1d4ed8); height:100%; }
+.mini .fill.gd{ background:linear-gradient(90deg,#06b6d4,#0891b2); height:100%; }
+.form-footer{ margin-top:8px; font-size:11px; color:#64748b; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.form-footer .raw-toggle{ background:transparent; border:1px dashed #cbd5e1; color:#475569; padding:2px 8px; border-radius:6px; cursor:pointer; font-size:11px; }
+.form-footer pre{ background:#0f1419; color:#e5e7eb; padding:8px; border-radius:8px; overflow:auto; max-height:240px; display:none; margin-top:8px; }

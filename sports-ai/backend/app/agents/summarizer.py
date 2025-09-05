@@ -920,7 +920,7 @@ def build_llm_prompt(bundle: Dict[str, Any]) -> Tuple[str, str]:
     system = (
         "You are an elite football match reporter. Use ONLY the provided data; never invent names or stats. "
         "Write precise, vivid, factual prose that highlights momentum, turning points, and context. "
-        f"The one_paragraph MUST be between 300 and 400 words."
+        f"The one_paragraph MUST be between 200 and 300 words."
     )
 
     # Build timeline bullets (stringified) — include AllSports fields (trim to keep prompt small)
@@ -1000,7 +1000,7 @@ Story hints:
 
 Write JSON only with keys:
 headline (short), one_paragraph (single paragraph, """ \
-+ f"""300-400 words, include: {'current state and likely themes so far' if is_live else 'result'}; phases (first half vs second half) when supported by data; minutes for the opening goal and equalizer if present; how momentum changed; any notable absences of data like venue/stats),""" \
++ f"""200-300 words, include: {'current state and likely themes so far' if is_live else 'result'}; phases (first half vs second half) when supported by data; minutes for the opening goal and equalizer if present; how momentum changed; any notable absences of data like venue/stats),""" \
 + """ bullets (3-6 crisp points), key_events (minute,type,player,note), star_performers (name,reason), numbers (home_score,away_score).
 
 Rules:
@@ -1031,7 +1031,7 @@ async def run_llm(system: str, user: str) -> Dict[str, Any]:
         schema_hint = f"""Respond ONLY in JSON with keys:
 {{
   "headline": str,
-  "one_paragraph": str,   // MUST be between 300-400 words, single paragraph
+  "one_paragraph": str,   // MUST be between 200-300 words, single paragraph
   "bullets": [str, ...],  // 3-6 items
   "key_events": [{{"minute": str, "type": str, "player": str, "note": str}}, ...],
   "star_performers": [{{"name": str, "reason": str}}, ...],
@@ -1084,10 +1084,10 @@ Do not add extra fields.
     # Enforce paragraph length once
     para = out.get("one_paragraph") or ""
     wc = word_count(para)
-    if wc < 300 or wc > 400:
+    if wc < 200 or wc > 300:
         reinforce = (
             system
-            + f" The one_paragraph MUST be between 300-400 words. "
+            + f" The one_paragraph MUST be between 200-300 words. "
               "Preserve facts; do not invent missing data. Expand with momentum and context only from provided info."
         )
         try:

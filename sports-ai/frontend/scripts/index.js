@@ -11,6 +11,7 @@
   const tickerRow = document.getElementById('liveTicker');
   const tickerStatus = document.getElementById('tickerStatus');
   const liveOnlyToggle = document.getElementById('liveOnlyToggle');
+  const refreshTickerBtn = document.getElementById('refreshTickerBtn');
 
   const leaguesRow = document.getElementById('leaguesRow');
   const leagueSearch = document.getElementById('leagueSearch');
@@ -42,6 +43,8 @@
   }
 
   // ===== Live ticker =====
+  let lastTickerSummary = null;
+
   async function loadTicker(){
     set(tickerStatus, 'Loading…');
     const endpoints = ['/matches/details','/matches/details/','/matches/summary','/matches/summary/','/matches/detail','/matches','/matches/'];
@@ -51,7 +54,8 @@
         const r = await fetch(apiBase + ep);
         if(!r.ok) { lastErr = new Error('HTTP '+r.status+' '+ep); continue; }
         const data = await r.json();
-        renderTicker(data || {});
+        lastTickerSummary = data || {};
+        renderTicker(lastTickerSummary);
         set(tickerStatus, 'Updated ' + new Date().toLocaleTimeString());
         return;
       }catch(e){ lastErr = e; }
@@ -62,8 +66,13 @@
 
   function renderTicker(summary){
     clear(tickerRow);
-    const all = (Array.isArray(summary.live)? summary.live: []).concat(Array.isArray(summary.upcoming)? summary.upcoming: []);
-    const items = liveOnlyToggle && liveOnlyToggle.checked ? (summary.live || []) : (all || []);
+    // Backend returns { live: [...], finished: [...] } via /matches/details.
+    // Older variants might expose 'upcoming'. Merge live + (upcoming|finished).
+    const live = Array.isArray(summary.live) ? summary.live : [];
+    const upcoming = Array.isArray(summary.upcoming) ? summary.upcoming : [];
+    const finished = Array.isArray(summary.finished) ? summary.finished : [];
+    const all = live.concat(upcoming, finished);
+    const items = liveOnlyToggle && liveOnlyToggle.checked ? live : all;
     if(!items.length){
       const msg = document.createElement('div');
       msg.className = 'empty';
@@ -299,7 +308,10 @@
   }
 
   // ===== Wire up =====
-  liveOnlyToggle.addEventListener('change', loadTicker);
+  // Do not auto-fetch; only fetch on explicit Refresh click.
+  if(refreshTickerBtn) refreshTickerBtn.addEventListener('click', loadTicker);
+  // Re-render locally when toggling live-only filter (no network call).
+  if(liveOnlyToggle) liveOnlyToggle.addEventListener('change', ()=> renderTicker(lastTickerSummary || {}));
   leagueSearch.addEventListener('input', ()=>{
     const q = leagueSearch.value.trim().toLowerCase();
     if(!q){ filteredLeagues = allLeagues.slice(); }
@@ -314,8 +326,7 @@
   // Default date = today
   datePicker.value = new Date().toISOString().slice(0,10);
 
-  // Initial loads
-  loadTicker();
+  // Initial loads (no ticker auto-fetch)
+  set(tickerStatus, 'Idle — click Refresh');
   loadLeagues();
-  setInterval(()=>{ if(!document.hidden) loadTicker(); }, 60000);
 })();
