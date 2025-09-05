@@ -14,6 +14,50 @@
   const refreshBtn = document.getElementById('refreshBtn');
   const statusEl = document.getElementById('status');
 
+  // Resolve eventId from various shapes (event object or provider payload)
+  function getEventId(obj){
+    if(!obj) return '';
+    const pick = (o, k) => (o && o[k] != null && o[k] !== '') ? o[k] : undefined;
+    const flatId =
+      pick(obj,'idEvent') || pick(obj,'event_key') || pick(obj,'event_id') ||
+      pick(obj,'match_id') || pick(obj,'fixture_id') || pick(obj,'id');
+    if(flatId) return String(flatId);
+
+    // Nested provider responses: { data:{result:[{event_key:...}] } } or { result: { "<id>":[{event_key:...}] } }
+    try{
+      if(obj.data && Array.isArray(obj.data.result) && obj.data.result[0] && obj.data.result[0].event_key) return String(obj.data.result[0].event_key);
+      if(obj.result){
+        if(Array.isArray(obj.result) && obj.result[0] && obj.result[0].event_key) return String(obj.result[0].event_key);
+        if(typeof obj.result === 'object'){
+          const vals = Object.values(obj.result).filter(Boolean);
+          for(const v of vals){ if(Array.isArray(v) && v[0] && v[0].event_key) return String(v[0].event_key); }
+        }
+      }
+    }catch(_e){ /* ignore */ }
+    return '';
+  }
+
+  // Heuristic to infer if the venue is neutral relative to team names
+  function inferVenueInfo(hints){
+    const country = (hints && (hints.country_name || hints.event_country || hints.country)) || '';
+    const home = (hints && (hints.event_home_team || hints.home_team || hints.strHomeTeam)) || '';
+    const away = (hints && (hints.event_away_team || hints.away_team || hints.strAwayTeam)) || '';
+
+    const norm = s => String(s || '').toLowerCase();
+    const matchCountry = (team, country) => {
+      const t = norm(team);
+      const c = norm(country);
+      if(!t || !c) return false;
+      // loose contains: 'sri lanka' matches 'sri lanka', 'united' matches 'united arab emirates' (acceptable heuristic)
+      return t.includes(c) || c.includes(t);
+    };
+
+    const homeMatches = matchCountry(home, country);
+    const awayMatches = matchCountry(away, country);
+    const neutral = !!country && !homeMatches && !awayMatches;
+    return { country, home, away, homeMatches, awayMatches, neutral };
+  }
+
   const modal = document.getElementById('matchModal');
   const modalBody = document.getElementById('modalBody');
   const closeModal = document.getElementById('closeModal');
@@ -49,6 +93,7 @@
             <div id="league_table_section" class="extra-section"><h4>League Table</h4><div class="body">Loading…</div></div>
             <div id="odds_section" class="extra-section"><h4>Odds</h4><div class="body">Loading…</div></div>
             <div id="prob_section" class="extra-section"><h4>Probabilities</h4><div class="body">Loading…</div></div>
+            <div id="form_section" class="extra-section"><h4>Recent Form</h4><div class="body">Loading…</div></div>
             <div id="comments_section" class="extra-section"><h4>Comments</h4><div class="body">Loading…</div></div>
             <div id="seasons_section" class="extra-section"><h4>Seasons</h4><div class="body">Loading…</div></div>
           </div>
@@ -86,7 +131,287 @@
       console.error('Extras error:', err);
       const sec = modalBody.querySelector('#extras .extras-body'); if(sec) sec.textContent = 'Extras error: ' + (err && err.message ? err.message : String(err));
     });
+    // Ensure probabilities come from our Analysis Agent (not provider probabilities.list)
+    fetchWinprobOverride(ev).catch(err => console.error('Winprob override error:', err));
+    fetchRecentForm(ev).catch(err => console.error('Recent form error:', err));
   }
+
+  // Override renderer for Probabilities section using Analysis Agent
+  async function fetchWinprobOverride(ev){
+    const probBody = modalBody.querySelector('#prob_section .body');
+    if(!probBody) return;
+
+    // If a previous analysis card exists, clear and replace it with the override result
+    const existing = probBody.querySelector('[data-agent-prob="1"]');
+    if (existing) { probBody.innerHTML = ''; }
+
+    probBody.innerHTML = '<div class="prob-loading">Loading probabilities…</div>';
+
+    const eventId = getEventId(ev);
+    if(!eventId){
+      probBody.innerHTML = '<div class="prob-error">Missing eventId</div>';
+      return;
+    }
+
+    try{
+      const url = new URL(apiBase + '/analysis/winprob');
+      url.searchParams.set('eventId', String(eventId));
+      url.searchParams.set('source', 'auto');
+      url.searchParams.set('lookback', '10');
+      const resp = await fetch(url.toString());
+      console.debug('[prob][override] GET', url.toString(), 'status=', resp.status);
+      const res = await resp.json().catch(()=> ({}));
+      console.debug('[prob][override] payload=', res);
+
+      probBody.innerHTML = '';
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const country = ev.country_name || ev.strCountry || ev.country || '';
+      const hLogo = (ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '');
+      const aLogo = (ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '');
+      const _inferFromLogo = (url)=>{
+        try{
+          if(!url) return '';
+          const last = String(url).split('?')[0].split('#')[0].split('/').pop() || '';
+          const base = last.replace(/\.[a-zA-Z0-9]+$/, '');
+          const t = decodeURIComponent(base).replace(/[\-_]+/g, ' ').trim();
+          return t ? t.split(' ').map(w=> w? (w[0].toUpperCase()+w.slice(1)) : '').join(' ') : '';
+        }catch(_e){ return ''; }
+      };
+      const derivedHomeName = home || _inferFromLogo(hLogo) || 'Home';
+      const derivedAwayName = away || _inferFromLogo(aLogo) || 'Away';
+      const card = createProbabilitiesCardEnhanced({
+        __from: 'override',
+        event_key: eventId,
+        event_home_team: home,
+        event_away_team: away,
+        home_team_name: derivedHomeName,
+        away_team_name: derivedAwayName,
+        country_name: country,
+        home_team_logo: hLogo,
+        away_team_logo: aLogo,
+        res
+      });
+      probBody.appendChild(card);
+    } catch(e){
+      console.error('fetchWinprobOverride error', e);
+      probBody.innerHTML = '<div class="prob-error">Failed to load probabilities</div>';
+    }
+  }
+
+  // Build the Analysis-Agent-driven probabilities card with logos and explicit labels
+  function createProbabilitiesCardEnhanced(ctx){
+    const { res } = ctx || {};
+    const ok = !!(res && (res.ok === true || typeof res.ok === 'undefined'));
+    const data = (res && res.data) || {};
+
+    // Pull probs
+    const probs = data.probs || {};
+    let pH = Number(probs.home || 0), pD = Number(probs.draw || 0), pA = Number(probs.away || 0);
+    // Guard and normalize (sum may deviate a bit due to rounding)
+    const sum = pH + pD + pA;
+    if(sum > 0){ pH/=sum; pD/=sum; pA/=sum; }
+    const pct = v => (Number(v*100).toFixed(1));
+
+    // Names + logos from agent (preferred) or event context (fallbacks passed via ctx)
+    const homeName = (data.home_team && (data.home_team.name || data.home_team.short_name)) || ctx.home_team_name || ctx.event_home_team || 'Home';
+    const awayName = (data.away_team && (data.away_team.name || data.away_team.short_name)) || ctx.away_team_name || ctx.event_away_team || 'Away';
+    const hLogo = (data.home_team && data.home_team.logo) || ctx.home_team_logo || '';
+    const aLogo = (data.away_team && data.away_team.logo) || ctx.away_team_logo || '';
+
+    // Improved venue role detection fallback
+    let neutral = !!(data.venue && (data.venue.neutral === true));
+    if (data.venue == null || typeof data.venue.neutral === 'undefined'){
+      try{
+        const vinf = inferVenueInfo({
+          country_name: ctx.country_name,
+          event_home_team: homeName,
+          event_away_team: awayName
+        });
+        neutral = !!vinf.neutral;
+      }catch(_e){}
+    }
+    const homeRole = neutral ? 'Neutral' : 'Home';
+    const awayRole = neutral ? 'Neutral' : 'Away';
+
+    // Root card
+    const card = document.createElement('div');
+    card.className = 'prob-card';
+    card.setAttribute('data-agent-prob','1');
+
+    // Headline with logos
+    const head = document.createElement('div');
+    head.className = 'prob-headline';
+    head.innerHTML = `
+      <div class="side side-left">
+        ${hLogo? `<img class="logo" src="${hLogo}" alt="${homeName} logo" onerror="this.remove()">` : ''}
+        <span class="name">${homeName}</span>
+        <span class="role" style="font-size:11px;color:#64748b;">(${homeRole})</span>
+      </div>
+      <div class="middle">${homeName} (${homeRole}) ${pct(pH)}% | Draw ${pct(pD)}% | ${awayName} (${awayRole}) ${pct(pA)}%</div>
+      <div class="side side-right">
+        <span class="role" style="font-size:11px;color:#64748b;">(${awayRole})</span>
+        <span class="name">${awayName}</span>
+        ${aLogo? `<img class="logo" src="${aLogo}" alt="${awayName} logo" onerror="this.remove()">` : ''}
+      </div>`;
+    card.appendChild(head);
+
+    // Stacked bar
+    const stacked = document.createElement('div');
+    stacked.className = 'prob-stacked';
+    const wH = Math.max(0, Math.min(100, Number(pH*100).toFixed(1)));
+    const wD = Math.max(0, Math.min(100, Number(pD*100).toFixed(1)));
+    let wA = Math.max(0, Math.min(100, Number(pA*100).toFixed(1)));
+    // ensure total exactly 100.0 by adjusting away
+    const totalRounded = Number(wH) + Number(wD) + Number(wA);
+    if(totalRounded !== 100){ wA = (100 - Number(wH) - Number(wD)).toFixed(1); }
+    stacked.innerHTML = `
+      <span class="seg home" style="width:${wH}%;"></span>
+      <span class="seg draw" style="width:${wD}%;"></span>
+      <span class="seg away" style="width:${wA}%;"></span>`;
+    card.appendChild(stacked);
+
+    // Inline labels under the bar (one-line legend)
+    const labels = document.createElement('div');
+    labels.className = 'prob-labels';
+    labels.innerHTML = `
+      <span class="lbl">${homeName} (${homeRole}) ${Number(wH).toFixed(1)}%</span>
+      <span class="lbl">Draw ${Number(wD).toFixed(1)}%</span>
+      <span class="lbl">${awayName} (${awayRole}) ${Number(wA).toFixed(1)}%</span>`;
+    card.appendChild(labels);
+
+    // Mini rows (Home / Draw / Away)
+    const mkMini = (key, label, width) => {
+      const row = document.createElement('div'); row.className='prob-mini';
+      row.innerHTML = `
+        <div class="label">${label}</div>
+        <div class="bar"><span class="fill ${key}" style="width:${width}%"></span></div>
+        <div class="value">${Number(width).toFixed(1)}%</div>`;
+      return row;
+    };
+    card.appendChild(mkMini('home', `${homeName} ${neutral? '(Neutral)':'(Home)'}`, wH));
+    card.appendChild(mkMini('draw', 'Draw', wD));
+    card.appendChild(mkMini('away', `${awayName} ${neutral? '(Neutral)':'(Away)'}`, wA));
+
+    // Meta + Show Raw toggle
+    const meta = document.createElement('div'); meta.className='prob-meta';
+    const method = data.method || 'unknown';
+    const sample = (data.inputs && (data.inputs.sample_size || data.inputs.effective_weight)) || undefined;
+    const leftMeta = document.createElement('div');
+    leftMeta.textContent = `Method: ${method}${sample? ` • n=${sample}`:''}`;
+    const btnMeta = document.createElement('button'); btnMeta.className='raw-toggle'; btnMeta.textContent='Show raw';
+    const pre = document.createElement('pre');
+    try{ pre.textContent = JSON.stringify(res, null, 2); }catch(_e){ pre.textContent = String(res); }
+    btnMeta.addEventListener('click', ()=>{ const shown = pre.style.display==='block'; pre.style.display = shown?'none':'block'; btnMeta.textContent = shown? 'Show raw':'Hide raw'; });
+    meta.appendChild(leftMeta); meta.appendChild(btnMeta);
+    card.appendChild(meta); card.appendChild(pre);
+
+    return card;
+  }
+
+  // ---- Recent Form (analysis.form) ----
+  async function fetchRecentForm(ev){
+    const formBody = modalBody.querySelector('#form_section .body');
+    if(!formBody) return;
+
+    // Clear any previous form card
+    const prev = formBody.querySelector('[data-agent-form="1"]');
+    if(prev) formBody.innerHTML = '';
+
+    formBody.textContent = 'Loading recent form…';
+
+    const eventId = getEventId(ev);
+    if(!eventId){ formBody.innerHTML = '<div class="prob-error">Missing eventId</div>'; return; }
+
+    try{
+      const url = new URL(apiBase + '/analysis/form');
+      url.searchParams.set('eventId', String(eventId));
+      url.searchParams.set('lookback', '5');
+      const resp = await fetch(url.toString());
+      const res = await resp.json().catch(()=> ({}));
+      if(!resp.ok || !res || res.ok === false){
+        throw new Error(res && res.error && (res.error.message || res.error.code) || ('HTTP '+resp.status));
+      }
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const hLogo = ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '';
+      const aLogo = ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '';
+
+      formBody.innerHTML = '';
+      const card = createFormCard({ res, homeName: home, awayName: away, hLogo, aLogo });
+      formBody.appendChild(card);
+    }catch(e){
+      console.error('fetchRecentForm error', e);
+      formBody.innerHTML = '<div class="prob-error">Failed to load recent form</div>';
+    }
+  }
+
+  function createFormCard(ctx){
+    const { res, homeName, awayName, hLogo, aLogo } = ctx || {};
+    const data = (res && res.data) || {};
+
+    const home = data.home_team || {}; const away = data.away_team || {};
+    const hm = data.home_metrics || {}; const am = data.away_metrics || {};
+    const lookback = (hm.games || am.games || 0);
+
+    const HN = home.name || homeName || 'Home';
+    const AN = away.name || awayName || 'Away';
+
+    // Root
+    const card = document.createElement('div'); card.className='form-card'; card.setAttribute('data-agent-form','1');
+
+    // Grid with per-team panels
+    const grid = document.createElement('div'); grid.className='form-grid'; card.appendChild(grid);
+
+    const mkChips = (arr)=>{
+      const wrap = document.createElement('div'); wrap.className='chips';
+      (Array.isArray(arr)?arr:[]).forEach(x=>{
+        const t = String(x||'').trim().toUpperCase();
+        const span = document.createElement('span'); span.className='chip ' + (t==='W'?'win':(t==='D'?'draw':'loss')); span.textContent = t || '?';
+        wrap.appendChild(span);
+      });
+      if(!wrap.children.length){ const empty=document.createElement('div'); empty.style.cssText='font-size:12px;color:#64748b'; empty.textContent='No recent results'; wrap.appendChild(empty); }
+      return wrap;
+    };
+
+    const mkTeam = (side)=>{
+      const isHome = side==='home';
+      const team = isHome? home : away; const met = isHome? hm : am;
+      const nm = isHome? HN : AN; const logo = isHome? (home.logo || hLogo) : (away.logo || aLogo);
+      const role = isHome? 'Home' : 'Away';
+
+      const box = document.createElement('div'); box.className='form-team';
+      const hdr = document.createElement('div'); hdr.className='hdr';
+      hdr.innerHTML = `${logo? `<img class="logo" src="${logo}" alt="${nm} logo" onerror="this.remove()">` : ''}<span class="name">${nm}</span> <span class="role">(${role})</span>`; box.appendChild(hdr);
+
+      const summary = document.createElement('div'); summary.className='form-summary'; summary.textContent = (team.summary || ''); box.appendChild(summary);
+      box.appendChild(mkChips(met.last_results));
+
+      const tbl = document.createElement('table'); tbl.className='metric-table';
+      const addRow = (k, v)=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td class="k">${k}</td><td class="v">${v}</td>`; tbl.appendChild(tr); };
+      addRow('Games', met.games ?? '—');
+      addRow('Wins / Draws / Losses', `${met.wins ?? '—'} / ${met.draws ?? '—'} / ${met.losses ?? '—'}`);
+      addRow('Goals For / Against', `${met.gf ?? '—'} / ${met.ga ?? '—'}`);
+      addRow('Goal Difference', `${met.gd ?? '—'}`);
+      box.appendChild(tbl);
+      return box;
+    };
+
+    grid.appendChild(mkTeam('home'));
+    grid.appendChild(mkTeam('away'));
+
+    const footer = document.createElement('div'); footer.className='form-footer';
+    const left = document.createElement('div'); left.textContent = `Lookback: ${lookback || 5} games`;
+    const btn = document.createElement('button'); btn.className='raw-toggle'; btn.textContent='Show raw';
+    const pre = document.createElement('pre'); try{ pre.textContent = JSON.stringify(res, null, 2);}catch(_e){ pre.textContent = String(res);} btn.addEventListener('click', ()=>{ const shown = pre.style.display==='block'; pre.style.display = shown? 'none':'block'; btn.textContent = shown? 'Show raw':'Hide raw'; });
+    footer.appendChild(left); footer.appendChild(btn); card.appendChild(footer); card.appendChild(pre);
+
+    return card;
+  }
+
+  // make accessible just in case of scope issues
+  window.fetchRecentForm = fetchRecentForm;
+  window.createFormCard  = createFormCard;
 
   // ----- Match Summary via backend summarizer -----
   async function fetchMatchSummary(ev){
@@ -1131,81 +1456,286 @@
 
     const title = document.createElement('h4');
     title.style.cssText = 'margin: 0; color: #1f2937; font-size: 18px;';
-    title.textContent = 'Match Probabilities';
+    title.textContent = 'Match Probabilities (Analysis Agent)';
 
     header.appendChild(icon);
     header.appendChild(title);
     card.appendChild(header);
 
-    let probs = null;
-    if (Array.isArray(data) && data.length > 0) {
-      probs = data[0];
-    } else if (data && typeof data === 'object') {
-      probs = data.result || data.data || data;
+    const body = document.createElement('div');
+    body.className = 'prob-body';
+    body.innerHTML = '<div class="prob-loading">Loading probabilities…</div>';
+    card.appendChild(body);
+
+    function probRow(label, p){
+      const row = document.createElement('div');
+      row.className = 'prob-row';
+
+      const lab = document.createElement('span');
+      lab.className = 'label';
+      lab.textContent = label;
+      row.appendChild(lab);
+
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      const fill = document.createElement('span');
+      fill.className = 'fill';
+      fill.style.width = (Number(p || 0) * 100).toFixed(0) + '%';
+      bar.appendChild(fill);
+      row.appendChild(bar);
+
+      const val = document.createElement('span');
+      val.className = 'value';
+      val.textContent = (Number(p || 0) * 100).toFixed(1) + '%';
+      row.appendChild(val);
+
+      return row;
     }
 
-    if (probs && (probs.prob_HW || probs.prob_D || probs.prob_AW)) {
-      const probsContainer = document.createElement('div');
-      probsContainer.style.cssText = 'display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;';
+    // Resolve team names and logos from varied hint keys with graceful fallback.
+    // Also infer a readable name from the logo filename when explicit names are missing.
+    function resolveTeams(hints){
+      const h = hints || {};
 
-      const outcomes = [
-        { label: 'Home Win', value: probs.prob_HW, color: '#10b981' },
-        { label: 'Draw', value: probs.prob_D, color: '#f59e0b' },
-        { label: 'Away Win', value: probs.prob_AW, color: '#ef4444' }
-      ];
+      const pick = (obj, keys) => {
+        for(const k of keys){ if(obj && obj[k]) return String(obj[k]); }
+        return '';
+      };
 
-      outcomes.forEach(outcome => {
-        const outcomeCard = document.createElement('div');
-        outcomeCard.style.cssText = `padding: 12px; background: linear-gradient(135deg, ${outcome.color}10, ${outcome.color}05); border-radius: 8px; text-align: center; border: 1px solid ${outcome.color}30;`;
-        
-        const label = document.createElement('div');
-        label.style.cssText = 'font-size: 12px; color: #6b7280; font-weight: 500; margin-bottom: 4px;';
-        label.textContent = outcome.label;
+      const inferFromLogo = (url) => {
+        try{
+          if(!url) return '';
+          const last = String(url).split('?')[0].split('#')[0].split('/').pop() || '';
+          if(!last) return '';
+          const base = last.replace(/\.[a-zA-Z0-9]+$/, '');
+          const t = decodeURIComponent(base).replace(/[\-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+          if(!t) return '';
+          return t.split(' ').map(w => w ? (w[0].toUpperCase() + w.slice(1)) : '').join(' ').trim();
+        }catch(_e){ return ''; }
+      };
 
-        const value = document.createElement('div');
-        value.style.cssText = `font-size: 18px; font-weight: 700; color: ${outcome.color};`;
-        value.textContent = outcome.value ? `${(parseFloat(outcome.value) * 100).toFixed(1)}%` : 'N/A';
+      const homeLogo = pick(h, ['home_team_logo','event_home_team_logo','home_logo','strHomeTeamBadge','homeBadge','team_home_badge']);
+      const awayLogo = pick(h, ['away_team_logo','event_away_team_logo','away_logo','strAwayTeamBadge','awayBadge','team_away_badge']);
 
-        outcomeCard.appendChild(label);
-        outcomeCard.appendChild(value);
-        probsContainer.appendChild(outcomeCard);
-      });
+      let homeName = pick(h, ['home_team_name','event_home_team','home_team','strHomeTeam','home']);
+      let awayName = pick(h, ['away_team_name','event_away_team','away_team','strAwayTeam','away']);
 
-      card.appendChild(probsContainer);
+      if(!homeName){ homeName = inferFromLogo(homeLogo) || 'Home'; }
+      if(!awayName){ awayName = inferFromLogo(awayLogo) || 'Away'; }
 
-      // Add probability bars
-      const barsContainer = document.createElement('div');
-      barsContainer.style.cssText = 'margin-top: 12px;';
+      return { homeName, awayName, homeLogo, awayLogo };
+    }
 
-      outcomes.forEach(outcome => {
-        if (outcome.value) {
-          const barWrapper = document.createElement('div');
-          barWrapper.style.cssText = 'margin-bottom: 8px;';
+    function stackedLine(pHome, pDraw, pAway, labels, logos, roles){
+      const container = document.createElement('div');
+      container.style.cssText = 'margin: 12px 0 8px 0; display:flex; align-items:center; gap:10px;';
 
-          const barLabel = document.createElement('div');
-          barLabel.style.cssText = 'display: flex; justify-content: space-between; margin-bottom: 2px; font-size: 12px;';
-          barLabel.innerHTML = `<span style="color: #6b7280;">${outcome.label}</span><span style="color: ${outcome.color}; font-weight: 600;">${(parseFloat(outcome.value) * 100).toFixed(1)}%</span>`;
+      // Left logo (home)
+      const left = document.createElement('img');
+      left.src = (logos && logos.home) ? logos.home : '';
+      left.alt = (labels && labels.home) ? labels.home : 'Home';
+      left.style.cssText = 'width:24px;height:24px;object-fit:contain;border-radius:4px;';
+      left.onerror = () => left.remove();
+      if(left.src) container.appendChild(left);
 
-          const barTrack = document.createElement('div');
-          barTrack.style.cssText = 'width: 100%; height: 6px; background: #f3f4f6; border-radius: 3px; overflow: hidden;';
+      // Stacked bar with overlay text
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'flex:1; position:relative; height:22px; background:#f3f4f6; border-radius:11px; overflow:hidden; display:flex;';
 
-          const barFill = document.createElement('div');
-          barFill.style.cssText = `height: 100%; background: ${outcome.color}; border-radius: 3px; width: ${(parseFloat(outcome.value) * 100).toFixed(1)}%; transition: width 0.3s ease;`;
+      const seg = (w, bg) => {
+        const s = document.createElement('div');
+        s.style.cssText = `height:100%; width:${(w*100).toFixed(1)}%; background:${bg}; display:flex; align-items:center; justify-content:center; position:relative;`;
+        return s;
+      };
 
-          barTrack.appendChild(barFill);
-          barWrapper.appendChild(barLabel);
-          barWrapper.appendChild(barTrack);
-          barsContainer.appendChild(barWrapper);
+      const txt = (t) => {
+        const el = document.createElement('span');
+        el.style.cssText = 'font-size:12px; font-weight:700; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.25); white-space:nowrap;';
+        el.textContent = t;
+        return el;
+      };
+
+      const homeSeg = seg(pHome, '#3b82f6');
+      const drawSeg = seg(pDraw, '#9ca3af');
+      const awaySeg = seg(pAway, '#ef4444');
+
+      const homeRole = roles && roles.homeTxt ? ` ${roles.homeTxt}` : '';
+      const awayRole = roles && roles.awayTxt ? ` ${roles.awayTxt}` : '';
+
+      const homeTxt = `${labels.home}${homeRole} ${(pHome*100).toFixed(1)}%`;
+      const drawTxt = `Draw ${(pDraw*100).toFixed(1)}%`;
+      const awayTxt = `${labels.away}${awayRole} ${(pAway*100).toFixed(1)}%`;
+
+      homeSeg.title = homeTxt;
+      drawSeg.title = drawTxt;
+      awaySeg.title = awayTxt;
+
+      homeSeg.appendChild(txt(homeTxt));
+      drawSeg.appendChild(txt(drawTxt));
+      awaySeg.appendChild(txt(awayTxt));
+
+      wrap.appendChild(homeSeg); wrap.appendChild(drawSeg); wrap.appendChild(awaySeg);
+      container.appendChild(wrap);
+
+      // Right logo (away)
+      const right = document.createElement('img');
+      right.src = (logos && logos.away) ? logos.away : '';
+      right.alt = (labels && labels.away) ? labels.away : 'Away';
+      right.style.cssText = 'width:24px;height:24px;object-fit:contain;border-radius:4px;';
+      right.onerror = () => right.remove();
+      if(right.src) container.appendChild(right);
+
+      return container;
+    }
+
+    function teamWDLRow({logo, name, roleTxt, win, draw, loss}){
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:10px; margin:6px 0;';
+
+      const img = document.createElement('img');
+      img.src = logo || '';
+      img.alt = name || '';
+      img.style.cssText = 'width:20px;height:20px;object-fit:contain;border-radius:4px;';
+      img.onerror = () => img.remove();
+      if (img.src) row.appendChild(img);
+
+      const label = document.createElement('div');
+      label.style.cssText = 'font-weight:600; color:#1f2937;';
+      label.textContent = `${name} ${roleTxt}`;
+      row.appendChild(label);
+
+      const stats = document.createElement('div');
+      stats.style.cssText = 'margin-left:auto; color:#374151; font-size:13px;';
+      const fmt = (x)=> (Number(x)*100).toFixed(1) + '%';
+      stats.textContent = `W ${fmt(win)} • D ${fmt(draw)} • L ${fmt(loss)}`;
+      row.appendChild(stats);
+
+      return row;
+    }
+
+    function renderFromAgentRes(res, hints, note){
+      if(!(res && res.ok && res.data && res.data.probs)){
+        body.innerHTML = '<div class="prob-error">Match probabilities not available</div>';
+        return;
+      }
+      const { method, probs, inputs } = res.data;
+      let pHome = Number(probs.home || 0), pDraw = Number(probs.draw || 0), pAway = Number(probs.away || 0);
+
+      const total = pHome + pDraw + pAway;
+      if (total > 0 && Math.abs(total - 1.0) > 1e-9) {
+        pHome /= total; pDraw /= total; pAway /= total;
+      }
+
+      const { homeName, awayName, homeLogo, awayLogo } = resolveTeams(hints || {});
+
+      const venue = inferVenueInfo(hints || {});
+      const roles = {
+        homeTxt: venue.neutral ? '(Neutral)' : '(Home)',
+        awayTxt: venue.neutral ? '(Neutral)' : '(Away)'
+      };
+
+      body.innerHTML = '';
+      // Big stacked bar with role-aware labels
+      body.appendChild(stackedLine(
+        pHome, pDraw, pAway,
+        { home: homeName, away: awayName },
+        { home: homeLogo, away: awayLogo },
+        roles
+      ));
+
+      // Keep compact distribution rows (Home/Draw/Away)
+      body.appendChild(probRow(`${homeName}`, pHome));
+      body.appendChild(probRow('Draw', pDraw));
+      body.appendChild(probRow(`${awayName}`, pAway));
+
+      // Per-team W/D/L panel (mapped from the same match distribution)
+      const homeWDL = { win: pHome, draw: pDraw, loss: pAway };
+      const awayWDL = { win: pAway, draw: pDraw, loss: pHome };
+      body.appendChild(teamWDLRow({ logo: homeLogo, name: homeName, roleTxt: roles.homeTxt, ...homeWDL }));
+      body.appendChild(teamWDLRow({ logo: awayLogo, name: awayName, roleTxt: roles.awayTxt, ...awayWDL }));
+
+      const meta = document.createElement('div');
+      meta.className = 'prob-meta';
+      const sample = (inputs && inputs.sample_size != null) ? ` • H2H n=${inputs.sample_size}` : '';
+      meta.innerHTML = `Method: <strong>${String(method || '').replace('_',' ')}</strong>${sample}${note ? ` • ${note}` : ''}`;
+      body.appendChild(meta);
+
+      const btn = document.createElement('button');
+      btn.textContent = 'Show raw';
+      btn.style.cssText = 'margin-top:6px;background:#334155;color:#fff;border:1px solid #475569;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;';
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'display:none;margin-top:8px;background:#111827;color:#e5e7eb;padding:8px;border-radius:8px;overflow:auto;max-height:240px;';
+      try{ pre.textContent = JSON.stringify(res, null, 2); }catch(_e){ pre.textContent = String(res); }
+      btn.addEventListener('click', ()=>{ const show = pre.style.display === 'none'; pre.style.display = show ? 'block' : 'none'; btn.textContent = show ? 'Hide raw' : 'Show raw'; });
+      body.appendChild(btn);
+      body.appendChild(pre);
+
+      card.setAttribute('data-agent-prob', '1');
+    }
+
+    async function renderWithVenueLogic(passed, hints){
+      const venue = inferVenueInfo(hints || {});
+      if (venue.neutral) {
+        try {
+          const eventId = getEventId(hints || data);
+          if (eventId) {
+            const url = new URL(apiBase + '/analysis/winprob');
+            url.searchParams.set('eventId', String(eventId));
+            url.searchParams.set('source', 'auto');
+            url.searchParams.set('lookback', '10');
+            url.searchParams.set('venue_weight', '1.0'); // neutralize home advantage
+            const resp = await fetch(url.toString());
+            const neutralRes = await resp.json().catch(()=> ({}));
+            console.debug('[prob][neutral] payload=', neutralRes);
+            if (neutralRes && neutralRes.ok) {
+              renderFromAgentRes(neutralRes, hints, `Neutral venue detected — venue_weight=1.0`);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('Neutral recompute failed, falling back to original.', e);
         }
-      });
-
-      card.appendChild(barsContainer);
-    } else {
-      const noData = document.createElement('div');
-      noData.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;';
-      noData.textContent = 'Match probabilities not available';
-      card.appendChild(noData);
+      }
+      renderFromAgentRes(passed, hints, venue.neutral ? 'Neutral venue suspected (using original weights)' : '');
     }
+
+    if(data && data.res){
+      renderWithVenueLogic(data.res, data);
+      return card;
+    }
+
+    const eventId = getEventId(data);
+    if(!eventId){
+      body.innerHTML = '<div class="prob-error">Missing eventId</div>';
+      return card;
+    }
+
+    (async ()=>{
+      try{
+        const url = new URL(apiBase + '/analysis/winprob');
+        url.searchParams.set('eventId', String(eventId));
+        url.searchParams.set('source', 'auto');
+        url.searchParams.set('lookback', '10');
+        const resp = await fetch(url.toString());
+        console.debug('[prob][card] GET', url.toString(), 'status=', resp.status);
+        const res = await resp.json().catch(()=> ({}));
+        console.debug('[prob][card] payload=', res);
+
+        const hints = {
+          event_home_team: data.event_home_team || data.home_team || data.strHomeTeam,
+          event_away_team: data.event_away_team || data.strAwayTeam || data.away_team,
+          home_team_name: data.home_team_name || data.event_home_team || data.home_team || data.strHomeTeam,
+          away_team_name: data.away_team_name || data.event_away_team || data.away_team || data.strAwayTeam,
+          country_name: data.country_name || data.country || data.event_country,
+          home_team_logo: data.home_team_logo || data.strHomeTeamBadge || '',
+          away_team_logo: data.away_team_logo || data.strAwayTeamBadge || '',
+        };
+        await renderWithVenueLogic(res, hints);
+      } catch(e){
+        console.error('createProbabilitiesCard fetch error', e);
+        body.innerHTML = '<div class="prob-error">Failed to load probabilities</div>';
+      }
+    })();
 
     return card;
   }
@@ -1864,7 +2394,15 @@
       const j = await callIntent('probabilities.list', args);
       probBody.innerHTML = '';
       if(j && j.ok) {
-        const probCard = createProbabilitiesCard(j.data || j.result || {});
+        const baseHints = {
+          event_key:        ev.idEvent || ev.event_key || ev.id || ev.match_id || '',
+          event_home_team:  ev.event_home_team || ev.strHomeTeam || ev.home_team || '',
+          event_away_team:  ev.event_away_team || ev.strAwayTeam || ev.away_team || '',
+          home_team_logo:   ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '',
+          away_team_logo:   ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '',
+          country_name:     ev.country_name || ev.strCountry || ev.country || ev.event_country || ''
+        };
+        const probCard = createProbabilitiesCard(Object.assign({}, baseHints, j.data || j.result || {}));
         probBody.appendChild(probCard);
       } else {
         const noData = document.createElement('div');
@@ -2046,3 +2584,83 @@
   fetchSummary();
 
 })();
+
+
+  // --- Probabilities fetch/render for details modal ---
+
+  // Unified eventId resolver for all probability fetches
+  function getEventId(ev) {
+    return (
+      ev.idEvent ||
+      ev.event_key ||
+      ev.id ||
+      ev.match_id ||
+      ev.eventId ||
+      (ev.matchCtx && (ev.matchCtx.idEvent || ev.matchCtx.event_key || ev.matchCtx.id || ev.matchCtx.match_id)) ||
+      ''
+    );
+  }
+
+  // Only one fetchExtras definition should exist
+  async function fetchExtras(ev) {
+    // Only implement the probabilities section here; other sections can be filled elsewhere.
+    try {
+      const probBody = modalBody.querySelector('#prob_section .body');
+      if (probBody) probBody.innerHTML = '<div class="prob-loading">Loading probabilities…</div>';
+
+      const eventId = String(getEventId(ev));
+      if (!eventId) {
+        if (probBody) probBody.innerHTML = '<div class="prob-error">Missing eventId</div>';
+        console.log('[prob] GET /analysis/winprob?eventId=undefined status=400');
+        return;
+      }
+
+      // Fetch analysis.winprob from backend
+      const url = new URL(apiBase + '/analysis/winprob');
+      url.searchParams.set('eventId', eventId);
+      url.searchParams.set('source', 'auto');
+      url.searchParams.set('lookback', '10');
+      const resp = await fetch(url.toString());
+      console.log(`[prob] GET ${url} status=`, resp.status);
+      const data = await resp.json();
+      console.log('[prob] payload:', data);
+
+      renderProbabilities(probBody, data, ev);
+    } catch (err) {
+      console.error('fetchExtras(probabilities) error:', err);
+      const probBody = modalBody.querySelector('#prob_section .body');
+      if (probBody) probBody.innerHTML = '<div class="prob-error">Failed to load probabilities</div>';
+    }
+  }
+
+  function renderProbabilities(container, res, ev) {
+    if (!container) return;
+    if (!res || !res.ok || !res.data || !res.data.probs) {
+      container.innerHTML = '<div class="prob-error">No probabilities available</div>';
+      return;
+    }
+    const homeName = ev.event_home_team || ev.strHomeTeam || ev.home_team || 'Home';
+    const awayName = ev.event_away_team || ev.strAwayTeam || ev.away_team || 'Away';
+    const { method, probs, inputs } = res.data;
+    const pHome = Number(probs.home || 0), pDraw = Number(probs.draw || 0), pAway = Number(probs.away || 0);
+    const pct = (x) => (x * 100).toFixed(1) + '%';
+    const sample = inputs && inputs.sample_size != null ? ` • H2H n=${inputs.sample_size}` : '';
+    const methodLabel = (method || '').replace('_', ' ');
+
+    container.innerHTML = `
+      <div class="prob-row"><span class="label">${homeName}</span>
+        <div class="bar"><span class="fill" style="width:${(pHome * 100).toFixed(0)}%"></span></div>
+        <span class="value">${pct(pHome)}</span>
+      </div>
+      <div class="prob-row"><span class="label">Draw</span>
+        <div class="bar"><span class="fill" style="width:${(pDraw * 100).toFixed(0)}%"></span></div>
+        <span class="value">${pct(pDraw)}</span>
+      </div>
+      <div class="prob-row"><span class="label">${awayName}</span>
+        <div class="bar"><span class="fill" style="width:${(pAway * 100).toFixed(0)}%"></span></div>
+        <span class="value">${pct(pAway)}</span>
+      </div>
+      <div class="prob-meta">Method: <strong>${methodLabel}</strong>${sample}</div>
+    `;
+  }
+
