@@ -117,6 +117,80 @@ function resolvePlayerAndImages(event, matchCtx){
   return { playerImg, teamLogo, playerName };
 }
 
+// Resolve a player's image by provided name using the players map in matchCtx
+function resolvePlayerImageByName(name, matchCtx){
+  try{
+    if(!name || !matchCtx) return '';
+    ensurePlayersMap(matchCtx);
+    const norm = s => (s || '').toString().replace(/[\.]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const nRaw = String(name).trim();
+    const nLow = nRaw.toLowerCase();
+    const nNorm = norm(nRaw);
+    let p = matchCtx._playersMap && (matchCtx._playersMap[nRaw] || matchCtx._playersMap[nLow] || matchCtx._playersMap[nNorm]);
+    if(!p && matchCtx._playersMap){
+      const vals = Object.values(matchCtx._playersMap);
+      const parts = nNorm.split(' ').filter(Boolean);
+      const last = parts.length ? parts[parts.length-1] : '';
+      const first = parts.length ? parts[0] : '';
+      for(const cand of vals){
+        try{
+          const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
+          const candNorm = norm(candName);
+          if(!candNorm) continue;
+          if(candNorm === nNorm || candNorm.includes(nNorm) || nNorm.includes(candNorm)) { p = cand; break; }
+          const candParts = candNorm.split(' ').filter(Boolean);
+          const candLast = candParts.length ? candParts[candParts.length-1] : '';
+          if(last && candLast && last === candLast){ p = cand; break; }
+          if(parts.length >= 2 && first.length === 1){
+            const candFirst = candParts.length ? candParts[0].charAt(0) : '';
+            if(candFirst === first && candLast === last){ p = cand; break; }
+          }
+        }catch(_e){}
+      }
+    }
+    if(p){
+      return p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
+    }
+  }catch(_e){}
+  return '';
+}
+
+// Try to parse substitution in/out player names from event structure or description
+function parseSubstitutionPlayers(event){
+  const out = { inName: '', outName: '' };
+  try{
+    if(event.player_in || event.player_out){
+      out.inName = event.player_in || '';
+      out.outName = event.player_out || '';
+      return out;
+    }
+    const raw = event.raw || {};
+    if(raw.home_scorer && typeof raw.home_scorer === 'object'){
+      out.inName = out.inName || raw.home_scorer.in || '';
+      out.outName = out.outName || raw.home_scorer.out || '';
+    }
+    if(raw.away_scorer && typeof raw.away_scorer === 'object'){
+      out.inName = out.inName || raw.away_scorer.in || '';
+      out.outName = out.outName || raw.away_scorer.out || '';
+    }
+    if(raw.in) out.inName = out.inName || raw.in;
+    if(raw.out) out.outName = out.outName || raw.out;
+    if(out.inName || out.outName) return out;
+    const desc = String(event.description || event.text || '').trim();
+    if(desc){
+      // Common patterns: "X ON for Y", "X in for Y", "X replaces Y"
+      let m = desc.match(/^(?:substitution[:,]?\s*)?(.+?)\s+(?:on|in)\s+for\s+(.+)$/i);
+      if(!m) m = desc.match(/^(?:substitution[:,]?\s*)?(.+?)\s+replaces\s+(.+)$/i);
+      if(!m) m = desc.match(/(.+?)\s+for\s+(.+?)(?:\.|,|;|$)/i);
+      if(m){ out.inName = (out.inName || m[1] || '').trim(); out.outName = (out.outName || m[2] || '').trim(); return out; }
+      // Pattern: "Y replaced by X"
+      m = desc.match(/(.+?)\s+replaced\s+by\s+(.+)/i);
+      if(m){ out.inName = (out.inName || m[2] || '').trim(); out.outName = (out.outName || m[1] || '').trim(); return out; }
+    }
+  }catch(_e){}
+  return out;
+}
+
 function normalizeEventTags(evt){
   const candidates = [];
   if(evt){
@@ -193,30 +267,51 @@ function createTimelineEvent(event, isLast, matchCtx){
   const timeline = document.createElement('div'); timeline.style.cssText='display:flex;flex-direction:column;align-items:center;margin-right:16px;flex-shrink:0;'; const dot = document.createElement('div'); dot.style.cssText = `width:12px;height:12px;border-radius:50%;background:${getEventColor(description,tags)};border:3px solid white;box-shadow:0 0 0 2px ${getEventColor(description,tags)};`; const line = document.createElement('div'); line.style.cssText = `width:2px;height:24px;background:#e5e7eb;${isLast? 'display:none;':''}`; timeline.appendChild(dot); timeline.appendChild(line);
   const content = document.createElement('div'); content.style.cssText='flex:1;'; const eventHeader = document.createElement('div'); eventHeader.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px;'; const minuteSpan = document.createElement('span'); minuteSpan.style.cssText='background:#f3f4f6;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#6b7280;'; minuteSpan.textContent = minute? `${minute}'` : '';
   const icon = document.createElement('span'); icon.style.fontSize='16px'; icon.textContent = getEventIcon(description, tags); eventHeader.appendChild(minuteSpan); eventHeader.appendChild(icon);
-  // Inline player avatar/logo next to icon
+  // Determine event type early for inline rendering decisions
+  const etypeInline = deriveEventType(description, tags, event);
+  // Inline player avatar/logo next to icon (special handling for substitutions: show IN and OUT)
   try{
-    const resolved = resolvePlayerAndImages(event, matchCtx);
-    if(resolved && (resolved.playerImg || resolved.teamLogo)){
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'width:20px;height:20px;border-radius:4px;overflow:hidden;flex-shrink:0;background:#1f2937;display:flex;align-items:center;justify-content:center';
-      const img = document.createElement('img');
-      img.src = resolved.playerImg || resolved.teamLogo || '';
-      img.alt = resolved.playerName || 'player';
-      img.style.cssText = resolved.playerImg ? 'width:20px;height:20px;object-fit:cover;display:block' : 'width:18px;height:18px;object-fit:contain;display:block';
-      img.onerror = function(){
-        // 404 or invalid image: fallback to a neutral avatar icon
-        try{
-          this.onerror = null;
-          // If we had playerImg and it failed, try teamLogo; else show fallback emoji
-          if(resolved.playerImg && resolved.teamLogo){ this.src = resolved.teamLogo; return; }
-          const span = document.createElement('span');
-          span.textContent = '👤';
-          span.style.cssText = 'font-size:14px;color:#e5e7eb;display:flex;align-items:center;justify-content:center;width:18px;height:18px;';
-          this.replaceWith(span);
-        }catch(_e){ this.remove(); }
+    if(etypeInline === 'substitution'){
+      const { inName, outName } = parseSubstitutionPlayers(event);
+      const inImg = inName ? resolvePlayerImageByName(inName, matchCtx) : '';
+      const outImg = outName ? resolvePlayerImageByName(outName, matchCtx) : '';
+      const mkAvatar = (src, label)=>{
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'width:20px;height:20px;border-radius:4px;overflow:hidden;flex-shrink:0;background:#1f2937;display:flex;align-items:center;justify-content:center;position:relative';
+        if(label){ const b = document.createElement('span'); b.textContent = label; b.style.cssText = 'position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);font-size:9px;color:#6b7280'; wrap.appendChild(b); }
+        if(src){
+          const img = document.createElement('img'); img.src = src; img.alt = label||'player'; img.style.cssText='width:20px;height:20px;object-fit:cover;display:block'; img.onerror=function(){ const span=document.createElement('span'); span.textContent='👤'; span.style.cssText='font-size:14px;color:#e5e7eb;display:flex;align-items:center;justify-content:center;width:18px;height:18px;'; this.replaceWith(span); }; wrap.appendChild(img);
+        } else { const span=document.createElement('span'); span.textContent='👤'; span.style.cssText='font-size:14px;color:#e5e7eb;display:flex;align-items:center;justify-content:center;width:18px;height:18px;'; wrap.appendChild(span); }
+        return wrap;
       };
-      wrap.appendChild(img);
-      eventHeader.appendChild(wrap);
+      if(inName || outName){
+        const inWrap = mkAvatar(inImg, 'IN');
+        const arrow = document.createElement('span'); arrow.textContent = '→'; arrow.style.cssText='color:#6b7280;font-size:12px;padding:0 4px;';
+        const outWrap = mkAvatar(outImg, 'OUT');
+        eventHeader.appendChild(inWrap); eventHeader.appendChild(arrow); eventHeader.appendChild(outWrap);
+      }
+    } else {
+      const resolved = resolvePlayerAndImages(event, matchCtx);
+      if(resolved && (resolved.playerImg || resolved.teamLogo)){
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'width:20px;height:20px;border-radius:4px;overflow:hidden;flex-shrink:0;background:#1f2937;display:flex;align-items:center;justify-content:center';
+        const img = document.createElement('img');
+        img.src = resolved.playerImg || resolved.teamLogo || '';
+        img.alt = resolved.playerName || 'player';
+        img.style.cssText = resolved.playerImg ? 'width:20px;height:20px;object-fit:cover;display:block' : 'width:18px;height:18px;object-fit:contain;display:block';
+        img.onerror = function(){
+          try{
+            this.onerror = null;
+            if(resolved.playerImg && resolved.teamLogo){ this.src = resolved.teamLogo; return; }
+            const span = document.createElement('span');
+            span.textContent = '👤';
+            span.style.cssText = 'font-size:14px;color:#e5e7eb;display:flex;align-items:center;justify-content:center;width:18px;height:18px;';
+            this.replaceWith(span);
+          }catch(_e){ this.remove(); }
+        };
+        wrap.appendChild(img);
+        eventHeader.appendChild(wrap);
+      }
     }
   }catch(_e){}
   const eventText = document.createElement('div'); eventText.style.cssText='color:#374151;margin-bottom:8px;'; eventText.textContent = description;
@@ -234,11 +329,22 @@ function createTimelineEvent(event, isLast, matchCtx){
         try{
           const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
           const d2 = ensureTooltip();
-          const titleParts = [];
-          if(playerImg){ titleParts.push(`<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#1f2937"><img src="${playerImg}" style="width:32px;height:32px;object-fit:cover;display:block" onerror="this.remove()"/></div>`); }
-          if(!playerImg && teamLogo){ titleParts.push(`<div style=\"width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#1f2937\"><img src=\"${teamLogo}\" style=\"width:32px;height:32px;object-fit:contain;display:block\" onerror=\"this.remove()\"/></div>`); }
-          const nameLabel = (event.player || event.player_name || event.playerName || event.player_fullname) ? `<div style=\"margin-left:8px;font-weight:700;color:#e5e7eb\">${_esc(String(event.player || event.player_name || event.playerName || ''))}</div>` : '';
-          const headerHtml = `<div style=\"display:flex;align-items:center;gap:8px;\">${titleParts.join('')}${nameLabel}</div>`;
+          let headerHtml = '';
+          if(etype === 'substitution'){
+            const { inName, outName } = parseSubstitutionPlayers(event);
+            const inImg = inName ? resolvePlayerImageByName(inName, matchCtx) : '';
+            const outImg = outName ? resolvePlayerImageByName(outName, matchCtx) : '';
+            const imgBox = (src)=> src ? `<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#1f2937"><img src="${src}" style="width:32px;height:32px;object-fit:cover;display:block" onerror="this.remove()"/></div>` : `<div style="width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:#1f2937;color:#e5e7eb">👤</div>`;
+            const inPart = `${imgBox(inImg)}<div style="font-weight:700;color:#10b981;margin:0 6px">${_esc(inName||'IN')}</div>`;
+            const outPart = `${imgBox(outImg)}<div style="font-weight:700;color:#ef4444;margin:0 6px">${_esc(outName||'OUT')}</div>`;
+            headerHtml = `<div style="display:flex;align-items:center;gap:8px;">${inPart}<span style="color:#9ca3af">→</span>${outPart}</div>`;
+          } else {
+            const titleParts = [];
+            if(playerImg){ titleParts.push(`<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#1f2937"><img src="${playerImg}" style="width:32px;height:32px;object-fit:cover;display:block" onerror="this.remove()"/></div>`); }
+            if(!playerImg && teamLogo){ titleParts.push(`<div style=\"width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#1f2937\"><img src=\"${teamLogo}\" style=\"width:32px;height:32px;object-fit:contain;display:block\" onerror=\"this.remove()\"/></div>`); }
+            const nameLabel = (event.player || event.player_name || event.playerName || event.player_fullname) ? `<div style=\"margin-left:8px;font-weight:700;color:#e5e7eb\">${_esc(String(event.player || event.player_name || event.playerName || ''))}</div>` : '';
+            headerHtml = `<div style=\"display:flex;align-items:center;gap:8px;\">${titleParts.join('')}${nameLabel}</div>`;
+          }
           d2.innerHTML = `${headerHtml}<div style=\"margin-top:6px;color:#e5e7eb;font-size:12px;white-space:normal\">${_esc(String(brief || description || etype))}</div>`;
           d2.style.display='block';
           positionEventTooltip(dot);
