@@ -5,6 +5,8 @@
   if(loc.port && loc.port !== '8000'){
     apiBase = loc.protocol + '//' + loc.hostname + ':8000';
   }
+  // Expose globally so shared utilities (timeline.js) can use it
+  try{ window.apiBase = apiBase; }catch(_e){}
 
   // Elements
   const matchTitle = document.getElementById('matchTitle');
@@ -59,14 +61,69 @@
       }
       if(!ev){ throw new Error('No event context available'); }
 
+      // Try to enrich with commentary for better timeline synthesis (cards/subs often live in comments)
+      try{
+        const idForComments = eventId || (ev ? extractEventId(ev) : '');
+        if(idForComments){
+          const comm = await callIntent('comments.list', { matchId: String(idForComments) }).catch(()=> null);
+          if(comm){
+            let arr = [];
+            const d = comm.data || comm.result || comm.comments || comm;
+            if(Array.isArray(d)) arr = d;
+            else if (d && Array.isArray(d.data)) arr = d.data;
+            else if (d && d.result && typeof d.result === 'object'){
+              const vals = Object.values(d.result).filter(Boolean);
+              arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
+            }
+            if(Array.isArray(arr) && arr.length){
+              // attach under common keys checked by synthesizeTimelineFromEvent
+              ev.commentary = arr;
+              ev.comments = arr;
+            }
+          }
+        }
+      }catch(_e){ /* non-fatal */ }
+
+      // Prefetch players for both teams to enable player image resolution in timeline
+      try{
+        const homeName = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+        const awayName = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+        if(homeName || awayName){
+          const [homeRes, awayRes] = await Promise.allSettled([
+            homeName ? callIntent('players.list', { teamName: homeName }) : Promise.resolve(null),
+            awayName ? callIntent('players.list', { teamName: awayName }) : Promise.resolve(null),
+          ]);
+          const extractPlayers = (settled)=>{
+            if(!settled || settled.status !== 'fulfilled' || !settled.value) return [];
+            const j = settled.value;
+            const d = j.data || j.result || j.players || j;
+            if(Array.isArray(d)) return d;
+            if(d && Array.isArray(d.result)) return d.result;
+            if(d && d.data && Array.isArray(d.data)) return d.data;
+            if(d && d.result && typeof d.result === 'object'){
+              const vals = Object.values(d.result).filter(Boolean);
+              return vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
+            }
+            return [];
+          };
+          const homePlayers = extractPlayers(homeRes);
+          const awayPlayers = extractPlayers(awayRes);
+          if(homePlayers.length) ev.players_home = homePlayers;
+          if(awayPlayers.length) ev.players_away = awayPlayers;
+          const combined = [...(homePlayers||[]), ...(awayPlayers||[])];
+          if(combined.length) ev.players = combined;
+        }
+      }catch(_e){ /* non-fatal */ }
+
       // Render header title
       const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
       const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
       matchTitle.textContent = `${home || 'Home'} vs ${away || 'Away'}`;
-      renderMatchHeader(ev);
+  // Render the match header card section
+  renderMatchHeader(ev);
 
       // Details + summary
-      try{ ev.timeline = buildCleanTimeline(ev); }catch(_e){}
+      try{ ev.timeline = buildMergedTimeline(ev); }catch(_e){ try{ ev.timeline = buildCleanTimeline(ev); }catch(_e2){} }
       renderEventDetails(ev, detailsInfo);
       fetchMatchSummary(ev).catch(err=>{ if(summaryEl) summaryEl.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err)); });
       fetchHighlights(ev).catch(err=>{ if(highlightsBody) highlightsBody.textContent = 'Highlights error: ' + (err && err.message ? err.message : String(err)); });
@@ -84,7 +141,7 @@
     }
   }
 
-  function getStatusColor(status){ const s = String(status||'').toLowerCase(); if(s.includes('live')||s.includes('1st')||s.includes('2nd')) return 'rgba(34,197,94,0.15)'; if(s.includes('finished')||s.includes('ft')) return 'rgba(107,114,128,0.2)'; if(s.includes('postponed')||s.includes('cancelled')) return 'rgba(239,68,68,0.2)'; return 'rgba(107,114,128,0.2)'; }
+  function getStatusColor(status){ const s = String(status).toLowerCase(); if(s.includes('live')||s.includes('1st')||s.includes('2nd')) return 'rgba(34,197,94,0.8)'; if(s.includes('finished')||s.includes('ft')) return 'rgba(107,114,128,0.8)'; if(s.includes('postponed')||s.includes('cancelled')) return 'rgba(239,68,68,0.8)'; return 'rgba(107,114,128,0.8)'; }
 
   function renderMatchHeader(ev){
     clear(matchInfo);
@@ -121,53 +178,79 @@
     matchInfo.appendChild(card);
   }
 
-  // ---- Details rendering: stats, timeline, extras ----
+  // ---- Details rendering & timeline helpers (ported from matches.js) ----
   function renderEventDetails(ev, container){
-    if(!container) return; container.innerHTML = '';
+    if(!container) return;
+    container.innerHTML = '';
+
+    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+    const _league = ev.league_name || ev.strLeague || '';
+    const _country = ev.country_name || ev.strCountry || ev.country || '';
+    const league = _country && _league ? (_country + ' — ' + _league) : _league;
+    const date = ev.event_date || ev.dateEvent || ev.date || '';
+    const time = ev.event_time || ev.strTime || '';
+    const status = ev.event_status || ev.status || '';
+    const venue = ev.venue || ev.stadium || ev.strVenue || ev.location || ev.event_venue || '';
+
+    // Score determination
+    let homeScore = '', awayScore = '';
+    if (ev.event_final_result && ev.event_final_result.includes('-')) {
+      const parts = ev.event_final_result.split('-'); homeScore = parts[0]?.trim()||''; awayScore = parts[1]?.trim()||'';
+    } else if (ev.home_score !== undefined && ev.away_score !== undefined){ homeScore = String(ev.home_score); awayScore = String(ev.away_score); }
+
+  // Removed the gradient match header card in details to show timeline directly
+
     renderMatchStats(ev, container);
     renderMatchTimeline(ev, container);
-    // Additional info card can be added here if needed.
+  renderAdditionalInfo(ev, container);
+  }
+
+  function createTeamDisplay(teamName, logo, isHome){
+    const team = document.createElement('div'); team.style.cssText = `display:flex;flex-direction:column;align-items:${isHome? 'flex-start':'flex-end'};flex:1;`;
+    if(logo){ const logoImg = document.createElement('img'); logoImg.src = logo; logoImg.style.cssText='width:48px;height:48px;object-fit:contain;margin-bottom:8px'; logoImg.onerror=()=>logoImg.remove(); team.appendChild(logoImg); }
+    const name = document.createElement('div'); name.style.cssText='font-weight:600;font-size:18px;'; name.textContent = teamName; team.appendChild(name);
+    return team;
+  }
+
+  function createScoreDisplay(homeScore, awayScore){
+    const scoreContainer = document.createElement('div'); scoreContainer.style.cssText='display:flex;align-items:center;gap:16px;font-size:36px;font-weight:700;text-shadow:0 2px 4px rgba(0,0,0,0.3)';
+    scoreContainer.innerHTML = `<span>${homeScore||'-'}</span><span style="font-size:24px;opacity:.7;">:</span><span>${awayScore||'-'}</span>`; return scoreContainer;
   }
 
   function renderMatchStats(ev, container){
-    const stats = extractMatchStats(ev); if(!Object.keys(stats).length) return;
-    const card = document.createElement('div'); card.className='timeline-card';
-    const h = document.createElement('h3'); h.textContent='Match Statistics'; card.appendChild(h);
-    Object.entries(stats).forEach(([name, v])=> card.appendChild(createStatRow(name, v.home, v.away)) );
-    container.appendChild(card);
+    const statsData = extractMatchStats(ev); if(Object.keys(statsData).length===0) return;
+    const statsCard = document.createElement('div'); statsCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)';
+    const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='📊 Match Statistics'; statsCard.appendChild(title);
+    Object.entries(statsData).forEach(([statName, values])=>{ statsCard.appendChild(createStatRow(statName, values.home, values.away)); }); container.appendChild(statsCard);
   }
+
+  // No-op placeholder to avoid runtime errors; timeline.js handles additional UI elsewhere if needed
+  function renderAdditionalInfo(_ev, _container){ /* intentionally empty */ }
+
   function extractMatchStats(ev){
     const stats = {};
-    const map = {'Possession':['possession_home','possession_away'],'Shots':['shots_home','shots_away'],'Shots on Target':['shots_on_target_home','shots_on_target_away'],'Corners':['corners_home','corners_away'],'Yellow Cards':['yellow_cards_home','yellow_cards_away'],'Red Cards':['red_cards_home','red_cards_away'],'Fouls':['fouls_home','fouls_away'],'Offsides':['offsides_home','offsides_away']};
-    Object.entries(map).forEach(([label,[hk,ak]])=>{ if(ev[hk]!==undefined||ev[ak]!==undefined) stats[label]={home:ev[hk]||0,away:ev[ak]||0}; }); return stats;
+    const statMappings = {
+      'Possession':['possession_home','possession_away'],'Shots':['shots_home','shots_away'],'Shots on Target':['shots_on_target_home','shots_on_target_away'],'Corners':['corners_home','corners_away'],'Yellow Cards':['yellow_cards_home','yellow_cards_away'],'Red Cards':['red_cards_home','red_cards_away'],'Fouls':['fouls_home','fouls_away'],'Offsides':['offsides_home','offsides_away']
+    };
+    Object.entries(statMappings).forEach(([displayName,[homeKey,awayKey]])=>{ if(ev[homeKey]!==undefined||ev[awayKey]!==undefined) stats[displayName]={home:ev[homeKey]||0,away:ev[awayKey]||0}; });
+    return stats;
   }
-  function createStatRow(name, homeVal, awayVal){
-    const row = document.createElement('div'); row.style.margin='8px 0 12px';
-    const head = document.createElement('div'); head.style.cssText='display:flex;justify-content:space-between;margin-bottom:6px;font-weight:600;color:#374151'; head.innerHTML=`<span>${homeVal}</span><span>${name}</span><span>${awayVal}</span>`; row.appendChild(head);
-    row.appendChild(createProgressBar(homeVal, awayVal, name.toLowerCase().includes('possession')));
-    return row;
-  }
-  function createProgressBar(hv, av, pct){ const c=document.createElement('div'); c.style.cssText='height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;display:flex;'; const hn=parseFloat(hv)||0; const an=parseFloat(av)||0; const tot=hn+an; if(tot>0){ const hp=pct?hn:(hn/tot*100); const ap=pct?an:(an/tot*100); const hb=document.createElement('div'); hb.style.cssText=`width:${hp}%;background:linear-gradient(90deg,#3b82f6,#1d4ed8)`; const ab=document.createElement('div'); ab.style.cssText=`width:${ap}%;background:linear-gradient(90deg,#ef4444,#dc2626)`; c.appendChild(hb); c.appendChild(ab);} return c; }
 
-  function renderMatchTimeline(ev, container){
-    let tl = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || [];
-    if(tl && !Array.isArray(tl) && typeof tl==='object') tl = Object.values(tl).flat();
-    if(!Array.isArray(tl) || tl.length===0) tl = synthesizeTimelineFromEvent(ev);
-    if(!Array.isArray(tl) || !tl.length) return;
-    const card = document.createElement('div'); card.className='timeline-card';
-    const h = document.createElement('h3'); h.textContent='Match Timeline'; card.appendChild(h);
-    tl.forEach(e => card.appendChild(createTimelineEvent(e)));
-    container.appendChild(card);
+  function createStatRow(statName, homeValue, awayValue){
+    const row = document.createElement('div'); row.style.cssText='margin-bottom:16px;';
+    const header = document.createElement('div'); header.style.cssText='display:flex;justify-content:space-between;margin-bottom:8px;font-weight:600;color:#374151'; header.innerHTML = `<span>${homeValue}</span><span>${statName}</span><span>${awayValue}</span>`;
+    row.appendChild(header); row.appendChild(createProgressBar(homeValue, awayValue, statName.toLowerCase().includes('possession'))); return row;
   }
-  function synthesizeTimelineFromEvent(ev){
-    const out=[]; const scorers=ev.scorers||ev.goals||ev.goal_scorers||[]; if(Array.isArray(scorers)) scorers.forEach(s=> out.push({minute:s.minute||s.time||'', description: s.description || `Goal by ${s.name||s.player||s.player_name||''}`, player: s.name||s.player||s.player_name||'', team: s.team||''})); return out;
-  }
-  function createTimelineEvent(e){ const d=document.createElement('div'); d.className='timeline-event'; const m=document.createElement('div'); m.className='minute'; m.textContent = e.minute||e.time||''; const desc=document.createElement('div'); desc.className='desc'; desc.textContent = e.description || e.text || ''; d.appendChild(m); d.appendChild(desc); return d; }
 
-  function buildCleanTimeline(ev){
-    // Reuse timeline if present; otherwise synthesize from event
-    let tl = ev.timeline || ev.timeline_items || ev.event_timeline || ev.events; if(Array.isArray(tl)) return tl; return synthesizeTimelineFromEvent(ev) || [];
+  function createProgressBar(homeValue, awayValue, isPercentage){
+    const container = document.createElement('div'); container.style.cssText='height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;display:flex;';
+    const homeNum = parseFloat(homeValue)||0; const awayNum = parseFloat(awayValue)||0; const total = homeNum+awayNum;
+    if(total>0){ const homePercent = isPercentage?homeNum: (homeNum/total)*100; const awayPercent = isPercentage?awayNum: (awayNum/total)*100; const homeBar = document.createElement('div'); homeBar.style.cssText=`width:${homePercent}%;background:linear-gradient(90deg,#3b82f6,#1d4ed8);transition:width 0.3s ease;`; const awayBar=document.createElement('div'); awayBar.style.cssText=`width:${awayPercent}%;background:linear-gradient(90deg,#ef4444,#dc2626);transition:width 0.3s ease;`; container.appendChild(homeBar); container.appendChild(awayBar); }
+    return container;
   }
+
+  // Timeline functions are now provided by timeline.js (renderMatchTimeline, synthesizeTimelineFromEvent, buildMergedTimeline)
 
   // ---- Summary ----
   async function fetchMatchSummary(ev){
