@@ -389,12 +389,12 @@
 
   function avatarHtml(url, name){
     const initials = (name||'').split(' ').map(s=>s[0]).filter(Boolean).join('').slice(0,2).toUpperCase();
-    if(url) return `<img src="${url}" onerror="this.remove()" style="width:48px;height:48px;border-radius:9999px;object-fit:cover;" alt="${name||''}">`;
-    return `<div style="width:48px;height:48px;border-radius:9999px;display:flex;align-items:center;justify-content:center;background:#374151;color:#e5e7eb;font-weight:700">${initials||'P'}</div>`;
+    if(url) return `<img src="${url}" onerror="this.remove()" style="width:40px;height:40px;border-radius:9999px;object-fit:cover;" alt="${name||''}">`;
+    return `<div style="width:40px;height:40px;border-radius:9999px;display:flex;align-items:center;justify-content:center;background:#e5e7eb;color:#1f2937;font-weight:700">${initials||'P'}</div>`;
   }
 
   function renderSideLeader(sideLabel, p, category){
-    if(!p) return `<div style="opacity:.6;">—</div>`;
+    if(!p) return `<div style="opacity:.5;">—</div>`;
     const minor = [];
     if(category==='goals') minor.push(`${p.goals||0} GLS`);
     if(category==='assists') minor.push(`${p.assists||0} AST`);
@@ -403,26 +403,47 @@
     const numLine = p.number ? `#${p.number}` : '';
     const posLine = p.position || '';
     return `
-      <div style="display:flex;align-items:center;gap:12px;">
+      <div style="display:flex;align-items:center;gap:10px;">
         ${avatarHtml(p.image, p.name)}
-        <div style="display:flex;flex-direction:column;gap:2px;">
-          <div style="font-weight:700;">${p.name}</div>
-          <div style="font-size:12px;color:#9ca3af;">${posLine}</div>
-          <div style="font-size:12px;color:#9ca3af;">${numLine}</div>
+        <div style="display:flex;flex-direction:column;">
+          <div style="font-weight:600;color:#111827;margin-bottom:2px;">${p.name}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;">
+            ${minor.map(x=>`<span style="color:#4b5563;font-weight:500;">${x}</span>`).join('')}
+            ${posLine ? `<span style="color:#6b7280;">${posLine}</span>` : ''}
+            ${numLine ? `<span style="color:#6b7280;">${numLine}</span>` : ''}
+          </div>
         </div>
       </div>
-      <div style="display:flex;gap:16px;font-size:12px;color:#e5e7eb;">${minor.map(x=>`<span>${x}</span>`).join('')}</div>
     `;
   }
 
   function renderLeadersRow(title, homeP, awayP){
     const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;padding:16px 0;border-top:1px solid rgba(255,255,255,0.08)';
-    row.innerHTML = `
-      <div style="display:flex;justify-content:flex-start;gap:12px;align-items:center;">${renderSideLeader('home', homeP, title)}</div>
-      <div style="font-weight:800;letter-spacing:1px;color:#e5e7eb;">${title.toUpperCase()}</div>
-      <div style="display:flex;justify-content:flex-end;gap:12px;align-items:center;text-align:right;">${renderSideLeader('away', awayP, title)}</div>
-    `;
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid #e5e7eb;';
+    
+    // Create the center label column
+    const labelDiv = document.createElement('div');
+    labelDiv.style.cssText = 'position:relative;display:flex;justify-content:center;align-items:center;width:100px;flex-shrink:0;';
+    
+    // Add a styled badge for the category
+    const badge = document.createElement('div');
+    badge.style.cssText = 'background:#f3f4f6;border-radius:4px;padding:4px 8px;font-weight:700;font-size:14px;letter-spacing:0.5px;color:#111827;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,0.05);';
+    badge.textContent = title.toUpperCase();
+    labelDiv.appendChild(badge);
+    
+    // Create the home and away columns
+    const homeDiv = document.createElement('div');
+    homeDiv.style.cssText = 'flex:1;padding-right:12px;';
+    homeDiv.innerHTML = renderSideLeader('home', homeP, title);
+    
+    const awayDiv = document.createElement('div');
+    awayDiv.style.cssText = 'flex:1;padding-left:12px;text-align:right;';
+    awayDiv.innerHTML = renderSideLeader('away', awayP, title);
+    
+    row.appendChild(homeDiv);
+    row.appendChild(labelDiv);
+    row.appendChild(awayDiv);
+    
     return row;
   }
 
@@ -430,14 +451,47 @@
     if(!leaders) return null;
     const card = document.createElement('div');
     card.id = 'game_leaders_card';
-    card.style.cssText = 'background:#111827;color:#e5e7eb;border-radius:16px;padding:20px;margin:12px 0;box-shadow:0 8px 24px rgba(0,0,0,0.25)';
+    card.style.cssText = 'background:white;border-radius:12px;padding:16px 20px;margin:12px 0;box-shadow:0 4px 12px rgba(0,0,0,0.06);';
+    
+    // Create header with teams vs teams and Game leaders title
     const header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px';
-    const title = document.createElement('div'); title.style.cssText='font-size:18px;font-weight:800'; title.textContent='Game leaders';
-    const teams = document.createElement('div'); teams.style.cssText='display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;font-weight:700;color:#f3f4f6;';
-    teams.innerHTML = `<div style="text-align:left;">${leaders.homeTeamName}</div><div style="opacity:.8">vs</div><div style="text-align:right;">${leaders.awayTeamName}</div>`;
-    header.appendChild(title); header.appendChild(teams); card.appendChild(header);
+    header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;';
+    
+    // Title on left
+    const title = document.createElement('h3');
+    title.style.cssText = 'margin:0;font-size:18px;font-weight:700;color:#111827;';
+    title.textContent = 'Game leaders';
+    
+    // Teams vs display on right
+    const teamsVs = document.createElement('div');
+    teamsVs.style.cssText = 'font-weight:600;color:#4b5563;';
+    teamsVs.textContent = `${leaders.homeTeamName} vs ${leaders.awayTeamName}`;
+    
+    header.appendChild(title);
+    header.appendChild(teamsVs);
+    card.appendChild(header);
+    
+    // Add team columns header (optional)
+    const teamColumns = document.createElement('div');
+    teamColumns.style.cssText = 'display:flex;justify-content:space-between;margin-bottom:12px;border-bottom:1px solid #f3f4f6;padding-bottom:8px;';
+    
+    const homeTeamLabel = document.createElement('div');
+    homeTeamLabel.style.cssText = 'font-weight:600;color:#6b7280;font-size:14px;';
+    homeTeamLabel.textContent = leaders.homeTeamName;
+    
+    const divider = document.createElement('div');
+    divider.style.cssText = 'width:100px;flex-shrink:0;';
+    
+    const awayTeamLabel = document.createElement('div');
+    awayTeamLabel.style.cssText = 'font-weight:600;color:#6b7280;text-align:right;font-size:14px;';
+    awayTeamLabel.textContent = leaders.awayTeamName;
+    
+    teamColumns.appendChild(homeTeamLabel);
+    teamColumns.appendChild(divider);
+    teamColumns.appendChild(awayTeamLabel);
+    card.appendChild(teamColumns);
 
+    // Add the stat rows
     card.appendChild(renderLeadersRow('goals', leaders.home.goals, leaders.away.goals));
     card.appendChild(renderLeadersRow('assists', leaders.home.assists, leaders.away.assists));
     card.appendChild(renderLeadersRow('cards', leaders.home.cards, leaders.away.cards));
