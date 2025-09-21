@@ -20,6 +20,103 @@ function getEventIcon(description, tags){ const desc=String(description).toLower
 function getEventColor(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '#10b981'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '#f59e0b'; if(desc.includes('red')||tagStr.includes('red')) return '#ef4444'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '#8b5cf6'; return '#6b7280'; }
 function getTagColor(tag){ const t = String(tag).toLowerCase(); if(t.includes('goal')) return '#10b981'; if(t.includes('card')) return '#f59e0b'; if(t.includes('substitution')) return '#8b5cf6'; if(t.includes('penalty')) return '#ef4444'; return '#6b7280'; }
 
+// --- Player image resolution helpers ---
+function ensurePlayersMap(matchCtx){
+  try{
+    if(!matchCtx || matchCtx._playersMap) return;
+    const allPlayers = [];
+    for(const k of Object.keys(matchCtx||{})){
+      const v = matchCtx[k];
+      if(Array.isArray(v) && v.length>0 && typeof v[0] === 'object'){
+        const s = v[0];
+        if(s.player_name || s.name || s.strPlayer || s.player || s.player_fullname || s.playerId || s.idPlayer) allPlayers.push(...v);
+      }
+    }
+    if(allPlayers.length>0){
+      const map = {};
+      const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+      allPlayers.forEach(p=>{
+        const name = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim();
+        if(!name) return;
+        const nm = name;
+        const low = nm.toLowerCase();
+        const norm = normalize(nm);
+        map[nm] = p; map[low] = p; map[norm] = p;
+        try{
+          const parts = norm.split(' ').filter(Boolean);
+          if(parts.length){
+            const last = parts[parts.length-1];
+            if(last) map[last] = map[last] || p;
+            if(parts.length>=2){
+              const initLast = parts[0].charAt(0) + ' ' + last;
+              const initLastNoSpace = parts[0].charAt(0) + last;
+              map[initLast] = map[initLast] || p;
+              map[initLastNoSpace] = map[initLastNoSpace] || p;
+            }
+          }
+        }catch(_e){}
+      });
+      matchCtx._playersMap = map;
+    } else {
+      matchCtx._playersMap = {};
+    }
+  }catch(_e){}
+}
+
+function resolvePlayerAndImages(event, matchCtx){
+  let playerImg = event.player_image || event.player_photo || event.playerImage || event.photo || event.thumb || event.strThumb || event.strThumbBig || event.thumbnail || event.photo_url || event.player_cutout || event.player_pic || event.img || event.avatar || event.headshot || event.cutout || event.image || (event.player && (event.player.photo || event.player.player_image || event.player.image || event.player.playerImage || event.player.photo_url)) || (event.raw && (event.raw.player_image || event.raw.player_photo || event.raw.photo || event.raw.thumb || event.raw.image || event.raw.playerImage || event.raw.photo_url || event.raw.player_cutout || event.raw.strThumb || event.raw.strCutout || event.raw.thumbnail || event.raw.img || event.raw.avatar || event.raw.headshot || event.raw.player_pic));
+  let teamLogo = event.team_logo || event.teamLogo || event.team_logo_url || event.team_image || (event.raw && (event.raw.team_logo || event.raw.teamLogo));
+  if(!teamLogo && matchCtx){
+    const home = matchCtx.event_home_team || matchCtx.strHomeTeam || matchCtx.home_team || '';
+    const away = matchCtx.event_away_team || matchCtx.strAwayTeam || matchCtx.away_team || '';
+    if(event.team && home && String(event.team).trim() === String(home).trim()){
+      teamLogo = matchCtx.home_team_logo || matchCtx.strHomeTeamBadge || matchCtx.homeLogo || '';
+    } else if(event.team && away && String(event.team).trim() === String(away).trim()){
+      teamLogo = matchCtx.away_team_logo || matchCtx.strAwayTeamBadge || matchCtx.awayLogo || '';
+    }
+  }
+  try{
+    ensurePlayersMap(matchCtx);
+    if(!playerImg && matchCtx && matchCtx._playersMap){
+      const lookupNameRaw = (event.player || event.player_name || event.playerName || event.player_fullname || '').trim();
+      if(lookupNameRaw){
+        const norm = s => (s || '').toString().replace(/[\.]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const lookupNorm = norm(lookupNameRaw);
+        let p = matchCtx._playersMap[lookupNameRaw] || matchCtx._playersMap[lookupNameRaw.toLowerCase()] || matchCtx._playersMap[lookupNorm];
+        if(!p){
+          const vals = Object.values(matchCtx._playersMap || {});
+          const lookupParts = lookupNorm.split(' ').filter(Boolean);
+          const lookupLast = lookupParts.length ? lookupParts[lookupParts.length-1] : '';
+          const lookupFirst = lookupParts.length ? lookupParts[0] : '';
+          for(const cand of vals){
+            try{
+              const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
+              const candNorm = norm(candName);
+              if(!candNorm) continue;
+              if(candNorm === lookupNorm || candNorm.includes(lookupNorm) || lookupNorm.includes(candNorm)) { p = cand; break; }
+              const candParts = candNorm.split(' ').filter(Boolean);
+              const candLast = candParts.length ? candParts[candParts.length-1] : '';
+              if(lookupLast && candLast && lookupLast === candLast){ p = cand; break; }
+              if(lookupParts.length >= 2 && lookupFirst.length === 1){
+                const candFirst = candParts.length ? candParts[0].charAt(0) : '';
+                if(candFirst === lookupFirst && candLast === lookupLast){ p = cand; break; }
+              }
+              const lookupId = event.player_id || event.playerId || event.player_key || (event.raw && (event.raw.player_id || event.raw.idPlayer || event.raw.player_key));
+              const candId = cand.idPlayer || cand.player_id || cand.playerKey || cand.player_key || cand.id || cand.playerId;
+              if(lookupId && candId && String(lookupId) === String(candId)){ p = cand; break; }
+            }catch(_e){}
+          }
+        }
+        if(p){
+          playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
+        }
+      }
+    }
+  }catch(_e){}
+  const playerName = event.player || event.player_name || event.playerName || event.player_fullname || '';
+  return { playerImg, teamLogo, playerName };
+}
+
 function normalizeEventTags(evt){
   const candidates = [];
   if(evt){
@@ -96,6 +193,32 @@ function createTimelineEvent(event, isLast, matchCtx){
   const timeline = document.createElement('div'); timeline.style.cssText='display:flex;flex-direction:column;align-items:center;margin-right:16px;flex-shrink:0;'; const dot = document.createElement('div'); dot.style.cssText = `width:12px;height:12px;border-radius:50%;background:${getEventColor(description,tags)};border:3px solid white;box-shadow:0 0 0 2px ${getEventColor(description,tags)};`; const line = document.createElement('div'); line.style.cssText = `width:2px;height:24px;background:#e5e7eb;${isLast? 'display:none;':''}`; timeline.appendChild(dot); timeline.appendChild(line);
   const content = document.createElement('div'); content.style.cssText='flex:1;'; const eventHeader = document.createElement('div'); eventHeader.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px;'; const minuteSpan = document.createElement('span'); minuteSpan.style.cssText='background:#f3f4f6;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;color:#6b7280;'; minuteSpan.textContent = minute? `${minute}'` : '';
   const icon = document.createElement('span'); icon.style.fontSize='16px'; icon.textContent = getEventIcon(description, tags); eventHeader.appendChild(minuteSpan); eventHeader.appendChild(icon);
+  // Inline player avatar/logo next to icon
+  try{
+    const resolved = resolvePlayerAndImages(event, matchCtx);
+    if(resolved && (resolved.playerImg || resolved.teamLogo)){
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'width:20px;height:20px;border-radius:4px;overflow:hidden;flex-shrink:0;background:#1f2937;display:flex;align-items:center;justify-content:center';
+      const img = document.createElement('img');
+      img.src = resolved.playerImg || resolved.teamLogo || '';
+      img.alt = resolved.playerName || 'player';
+      img.style.cssText = resolved.playerImg ? 'width:20px;height:20px;object-fit:cover;display:block' : 'width:18px;height:18px;object-fit:contain;display:block';
+      img.onerror = function(){
+        // 404 or invalid image: fallback to a neutral avatar icon
+        try{
+          this.onerror = null;
+          // If we had playerImg and it failed, try teamLogo; else show fallback emoji
+          if(resolved.playerImg && resolved.teamLogo){ this.src = resolved.teamLogo; return; }
+          const span = document.createElement('span');
+          span.textContent = '👤';
+          span.style.cssText = 'font-size:14px;color:#e5e7eb;display:flex;align-items:center;justify-content:center;width:18px;height:18px;';
+          this.replaceWith(span);
+        }catch(_e){ this.remove(); }
+      };
+      wrap.appendChild(img);
+      eventHeader.appendChild(wrap);
+    }
+  }catch(_e){}
   const eventText = document.createElement('div'); eventText.style.cssText='color:#374151;margin-bottom:8px;'; eventText.textContent = description;
   content.appendChild(eventHeader); content.appendChild(eventText);
   if(Array.isArray(normTags) && normTags.length>0){ const tagsContainer = document.createElement('div'); tagsContainer.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;'; const hasModel = normTags.some(t=>t.isModel); if(hasModel){ const mlBadge = document.createElement('span'); mlBadge.textContent='ML'; mlBadge.title='Model-predicted tag present'; mlBadge.style.cssText='background:#7c3aed;color:white;padding:2px 6px;border-radius:10px;font-size:11px;font-weight:700;'; tagsContainer.appendChild(mlBadge); } normTags.forEach(t=>{ const tagSpan = document.createElement('span'); const color = t.isModel? '#6d28d9' : getTagColor(t.text||''); tagSpan.style.cssText = `background:${color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:8px;`; const label = document.createElement('span'); label.textContent = t.text; tagSpan.appendChild(label); if(t.confidence!==undefined && t.confidence!==null){ const conf = document.createElement('small'); conf.textContent = ` ${Number(t.confidence).toFixed(2)}`; conf.style.opacity='0.9'; conf.style.marginLeft='6px'; conf.style.fontSize='10px'; tagSpan.appendChild(conf); } tagsContainer.appendChild(tagSpan); }); content.appendChild(tagsContainer); }
@@ -106,93 +229,7 @@ function createTimelineEvent(event, isLast, matchCtx){
       dot.style.cursor = 'help';
       const onEnter = async ()=>{
         const d = ensureTooltip();
-        let playerImg = event.player_image || event.player_photo || event.playerImage || event.photo || event.thumb || event.strThumb || event.strThumbBig || event.thumbnail || event.photo_url || event.player_cutout || event.player_pic || event.img || event.avatar || event.headshot || event.cutout || event.image || (event.player && (event.player.photo || event.player.player_image || event.player.image || event.player.playerImage || event.player.photo_url)) || (event.raw && (event.raw.player_image || event.raw.player_photo || event.raw.photo || event.raw.thumb || event.raw.image || event.raw.playerImage || event.raw.photo_url || event.raw.player_cutout || event.raw.strThumb || event.raw.strCutout || event.raw.thumbnail || event.raw.img || event.raw.avatar || event.raw.headshot || event.raw.player_pic));
-        let teamLogo = event.team_logo || event.teamLogo || event.team_logo_url || event.team_image || (event.raw && (event.raw.team_logo || event.raw.teamLogo));
-        if(!teamLogo && matchCtx){
-          const home = matchCtx.event_home_team || matchCtx.strHomeTeam || matchCtx.home_team || '';
-          const away = matchCtx.event_away_team || matchCtx.strAwayTeam || matchCtx.away_team || '';
-          if(event.team && home && String(event.team).trim() === String(home).trim()){
-            teamLogo = matchCtx.home_team_logo || matchCtx.strHomeTeamBadge || matchCtx.homeLogo || '';
-          } else if(event.team && away && String(event.team).trim() === String(away).trim()){
-            teamLogo = matchCtx.away_team_logo || matchCtx.strAwayTeamBadge || matchCtx.awayLogo || '';
-          }
-        }
-
-        try{
-          if(matchCtx && !matchCtx._playersMap){
-            try{
-              const allPlayers = [];
-              for(const k of Object.keys(matchCtx||{})){
-                const v = matchCtx[k];
-                if(Array.isArray(v) && v.length>0 && typeof v[0] === 'object'){
-                  const s = v[0];
-                  if(s.player_name || s.name || s.strPlayer || s.player || s.player_fullname || s.playerId || s.idPlayer) allPlayers.push(...v);
-                }
-              }
-              if(allPlayers.length>0){
-                const map = {};
-                const normalize = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
-                allPlayers.forEach(p=>{
-                  const name = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim();
-                  if(!name) return;
-                  const nm = name;
-                  const low = nm.toLowerCase();
-                  const norm = normalize(nm);
-                  map[nm] = p; map[low] = p; map[norm] = p;
-                  try{
-                    const parts = norm.split(' ').filter(Boolean);
-                    if(parts.length){
-                      const last = parts[parts.length-1];
-                      if(last) map[last] = map[last] || p;
-                      if(parts.length>=2){
-                        const initLast = parts[0].charAt(0) + ' ' + last;
-                        const initLastNoSpace = parts[0].charAt(0) + last;
-                        map[initLast] = map[initLast] || p;
-                        map[initLastNoSpace] = map[initLastNoSpace] || p;
-                      }
-                    }
-                  }catch(_e){}
-                });
-                matchCtx._playersMap = map;
-              }
-            }catch(_e){}
-          }
-          if(!playerImg && matchCtx && matchCtx._playersMap){
-            const lookupNameRaw = (event.player || event.player_name || event.playerName || event.player_fullname || '').trim();
-            if(lookupNameRaw){
-              const norm = s => (s || '').toString().replace(/[\.]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-              const lookupNorm = norm(lookupNameRaw);
-              let p = matchCtx._playersMap[lookupNameRaw] || matchCtx._playersMap[lookupNameRaw.toLowerCase()] || matchCtx._playersMap[lookupNorm];
-              if(!p){
-                const vals = Object.values(matchCtx._playersMap || {});
-                const lookupParts = lookupNorm.split(' ').filter(Boolean);
-                const lookupLast = lookupParts.length ? lookupParts[lookupParts.length-1] : '';
-                const lookupFirst = lookupParts.length ? lookupParts[0] : '';
-                for(const cand of vals){
-                  try{
-                    const candName = (cand.player_name || cand.name || cand.strPlayer || cand.player || cand.player_fullname || '').toString();
-                    const candNorm = norm(candName);
-                    if(!candNorm) continue;
-                    if(candNorm === lookupNorm || candNorm.includes(lookupNorm) || lookupNorm.includes(candNorm)) { p = cand; break; }
-                    const candParts = candNorm.split(' ').filter(Boolean);
-                    const candLast = candParts.length ? candParts[candParts.length-1] : '';
-                    if(lookupLast && candLast && lookupLast === candLast){ p = cand; break; }
-                    if(lookupParts.length >= 2 && lookupFirst.length === 1){
-                      const candFirst = candParts.length ? candParts[0].charAt(0) : '';
-                      if(candFirst === lookupFirst && candLast === lookupLast){ p = cand; break; }
-                    }
-                    const lookupId = event.player_id || event.playerId || event.player_key || (event.raw && (event.raw.player_id || event.raw.idPlayer || event.raw.player_key));
-                    const candId = cand.idPlayer || cand.player_id || cand.playerKey || cand.player_key || cand.id || cand.playerId;
-                    if(lookupId && candId && String(lookupId) === String(candId)){ p = cand; break; }
-                  }catch(_e){}
-                }
-              }
-              if(p){
-                playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
-              }
-            }
-          }
-        }catch(_e){}
+        let { playerImg, teamLogo } = resolvePlayerAndImages(event, matchCtx);
 
         try{
           const brief = await getEventBrief(etype, { minute, description, event, tags }, matchCtx);
@@ -231,7 +268,13 @@ async function getEventBrief(etype, payload, matchCtx){
   const away = matchCtx?.event_away_team || matchCtx?.strAwayTeam || matchCtx?.away_team || '';
   const payloadBody = { provider: 'auto', eventId: String(matchCtx?.idEvent || matchCtx?.event_key || matchCtx?.id || matchCtx?.match_id || '' ) || undefined, eventName: (home && away) ? `${home} vs ${away}` : undefined, date: matchCtx?.event_date || matchCtx?.dateEvent || matchCtx?.date || undefined, events: [{ minute: payload.minute || ev.minute || ev.time || '', type: etype, description: payload.description || ev.description || ev.text || ev.event || '', player: ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || '', team: ev.team || '', tags: Array.isArray(tags)? tags.slice(0,6) : undefined, }] };
   let brief = '';
-  try{ const r = await fetch((typeof apiBase !== 'undefined' ? apiBase : '') + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)}); if(r.ok){ const j = await r.json(); brief = (j && j.items && j.items[0] && j.items[0].brief) || ''; } }catch(_e){}
+  try{
+    const base = (typeof window !== 'undefined' && window.apiBase) ? window.apiBase : (typeof apiBase !== 'undefined' ? apiBase : '');
+    if(base){
+      const r = await fetch(base + '/summarizer/summarize/events', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payloadBody)});
+      if(r.ok){ const j = await r.json(); brief = (j && j.items && j.items[0] && j.items[0].brief) || ''; }
+    }
+  }catch(_e){}
   if(!brief){ const minute = payload.minute || ev.minute || ev.time || ''; const player = ev.player || ev.home_scorer || ev.away_scorer || ev.player_name || ''; if(etype==='goal') brief = `${player||'Unknown'} scores at ${minute||'?'}.'`; else if(etype==='yellow card') brief = `Yellow card for ${player||'unknown'} at ${minute||'?'}.`; else if(etype==='red card') brief = `Red card for ${player||'unknown'} at ${minute||'?'}.`; else if(etype==='substitution') brief = payload.description || 'Substitution.'; else brief = payload.description || etype; }
   _eventBriefCache.set(key, brief); return brief;
 }

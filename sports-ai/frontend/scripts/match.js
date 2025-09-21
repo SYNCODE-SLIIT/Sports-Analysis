@@ -5,6 +5,8 @@
   if(loc.port && loc.port !== '8000'){
     apiBase = loc.protocol + '//' + loc.hostname + ':8000';
   }
+  // Expose globally so shared utilities (timeline.js) can use it
+  try{ window.apiBase = apiBase; }catch(_e){}
 
   // Elements
   const matchTitle = document.getElementById('matchTitle');
@@ -79,6 +81,37 @@
               ev.comments = arr;
             }
           }
+        }
+      }catch(_e){ /* non-fatal */ }
+
+      // Prefetch players for both teams to enable player image resolution in timeline
+      try{
+        const homeName = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+        const awayName = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+        if(homeName || awayName){
+          const [homeRes, awayRes] = await Promise.allSettled([
+            homeName ? callIntent('players.list', { teamName: homeName }) : Promise.resolve(null),
+            awayName ? callIntent('players.list', { teamName: awayName }) : Promise.resolve(null),
+          ]);
+          const extractPlayers = (settled)=>{
+            if(!settled || settled.status !== 'fulfilled' || !settled.value) return [];
+            const j = settled.value;
+            const d = j.data || j.result || j.players || j;
+            if(Array.isArray(d)) return d;
+            if(d && Array.isArray(d.result)) return d.result;
+            if(d && d.data && Array.isArray(d.data)) return d.data;
+            if(d && d.result && typeof d.result === 'object'){
+              const vals = Object.values(d.result).filter(Boolean);
+              return vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
+            }
+            return [];
+          };
+          const homePlayers = extractPlayers(homeRes);
+          const awayPlayers = extractPlayers(awayRes);
+          if(homePlayers.length) ev.players_home = homePlayers;
+          if(awayPlayers.length) ev.players_away = awayPlayers;
+          const combined = [...(homePlayers||[]), ...(awayPlayers||[])];
+          if(combined.length) ev.players = combined;
         }
       }catch(_e){ /* non-fatal */ }
 
