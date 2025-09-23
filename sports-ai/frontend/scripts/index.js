@@ -23,6 +23,13 @@
   const datePicker = document.getElementById('datePicker');
   const applyFilterBtn = document.getElementById('applyFilterBtn');
 
+  // NL search elements
+  const nlInput = document.getElementById('nlSearch');
+  const nlButton = document.getElementById('nlSearchBtn');
+  const nlResults = document.getElementById('nlResults');
+  const nlCount = document.getElementById('nlCount');
+  const nlStatus = document.getElementById('nlStatus');
+
   let allLeagues = [];
   let filteredLeagues = [];
   let selectedLeague = null; // { id, label }
@@ -40,6 +47,76 @@
     });
     if(!resp.ok) throw new Error(`HTTP ${resp.status} for ${intent}`);
     return resp.json();
+  }
+
+  // ===== NL Search using /search/nl =====
+  function clear(el){ while(el && el.firstChild) el.removeChild(el.firstChild); }
+  function set(el, text){ if(el) el.textContent = text; }
+
+  async function runNLSearch(q){
+    if(!nlResults) return;
+    clear(nlResults);
+    set(nlStatus, 'Searching…');
+    set(nlCount, '0');
+    nlResults.innerHTML = '<div class="empty">Searching…</div>';
+    try{
+      const url = new URL(apiBase + '/search/nl');
+      url.searchParams.set('q', q || '');
+      const resp = await fetch(url.toString());
+      const j = await resp.json();
+      const data = j && j.result && j.result.data ? j.result.data : {};
+      const events = data.events || data.result || data.results || data.fixtures || [];
+
+      clear(nlResults);
+      if(!Array.isArray(events) || events.length === 0){
+        nlResults.innerHTML = '<div class="empty">No results found.</div>';
+        set(nlStatus, j && j.parse ? 'Parsed' : 'Done');
+        return;
+      }
+
+      events.forEach(ev => nlResults.appendChild(createNLItem(ev)));
+      set(nlCount, String(events.length));
+      set(nlStatus, 'Done');
+    }catch(e){
+      console.error('NL search error', e);
+      clear(nlResults);
+      nlResults.innerHTML = '<div class="empty">Search error</div>';
+      set(nlStatus, 'Error');
+    }
+  }
+
+  function createNLItem(ev){
+    const row = document.createElement('div');
+    row.className = 'list-item';
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:8px;background:#fff;cursor:pointer';
+
+    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+    const league = ev.league_name || ev.strLeague || '';
+    const country = ev.country_name || ev.strCountry || ev.country || '';
+    const status = ev.event_status || ev.status || '';
+    const time = ev.event_time || ev.strTime || ev.event_date || ev.dateEvent || '';
+
+    const left = document.createElement('div');
+    left.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:0;';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    title.textContent = `${home} vs ${away}`.trim();
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:12px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    const leagueLabel = (country && league) ? `${country} — ${league}` : (league || country || '');
+    sub.textContent = leagueLabel;
+    left.appendChild(title); left.appendChild(sub);
+
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex;flex-direction:column;gap:2px;text-align:right;';
+    const st = document.createElement('div'); st.className='badge'; st.textContent = status || '—';
+    const tm = document.createElement('div'); tm.style.cssText='font-size:12px;color:#374151;'; tm.textContent = time || '';
+    right.appendChild(st); right.appendChild(tm);
+
+    row.appendChild(left); row.appendChild(right);
+    row.addEventListener('click', ()=> navigateToDetails(ev));
+    return row;
   }
 
   // ===== Live ticker =====
@@ -329,4 +406,10 @@
   // Initial loads (no ticker auto-fetch)
   set(tickerStatus, 'Idle — click Refresh');
   loadLeagues();
+
+  // Wire NL search
+  if(nlButton && nlInput){
+    nlButton.addEventListener('click', ()=> runNLSearch(nlInput.value));
+    nlInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); runNLSearch(nlInput.value); } });
+  }
 })();
