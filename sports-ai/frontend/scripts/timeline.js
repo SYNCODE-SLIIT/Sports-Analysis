@@ -3,15 +3,18 @@
 
 // --- Tooltip + brief caches ---
 let _evtTooltip;
+let _tooltipHideTimer = null;
 const _eventBriefCache = new Map();
 
 function ensureTooltip(){
   if(_evtTooltip) return _evtTooltip;
   const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;z-index:9999;max-width:320px;background:#111827;color:#e5e7eb;padding:8px 10px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.25);font-size:12px;line-height:1.4;pointer-events:none;display:none;';
+  d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:#ffffff;color:#111827;padding:10px 12px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.18);font-size:12px;line-height:1.5;pointer-events:auto;display:none;overflow:auto;border:1px solid #e5e7eb;';
+  d.addEventListener('mouseenter', ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); _tooltipHideTimer=null; } });
+  d.addEventListener('mouseleave', ()=>{ if(_evtTooltip){ _evtTooltip.style.display='none'; } });
   document.body.appendChild(d); _evtTooltip = d; return d;
 }
-function showEventTooltip(anchor, text){ const d=ensureTooltip(); d.textContent = String(text||''); d.style.display='block'; positionEventTooltip(anchor); }
+function showEventTooltip(anchor, html){ const d=ensureTooltip(); d.innerHTML = String(html||''); d.style.display='block'; positionEventTooltip(anchor); }
 function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
 function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
 
@@ -257,6 +260,54 @@ function buildMergedTimeline(ev){
   return merged;
 }
 
+// --- Horizontal helpers ---
+function toMinuteNumber(m){
+  if(m===undefined||m===null) return NaN;
+  const s = String(m).trim();
+  if(!s) return NaN;
+  if(s.includes('+')){ const [a,b] = s.split('+'); const na = Number(a)||0; const nb = Number(b)||0; return na + nb; }
+  const n = Number(s.replace(/[^0-9]/g,''));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function buildTooltipContent(event, matchCtx, opts){
+  const _esc = (typeof window !== 'undefined' && typeof window.escapeHtml === 'function') ? window.escapeHtml : (s)=> String(s).replace(/[&<>"'`=\/]/g, (ch)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'}[ch]));
+  const minute = event.minute || event.time || (opts && opts.minute) || '';
+  const description = event.description || event.text || (opts && opts.description) || '';
+  const normTags = normalizeEventTags(event);
+  const simpleTags = Array.isArray(normTags)? normTags : [];
+  const etype = deriveEventType(description, simpleTags.map(t=>t.text), event);
+  const icon = getEventIcon(description, simpleTags.map(t=>t.text));
+  let headerHtml = '';
+  if(etype === 'substitution'){
+    const { inName, outName } = parseSubstitutionPlayers(event);
+    const inImg = inName ? resolvePlayerImageByName(inName, matchCtx) : '';
+    const outImg = outName ? resolvePlayerImageByName(outName, matchCtx) : '';
+    const imgBox = (src)=> src ? `<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#f3f4f6"><img src="${src}" style="width:32px;height:32px;object-fit:cover;display:block" onerror="this.remove()"/></div>` : `<div style="width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:#f3f4f6;color:#6b7280">👤</div>`;
+    headerHtml = `<div style="display:flex;align-items:center;gap:8px;">${imgBox(inImg)}<div style="font-weight:700;color:#10b981;">${_esc(inName||'IN')}</div><span style="color:#9ca3af">→</span>${imgBox(outImg)}<div style="font-weight:700;color:#ef4444;">${_esc(outName||'OUT')}</div></div>`;
+  } else {
+    const { playerImg, teamLogo, playerName } = resolvePlayerAndImages(event, matchCtx);
+    const imgSrc = playerImg || teamLogo || '';
+    const imgBox = imgSrc ? `<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#f3f4f6"><img src="${imgSrc}" style="width:32px;height:32px;object-fit:${playerImg?'cover':'contain'};display:block" onerror="this.remove()"/></div>` : '';
+    headerHtml = `<div style="display:flex;align-items:center;gap:8px;">${imgBox}<div style="font-weight:700;color:#111827;">${_esc(playerName||'')}</div></div>`;
+  }
+  const tagsHtml = simpleTags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${simpleTags.map(t=>{
+    const color = t.isModel? '#6d28d9' : getTagColor(t.text||'');
+    const conf = (t.confidence!==undefined && t.confidence!==null) ? ` <small style=\"opacity:.8\">${Number(t.confidence).toFixed(2)}</small>` : '';
+    return `<span style=\"background:${color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;\">${_esc(t.text||'')}${conf}</span>`;
+  }).join('')}</div>` : '';
+  const brief = opts && opts.brief ? `<div style="margin-top:6px;color:#374151;">${_esc(opts.brief)}</div>` : '';
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;">
+      <div style="display:flex;align-items:center;gap:8px;">${headerHtml}</div>
+      <div style="display:flex;align-items:center;gap:6px;color:#6b7280;font-weight:700;"><span>${icon}</span><span>${_esc(minute? minute+"'" : '')}</span></div>
+    </div>
+    ${description ? `<div style=\"color:#374151;white-space:normal;\">${_esc(description)}</div>` : ''}
+    ${brief}
+    ${tagsHtml}
+  `;
+}
+
 // --- Rendering ---
 function createTimelineEvent(event, isLast, matchCtx){
   // Fallback for escapeHtml if not present
@@ -386,12 +437,249 @@ async function getEventBrief(etype, payload, matchCtx){
 }
 
 function renderMatchTimeline(ev, container){
-  let timeline = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || ev.event_entries || [];
-  if(timeline && !Array.isArray(timeline) && typeof timeline === 'object'){ const vals = Object.values(timeline).filter(Boolean); const arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); if(arr.length>0) timeline = arr; }
-  if(!Array.isArray(timeline) || timeline.length===0) timeline = synthesizeTimelineFromEvent(ev);
-  if(!Array.isArray(timeline) || timeline.length===0) return;
-  const timelineCard = document.createElement('div'); timelineCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)'; const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='⚽ Match Timeline'; timelineCard.appendChild(title);
-  const timelineContainer = document.createElement('div'); timelineContainer.style.cssText='position:relative;';
-  timeline.forEach((event, index)=>{ timelineContainer.appendChild(createTimelineEvent(event, index===timeline.length-1, ev)); });
-  timelineCard.appendChild(timelineContainer); container.appendChild(timelineCard);
+  // 1) Collect events
+  let events = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || ev.event_entries || [];
+  if(events && !Array.isArray(events) && typeof events === 'object'){
+    const vals = Object.values(events).filter(Boolean);
+    const arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
+    if(arr.length>0) events = arr;
+  }
+  if(!Array.isArray(events) || events.length===0) events = synthesizeTimelineFromEvent(ev);
+  if(!Array.isArray(events) || events.length===0) return;
+
+  // Filter to special events only (goals, yellow/red cards, substitutions)
+  const specialEvents = (events||[]).filter(e=>{
+    const t = normalizeEventTags(e); const tagTxt = Array.isArray(t)? t.map(tt=>tt.text) : [];
+    const etype = deriveEventType(e.description||e.text||'', tagTxt, e);
+    const mn = toMinuteNumber(e.minute||e.time);
+    return !!etype && Number.isFinite(mn);
+  });
+
+  // 2) Card shell
+  const timelineCard = document.createElement('div');
+  timelineCard.style.cssText='background:white;border-radius:16px;padding:20px 16px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08);width:100%;max-width:100%;overflow:hidden';
+  const title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 14px 0;color:#1f2937;font-size:20px';
+  title.innerHTML = '⚽ Match Timeline';
+  timelineCard.appendChild(title);
+
+  // 3) Domain and scale (compressed gaps + scroller)
+  const minutes = events.map(e=> toMinuteNumber(e.minute||e.time)).filter(n=>Number.isFinite(n));
+  const maxMinute = minutes.length ? Math.max(90, Math.max(...minutes)) : 90;
+  const minMinute = 0;
+
+  // 4) Track baseline inside a horizontal scroller
+  const scroller = document.createElement('div');
+  scroller.style.cssText = 'position:relative;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;width:100%;max-width:100%;';
+  const track = document.createElement('div');
+  track.style.cssText = 'position:relative;height:110px;min-width:100%';
+  const baseLine = document.createElement('div');
+  baseLine.style.cssText = 'position:absolute;left:0;right:0;top:50%;height:2px;background:#e5e7eb;transform:translateY(-50%);';
+  track.appendChild(baseLine);
+
+  // 5) Minute ticks (sparse)
+  // We will add ticks after computing x positions in compressed space
+  const pendingTicks = [0,45,90]; if(maxMinute>90) pendingTicks.push(maxMinute);
+
+  // Compute stoppage time badges for 45+ and 90+
+  let stoppage45 = 0, stoppage90 = 0;
+  try{
+    for(const e of (events||[])){
+      const raw = String(e.minute||e.time||'').trim();
+      let m;
+      if((m = raw.match(/^45\+(\d+)/))) stoppage45 = Math.max(stoppage45, Number(m[1])||0);
+      if((m = raw.match(/^90\+(\d+)/))) stoppage90 = Math.max(stoppage90, Number(m[1])||0);
+    }
+  }catch(_e){}
+
+  // 6) Cluster events by minute with stoppage-time compression (45+ and 90+)
+  const clustersMap = new Map();
+  const getClusterKey = (e)=>{
+    const raw = (e.minute||e.time||'').toString().trim();
+    if(raw.includes('+')){
+      const parts = raw.split('+');
+      const base = parseInt(parts[0],10) || 0;
+      const extra = parseInt((parts[1]||'').toString().replace(/[^0-9]/g,''),10) || 0;
+      // For 90+N, treat as separate minutes (e.g., 95) so they appear in extra time segment
+      if(base >= 90){
+        return String(base + extra);
+      }
+      // For 45+N, keep them clustered at 45'
+      return `${base}+`;
+    }
+    const n = toMinuteNumber(raw);
+    return Number.isFinite(n) ? String(n) : 'unknown';
+  };
+  const getClusterPosMinute = (key)=>{
+    if(key.endsWith('+')){
+      const base = parseInt(key,10) || 0; return base; // place 45+ at 45, 90+ at 90
+    }
+    const n = Number(key); return Number.isFinite(n) ? n : null;
+  };
+  // Build clusters from special events only
+  for(const e of specialEvents){
+    const key = getClusterKey(e);
+    if(!clustersMap.has(key)) clustersMap.set(key, { key, minuteNumber: getClusterPosMinute(key), events: [] });
+    clustersMap.get(key).events.push(e);
+  }
+  const clusters = Array.from(clustersMap.values()).sort((a,b)=>{
+    const am = Number.isFinite(a.minuteNumber) ? a.minuteNumber : Infinity;
+    const bm = Number.isFinite(b.minuteNumber) ? b.minuteNumber : Infinity;
+    return am - bm;
+  });
+
+  // 7) Compute compressed x positions
+  const cfg = { pxPerMinute: 9, maxGapPx: 100, minGapPx: 28, leftPad: 28, rightPad: 36 };
+  const xPos = []; // pixel x for each cluster
+  let curX = cfg.leftPad;
+  for(let i=0;i<clusters.length;i++){
+    if(i===0){ xPos[i] = curX; continue; }
+    const prev = clusters[i-1]; const cur = clusters[i];
+    let dMin = (Number.isFinite(prev.minuteNumber) && Number.isFinite(cur.minuteNumber)) ? (cur.minuteNumber - prev.minuteNumber) : 0;
+    // if same minute (e.g., 45 and 45+) enforce minimum spacing
+    if(dMin<=0) dMin = 0.1;
+    const gap = Math.min(cfg.maxGapPx, Math.max(cfg.minGapPx, dMin * cfg.pxPerMinute));
+    curX += gap; xPos[i] = curX;
+  }
+  let totalWidth = (xPos.length ? xPos[xPos.length-1] : cfg.leftPad) + cfg.rightPad;
+  // Stretch to fill container width (use full screen size) to avoid overly tight layout
+  const viewport = Math.max(container?.clientWidth || 0, 0) - 48; // padding allowance based on container only
+  if(viewport > 0 && totalWidth < viewport){
+    const lastX = xPos[xPos.length-1] || cfg.leftPad;
+    const available = Math.max(1, viewport - cfg.leftPad - cfg.rightPad);
+    const base = Math.max(1, lastX - cfg.leftPad);
+    const scale = available / base;
+    for(let i=0;i<xPos.length;i++){
+      xPos[i] = cfg.leftPad + (xPos[i] - cfg.leftPad) * scale;
+    }
+    totalWidth = viewport;
+  }
+  // If no clusters (no special events), ensure track fills container for tick rendering
+  if(clusters.length===0){
+    totalWidth = Math.max(totalWidth, viewport>0? viewport : 600);
+  }
+  track.style.width = `${Math.max(totalWidth, 600)}px`;
+
+  // Helper to position ticks between clusters in compressed space
+  const getTickX = (m)=>{
+    if(!Number.isFinite(m)) return null;
+    if(clusters.length===0){
+      // Linear mapping across the whole domain when no clusters
+      const domain = Math.max(1, (maxMinute - minMinute));
+      const span = Math.max(1, (Math.max(totalWidth, 600) - cfg.leftPad - cfg.rightPad));
+      const ratio = Math.max(0, Math.min(1, (m - minMinute) / domain));
+      return cfg.leftPad + ratio * span;
+    }
+    // before first cluster
+    if(Number.isFinite(clusters[0].minuteNumber) && m <= clusters[0].minuteNumber){
+      const d = clusters[0].minuteNumber - m; const add = Math.min(cfg.maxGapPx, Math.max(0, d*cfg.pxPerMinute));
+      return Math.max(cfg.leftPad - add, 8);
+    }
+    // between clusters
+    for(let i=1;i<clusters.length;i++){
+      const mA = clusters[i-1].minuteNumber; const mB = clusters[i].minuteNumber;
+      if(!Number.isFinite(mA) || !Number.isFinite(mB)) continue;
+      if(m >= mA && m <= mB){
+        const gapMin = Math.max(0.0001, mB - mA);
+        const gapPx = xPos[i] - xPos[i-1];
+        const ratio = (m - mA) / gapMin;
+        return xPos[i-1] + ratio * gapPx;
+      }
+    }
+    // after last cluster
+    const lastIdx = clusters.length-1; const mL = clusters[lastIdx].minuteNumber;
+    if(Number.isFinite(mL)){
+      const d = m - mL; const add = Math.min(cfg.maxGapPx, Math.max(0, d*cfg.pxPerMinute));
+      return xPos[lastIdx] + add;
+    }
+    return totalWidth - cfg.rightPad;
+  };
+
+  // 8) Add sparse ticks using compressed mapping
+  const addTick = (min, label, plusN)=>{
+    const x = getTickX(min);
+    if(x===null) return;
+    const tick = document.createElement('div');
+    tick.style.cssText = `position:absolute;left:${x}px;top:50%;width:2px;height:8px;background:#d1d5db;transform:translate(-50%,-50%);`;
+    const lab = document.createElement('div'); lab.textContent=label; lab.style.cssText='position:absolute;top:56%;transform:translate(-50%,0);font-size:11px;color:#6b7280;'; lab.style.left = `${x}px`;
+    track.appendChild(tick); track.appendChild(lab);
+    if(plusN && plusN>0){
+      const badge = document.createElement('div');
+      badge.textContent = `+${plusN}`;
+      badge.style.cssText = `position:absolute;left:${x+14}px;top:42%;transform:translate(-50%,-50%);background:#f59e0b;color:white;font-size:10px;line-height:1;padding:3px 6px;border-radius:9999px;border:1px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.1)`;
+      track.appendChild(badge);
+    }
+  };
+  pendingTicks.forEach(t=>{
+    const plus = t===45 ? stoppage45 : (t===90 ? stoppage90 : 0);
+    const label = t===0 ? 'Start' : (t===45 ? 'HT' : (t===90 ? 'FT' : `${t}'`));
+    addTick(t, label, plus);
+  });
+
+  // 9) Render one marker per cluster at computed x
+  clusters.forEach((cluster, idx)=>{
+    const x = xPos[idx];
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:absolute;left:${x}px;top:50%;transform:translate(-50%,-28px);display:flex;flex-direction:column;align-items:center;gap:6px;`;
+
+    // icons above (max 3) in a compact row
+    const iconsCol = document.createElement('div');
+    iconsCol.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:2px;';
+  const maxIcons = 3;
+    for(let i=0;i<Math.min(maxIcons, cluster.events.length);i++){
+      const evn = cluster.events[i];
+      const t = normalizeEventTags(evn); const tags = Array.isArray(t)?t.map(tt=>tt.text):[];
+      const s = document.createElement('span'); s.textContent = getEventIcon(evn.description||evn.text||'', tags); s.style.cssText='font-size:13px;line-height:13px;';
+      iconsCol.appendChild(s);
+    }
+    wrap.appendChild(iconsCol);
+
+    // Dot uses first event color
+  const first = cluster.events[0];
+    const fTags = normalizeEventTags(first); const fTxt = Array.isArray(fTags)?fTags.map(t=>t.text):[];
+    const color = getEventColor(first.description||first.text||'', fTxt);
+    const dot = document.createElement('div');
+    dot.style.cssText = `position:relative;width:14px;height:14px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 0 0 2px ${color};cursor:pointer;`;
+
+    // Removed +N cluster badge per UX request to avoid overlapping visuals
+
+    // Hover: combined tooltip for cluster
+    const onEnter = async ()=>{
+      const parts = [];
+      for(const evItem of cluster.events){
+        const normT = normalizeEventTags(evItem); const tagTxt = Array.isArray(normT)?normT.map(t=>t.text):[];
+        let brief='';
+        try{
+          const etype = deriveEventType(evItem.description||evItem.text||'', tagTxt, evItem);
+          const minuteLabel = evItem.minute || evItem.time || '';
+          brief = await getEventBrief(etype||'event', { minute: minuteLabel, description: evItem.description||evItem.text||'', event: evItem, tags: tagTxt }, ev);
+        }catch(_e){}
+        parts.push(buildTooltipContent(evItem, ev, { minute: evItem.minute||evItem.time||'', description: evItem.description||evItem.text||'', brief }));
+      }
+      const html = parts.join('<hr style="border:none;border-top:1px solid #e5e7eb;margin:10px 0;"/>');
+      showEventTooltip(dot, html);
+    };
+    const onMove = ()=> positionEventTooltip(dot);
+    const onLeave = ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); } _tooltipHideTimer=setTimeout(()=>{ hideEventTooltip(); _tooltipHideTimer=null; }, 120); };
+    dot.addEventListener('mouseenter', onEnter);
+    dot.addEventListener('mousemove', onMove);
+    dot.addEventListener('mouseleave', onLeave);
+
+    wrap.appendChild(dot);
+    track.appendChild(wrap);
+  });
+
+  scroller.appendChild(track);
+  timelineCard.appendChild(scroller);
+  container.appendChild(timelineCard);
+
+  // 10) Auto-scroll near first meaningful cluster (skip minute 0 if empty)
+  try{
+    const firstIdx = clusters.findIndex(c=> Number.isFinite(c.minuteNumber) && c.minuteNumber>0);
+    const anchorX = firstIdx>=0 ? xPos[firstIdx] : (xPos[0]||cfg.leftPad);
+    if(scroller && typeof anchorX==='number'){
+      const target = Math.max(0, anchorX - scroller.clientWidth*0.3);
+      scroller.scrollLeft = target;
+    }
+  }catch(_e){}
 }
