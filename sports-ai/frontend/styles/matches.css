@@ -33,6 +33,25 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
 .close:hover{background:#475569;}
 /* Extras / Highlights / Timeline styling (match history style) */
 .extras{margin-top:12px}
+/* Prevent horizontal overflow within match page sections */
+.matches-area,
+.matches-area > *,
+#matchInfo, #details_info, #summary, #highlights, #extras,
+#matchInfo > *, #details_info > *, #summary > *, #highlights > *, #extras > * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Make images responsive to avoid pushing layout wider than viewport */
+.matches-area img,
+#matchInfo img,
+#details_info img,
+#summary img,
+#highlights img,
+#extras img {
+  max-width: 100%;
+  height: auto;
+}
 
 /* Modern Extras Container */
 .extras-container {
@@ -41,8 +60,10 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
   border: 1px solid rgba(15,23,42,0.06);
-  max-width: 1400px;
+  max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 /* Navigation Tabs */

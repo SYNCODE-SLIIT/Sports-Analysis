@@ -9,8 +9,8 @@ const _eventBriefCache = new Map();
 function ensureTooltip(){
   if(_evtTooltip) return _evtTooltip;
   const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:#ffffff;color:#111827;padding:10px 12px;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,0.18);font-size:12px;line-height:1.5;pointer-events:auto;display:none;overflow:auto;border:1px solid #e5e7eb;';
-  d.addEventListener('mouseenter', ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); _tooltipHideTimer=null; } });
+  d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:linear-gradient(145deg,#ffffff,#fafafa);color:#111827;padding:16px 18px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.15),0 4px 20px rgba(0,0,0,0.08);font-size:13px;line-height:1.6;pointer-events:auto;display:none;overflow:hidden;border:1px solid rgba(255,255,255,0.8);backdrop-filter:blur(8px);transform:translateY(-4px);transition:all 0.2s ease;';
+  d.addEventListener('mouseenter', ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); _tooltipHideTimer=null; } d.style.transform='translateY(-6px)'; d.style.boxShadow='0 25px 60px rgba(0,0,0,0.2),0 6px 25px rgba(0,0,0,0.1)'; });
   d.addEventListener('mouseleave', ()=>{ if(_evtTooltip){ _evtTooltip.style.display='none'; } });
   document.body.appendChild(d); _evtTooltip = d; return d;
 }
@@ -19,7 +19,7 @@ function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
 function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
 
 // --- Icons/colors/tags ---
-function getEventIcon(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; if(desc.includes('red')||tagStr.includes('red')) return '🟥'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '🔄'; if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; return '⚪'; }
+function getEventIcon(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; if(desc.includes('red')||tagStr.includes('red')) return '🟥'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '↔️'; if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; return '⚪'; }
 function getEventColor(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '#10b981'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '#f59e0b'; if(desc.includes('red')||tagStr.includes('red')) return '#ef4444'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '#8b5cf6'; return '#6b7280'; }
 function getTagColor(tag){ const t = String(tag).toLowerCase(); if(t.includes('goal')) return '#10b981'; if(t.includes('card')) return '#f59e0b'; if(t.includes('substitution')) return '#8b5cf6'; if(t.includes('penalty')) return '#ef4444'; return '#6b7280'; }
 
@@ -278,33 +278,40 @@ function buildTooltipContent(event, matchCtx, opts){
   const simpleTags = Array.isArray(normTags)? normTags : [];
   const etype = deriveEventType(description, simpleTags.map(t=>t.text), event);
   const icon = getEventIcon(description, simpleTags.map(t=>t.text));
+  
   let headerHtml = '';
   if(etype === 'substitution'){
     const { inName, outName } = parseSubstitutionPlayers(event);
     const inImg = inName ? resolvePlayerImageByName(inName, matchCtx) : '';
     const outImg = outName ? resolvePlayerImageByName(outName, matchCtx) : '';
-    const imgBox = (src)=> src ? `<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#f3f4f6"><img src="${src}" style="width:32px;height:32px;object-fit:cover;display:block" onerror="this.remove()"/></div>` : `<div style="width:32px;height:32px;border-radius:6px;display:flex;align-items:center;justify-content:center;background:#f3f4f6;color:#6b7280">👤</div>`;
-    headerHtml = `<div style="display:flex;align-items:center;gap:8px;">${imgBox(inImg)}<div style="font-weight:700;color:#10b981;">${_esc(inName||'IN')}</div><span style="color:#9ca3af">→</span>${imgBox(outImg)}<div style="font-weight:700;color:#ef4444;">${_esc(outName||'OUT')}</div></div>`;
+    const imgBox = (src)=> src ? `<div style="width:40px;height:40px;overflow:hidden;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1)"><img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()"/></div>` : `<div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);color:#6b7280;border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1);font-size:18px;">👤</div>`;
+    headerHtml = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">${imgBox(inImg)}<div style="display:flex;flex-direction:column;"><div style="font-weight:700;color:#10b981;font-size:14px;">${_esc(inName||'Player In')}</div><div style="font-size:11px;color:#6b7280;margin-top:2px;">Substitute In</div></div><div style="display:flex;align-items:center;margin:0 8px;"><span style="color:#9ca3af;font-size:20px;">→</span></div>${imgBox(outImg)}<div style="display:flex;flex-direction:column;"><div style="font-weight:700;color:#ef4444;font-size:14px;">${_esc(outName||'Player Out')}</div><div style="font-size:11px;color:#6b7280;margin-top:2px;">Substitute Out</div></div></div>`;
   } else {
     const { playerImg, teamLogo, playerName } = resolvePlayerAndImages(event, matchCtx);
     const imgSrc = playerImg || teamLogo || '';
-    const imgBox = imgSrc ? `<div style="width:32px;height:32px;overflow:hidden;border-radius:6px;flex-shrink:0;background:#f3f4f6"><img src="${imgSrc}" style="width:32px;height:32px;object-fit:${playerImg?'cover':'contain'};display:block" onerror="this.remove()"/></div>` : '';
-    headerHtml = `<div style="display:flex;align-items:center;gap:8px;">${imgBox}<div style="font-weight:700;color:#111827;">${_esc(playerName||'')}</div></div>`;
+    const imgBox = imgSrc ? `<div style="width:40px;height:40px;overflow:hidden;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1)"><img src="${imgSrc}" style="width:100%;height:100%;object-fit:${playerImg?'cover':'contain'};display:block" onerror="this.remove()"/></div>` : `<div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);color:#6b7280;border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1);font-size:18px;">⚽</div>`;
+    headerHtml = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">${imgBox}<div style="display:flex;flex-direction:column;"><div style="font-weight:700;color:#111827;font-size:14px;">${_esc(playerName||'Player Event')}</div><div style="font-size:11px;color:#6b7280;margin-top:2px;text-transform:capitalize;">${etype.replace('_', ' ')}</div></div></div>`;
   }
-  const tagsHtml = simpleTags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">${simpleTags.map(t=>{
+  
+  const tagsHtml = simpleTags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6;">${simpleTags.map(t=>{
     const color = t.isModel? '#6d28d9' : getTagColor(t.text||'');
     const conf = (t.confidence!==undefined && t.confidence!==null) ? ` <small style=\"opacity:.8\">${Number(t.confidence).toFixed(2)}</small>` : '';
-    return `<span style=\"background:${color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;\">${_esc(t.text||'')}${conf}</span>`;
+    return `<span style=\"background:${color};color:white;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;box-shadow:0 2px 4px rgba(0,0,0,0.1);\">${_esc(t.text||'')}${conf}</span>`;
   }).join('')}</div>` : '';
-  const brief = opts && opts.brief ? `<div style="margin-top:6px;color:#374151;">${_esc(opts.brief)}</div>` : '';
+  
+  const brief = opts && opts.brief ? `<div style="margin-top:8px;color:#4b5563;background:#f9fafb;padding:8px 10px;border-radius:8px;border-left:3px solid #3b82f6;">${_esc(opts.brief)}</div>` : '';
+  
   return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;">
-      <div style="display:flex;align-items:center;gap:8px;">${headerHtml}</div>
-      <div style="display:flex;align-items:center;gap:6px;color:#6b7280;font-weight:700;"><span>${icon}</span><span>${_esc(minute? minute+"'" : '')}</span></div>
+    <div style="position:relative;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:12px;background:linear-gradient(135deg,#fef3c7,#fde68a);padding:8px 12px;border-radius:10px;border:1px solid #f59e0b;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:16px;">${icon}</div>
+        <div style="display:flex;align-items:center;gap:6px;color:#92400e;font-weight:800;font-size:14px;"><span>${_esc(minute? minute+"'" : 'Live')}</span></div>
+      </div>
+      ${headerHtml}
+      ${description ? `<div style=\"color:#374151;line-height:1.6;margin-bottom:8px;background:#f8fafc;padding:8px 10px;border-radius:8px;border-left:3px solid #10b981;\">${_esc(description)}</div>` : ''}
+      ${brief}
+      ${tagsHtml}
     </div>
-    ${description ? `<div style=\"color:#374151;white-space:normal;\">${_esc(description)}</div>` : ''}
-    ${brief}
-    ${tagsHtml}
   `;
 }
 
@@ -457,7 +464,8 @@ function renderMatchTimeline(ev, container){
 
   // 2) Card shell
   const timelineCard = document.createElement('div');
-  timelineCard.style.cssText='background:white;border-radius:16px;padding:20px 16px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08);width:100%;max-width:100%;overflow:hidden';
+  // Standard card width inside container; scrolling is confined to the timeline scroller only
+  timelineCard.style.cssText='background:white;border-radius:16px;padding:20px 16px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08);width:100%;max-width:100%;overflow:hidden;';
   const title = document.createElement('h3');
   title.style.cssText = 'margin:0 0 14px 0;color:#1f2937;font-size:20px';
   title.innerHTML = '⚽ Match Timeline';
@@ -470,16 +478,41 @@ function renderMatchTimeline(ev, container){
 
   // 4) Track baseline inside a horizontal scroller
   const scroller = document.createElement('div');
-  scroller.style.cssText = 'position:relative;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;width:100%;max-width:100%;';
+  // Allow vertical scroll on the page while enabling horizontal scroll inside the timeline only when applicable
+  scroller.style.cssText = 'position:relative;overflow-x:auto;overflow-y:hidden;padding:0 8px 6px 8px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;width:100%;max-width:100%;box-sizing:border-box;';
+  // Convert vertical wheel to horizontal scroll when hovering timeline; prevents vertical page scroll here
+  try {
+    scroller.addEventListener('wheel', (e) => {
+      // If the user scrolls vertically more than horizontally, translate to horizontal when possible
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        const before = scroller.scrollLeft;
+        scroller.scrollLeft += e.deltaY;
+        const after = scroller.scrollLeft;
+        const canScrollX = scroller.scrollWidth > scroller.clientWidth;
+        const atEdge = (!canScrollX) ||
+          (e.deltaY < 0 && after === 0) ||
+          (e.deltaY > 0 && Math.ceil(after + scroller.clientWidth) >= scroller.scrollWidth);
+        // Only prevent default if we actually scrolled horizontally and are not at an edge
+        if (canScrollX && after !== before && !atEdge) {
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
+  } catch(_e) {}
   const track = document.createElement('div');
-  track.style.cssText = 'position:relative;height:110px;min-width:100%';
-  const baseLine = document.createElement('div');
-  baseLine.style.cssText = 'position:absolute;left:0;right:0;top:50%;height:2px;background:#e5e7eb;transform:translateY(-50%);';
-  track.appendChild(baseLine);
+  track.style.cssText = 'position:relative;height:104px;min-width:100%;overflow:hidden;';
+  
+  // We'll create the baseline segments after computing positions
+  // Store baseline container for later
+  track.baselineContainer = document.createElement('div');
+  // Slight offset upward (-1px) to visually center the thicker 3px line relative to icons
+  track.baselineContainer.style.cssText = 'position:absolute;left:0;right:0;top:50%;height:3px;transform:translateY(calc(-50% - 1px));';
+  track.appendChild(track.baselineContainer);
 
   // 5) Minute ticks (sparse)
   // We will add ticks after computing x positions in compressed space
   const pendingTicks = [0,45,90]; if(maxMinute>90) pendingTicks.push(maxMinute);
+  const tickPositions = [];
 
   // Compute stoppage time badges for 45+ and 90+
   let stoppage45 = 0, stoppage90 = 0;
@@ -529,21 +562,44 @@ function renderMatchTimeline(ev, container){
   });
 
   // 7) Compute compressed x positions
-  const cfg = { pxPerMinute: 9, maxGapPx: 100, minGapPx: 28, leftPad: 28, rightPad: 36 };
+  // Layout tuning: extra breathing room at edges and around HT
+  const cfg = { pxPerMinute: 9, maxGapPx: 110, minGapPx: 20, leftPad: 36, rightPad: 44, htGapBefore: 44, htGapAfter: 56 };
   const xPos = []; // pixel x for each cluster
   let curX = cfg.leftPad;
+  // Lead-in spacing from 0' to first cluster so Start stays at 0
+  if(clusters.length>0){
+    const firstMin = clusters[0].minuteNumber;
+    if(Number.isFinite(firstMin) && firstMin>0){
+      // lead-in scaled to minute with smaller clamps so there isn't too much empty space
+      const scaled = firstMin * (cfg.pxPerMinute * 0.6);
+      const leadGap = Math.min(72, Math.max(18, scaled));
+      curX = cfg.leftPad + leadGap;
+    }
+  }
   for(let i=0;i<clusters.length;i++){
     if(i===0){ xPos[i] = curX; continue; }
     const prev = clusters[i-1]; const cur = clusters[i];
     let dMin = (Number.isFinite(prev.minuteNumber) && Number.isFinite(cur.minuteNumber)) ? (cur.minuteNumber - prev.minuteNumber) : 0;
     // if same minute (e.g., 45 and 45+) enforce minimum spacing
     if(dMin<=0) dMin = 0.1;
-    const gap = Math.min(cfg.maxGapPx, Math.max(cfg.minGapPx, dMin * cfg.pxPerMinute));
+    let gap = Math.min(cfg.maxGapPx, Math.max(cfg.minGapPx, dMin * cfg.pxPerMinute));
+    // Inject additional visual breathing room before and after HT (45') separately
+    if(Number.isFinite(prev.minuteNumber) && Number.isFinite(cur.minuteNumber)){
+      if(prev.minuteNumber < 45 && cur.minuteNumber >= 45){
+        // space leading into HT
+        gap += cfg.htGapBefore;
+      }
+      if(prev.minuteNumber <= 45 && cur.minuteNumber > 45){
+        // space coming out of HT
+        gap += cfg.htGapAfter;
+      }
+    }
     curX += gap; xPos[i] = curX;
   }
   let totalWidth = (xPos.length ? xPos[xPos.length-1] : cfg.leftPad) + cfg.rightPad;
   // Stretch to fill container width (use full screen size) to avoid overly tight layout
-  const viewport = Math.max(container?.clientWidth || 0, 0) - 48; // padding allowance based on container only
+  // Stretch content (track) to viewport width when possible, while keeping card within container
+  const viewport = Math.max(scroller?.clientWidth || 0, window.innerWidth || 0) - 48; // padding allowance
   if(viewport > 0 && totalWidth < viewport){
     const lastX = xPos[xPos.length-1] || cfg.leftPad;
     const available = Math.max(1, viewport - cfg.leftPad - cfg.rightPad);
@@ -573,7 +629,8 @@ function renderMatchTimeline(ev, container){
     // before first cluster
     if(Number.isFinite(clusters[0].minuteNumber) && m <= clusters[0].minuteNumber){
       const d = clusters[0].minuteNumber - m; const add = Math.min(cfg.maxGapPx, Math.max(0, d*cfg.pxPerMinute));
-      return Math.max(cfg.leftPad - add, 8);
+      // Clamp ticks before first cluster to start at leftPad so Start aligns with baseline
+      return Math.max(cfg.leftPad - add, cfg.leftPad);
     }
     // between clusters
     for(let i=1;i<clusters.length;i++){
@@ -601,8 +658,16 @@ function renderMatchTimeline(ev, container){
     if(x===null) return;
     const tick = document.createElement('div');
     tick.style.cssText = `position:absolute;left:${x}px;top:50%;width:2px;height:8px;background:#d1d5db;transform:translate(-50%,-50%);`;
-    const lab = document.createElement('div'); lab.textContent=label; lab.style.cssText='position:absolute;top:56%;transform:translate(-50%,0);font-size:11px;color:#6b7280;'; lab.style.left = `${x}px`;
+    const lab = document.createElement('div');
+    lab.textContent = label;
+    // Bold tick labels (Start, HT, FT, etc.) per request
+  // Place tick labels a bit lower to avoid colliding with event minute labels
+  lab.style.cssText = 'position:absolute;top:64%;transform:translate(-50%,0);font-size:12px;color:#111827;font-weight:700;white-space:nowrap;';
+  const xLabel = (min===0) ? cfg.leftPad : x;
+    lab.style.left = `${xLabel}px`;
     track.appendChild(tick); track.appendChild(lab);
+    // Keep for collision checks with nearby event labels
+    tickPositions.push({ min, x });
     if(plusN && plusN>0){
       const badge = document.createElement('div');
       badge.textContent = `+${plusN}`;
@@ -615,31 +680,54 @@ function renderMatchTimeline(ev, container){
     const label = t===0 ? 'Start' : (t===45 ? 'HT' : (t===90 ? 'FT' : `${t}'`));
     addTick(t, label, plus);
   });
+  // Expose FT tick x for baseline rendering
+  try {
+    const ft = tickPositions.find(tp => tp.min === 90);
+    if (ft && typeof ft.x === 'number') {
+      track.ftX = ft.x;
+    }
+  } catch(_e) {}
 
   // 9) Render one marker per cluster at computed x
   clusters.forEach((cluster, idx)=>{
     const x = xPos[idx];
     const wrap = document.createElement('div');
     wrap.style.cssText = `position:absolute;left:${x}px;top:50%;transform:translate(-50%,-28px);display:flex;flex-direction:column;align-items:center;gap:6px;`;
+    wrap.setAttribute('data-minute', cluster.minuteNumber || 0); // Add data attribute for baseline positioning
 
-    // icons above (max 3) in a compact row
-    const iconsCol = document.createElement('div');
-    iconsCol.style.cssText = 'display:flex;flex-direction:row;align-items:center;gap:2px;';
-  const maxIcons = 3;
-    for(let i=0;i<Math.min(maxIcons, cluster.events.length);i++){
-      const evn = cluster.events[i];
-      const t = normalizeEventTags(evn); const tags = Array.isArray(t)?t.map(tt=>tt.text):[];
-      const s = document.createElement('span'); s.textContent = getEventIcon(evn.description||evn.text||'', tags); s.style.cssText='font-size:13px;line-height:13px;';
-      iconsCol.appendChild(s);
-    }
-    wrap.appendChild(iconsCol);
-
-    // Dot uses first event color
-  const first = cluster.events[0];
+    // Professional icon display instead of dot + icons
+    const mainIcon = document.createElement('div');
+    mainIcon.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.95);box-shadow:0 2px 8px rgba(0,0,0,0.1);border:1px solid rgba(0,0,0,0.08);cursor:pointer;transition:all 0.2s ease;';
+    
+    // Use first event for primary icon
+    const first = cluster.events[0];
     const fTags = normalizeEventTags(first); const fTxt = Array.isArray(fTags)?fTags.map(t=>t.text):[];
-    const color = getEventColor(first.description||first.text||'', fTxt);
-    const dot = document.createElement('div');
-    dot.style.cssText = `position:relative;width:14px;height:14px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 0 0 2px ${color};cursor:pointer;`;
+    const primaryIcon = getEventIcon(first.description||first.text||'', fTxt);
+    
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = primaryIcon;
+    iconSpan.style.cssText = 'font-size:18px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.1));';
+    mainIcon.appendChild(iconSpan);
+    
+    // Add hover effect
+    mainIcon.addEventListener('mouseenter', () => {
+      mainIcon.style.transform = 'scale(1.1)';
+      mainIcon.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    });
+    mainIcon.addEventListener('mouseleave', () => {
+      mainIcon.style.transform = 'scale(1)';
+      mainIcon.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+    });
+    
+    // If multiple events, add a small indicator
+    if(cluster.events.length > 1){
+      const indicator = document.createElement('div');
+      indicator.style.cssText = `position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:#3b82f6;color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.2);`;
+      indicator.textContent = cluster.events.length;
+      mainIcon.appendChild(indicator);
+    }
+    
+    wrap.appendChild(mainIcon);
 
     // Removed +N cluster badge per UX request to avoid overlapping visuals
 
@@ -657,17 +745,74 @@ function renderMatchTimeline(ev, container){
         parts.push(buildTooltipContent(evItem, ev, { minute: evItem.minute||evItem.time||'', description: evItem.description||evItem.text||'', brief }));
       }
       const html = parts.join('<hr style="border:none;border-top:1px solid #e5e7eb;margin:10px 0;"/>');
-      showEventTooltip(dot, html);
+      showEventTooltip(mainIcon, html);
     };
-    const onMove = ()=> positionEventTooltip(dot);
+    const onMove = ()=> positionEventTooltip(mainIcon);
     const onLeave = ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); } _tooltipHideTimer=setTimeout(()=>{ hideEventTooltip(); _tooltipHideTimer=null; }, 120); };
-    dot.addEventListener('mouseenter', onEnter);
-    dot.addEventListener('mousemove', onMove);
-    dot.addEventListener('mouseleave', onLeave);
+    mainIcon.addEventListener('mouseenter', onEnter);
+    mainIcon.addEventListener('mousemove', onMove);
+    mainIcon.addEventListener('mouseleave', onLeave);
 
-    wrap.appendChild(dot);
+    wrap.appendChild(mainIcon);
+
+    // Minute label under each marker, bold like Start/HT/FT
+    try{
+      const firstEvt = cluster.events[0] || {};
+      const rawMin = String(firstEvt.minute || firstEvt.time || '').trim();
+      const minuteNum = Number.isFinite(cluster.minuteNumber) ? cluster.minuteNumber : toMinuteNumber(rawMin);
+      let labelText = '';
+      if(rawMin && rawMin.includes('+')){
+        // If it's 90+N, show the summed minute (e.g., 97)
+        const m = rawMin.match(/^(\d+)\s*\+\s*(\d+)$/);
+        if(m){
+          const base = parseInt(m[1], 10) || 0;
+          const extra = parseInt(m[2], 10) || 0;
+          if(base >= 90){
+            labelText = String(base + extra);
+          } else if(base === 45){
+            // Keep first-half stoppage as 45+'
+            labelText = '45+';
+          } else {
+            // Fallback: use summed minute if > 90, else raw compact
+            labelText = Number.isFinite(minuteNum) && minuteNum > 90 ? String(minuteNum) : rawMin.replace(/\s+/g,'');
+          }
+        } else {
+          // Unknown shape, fallback to computed minute or raw
+          labelText = Number.isFinite(minuteNum) && minuteNum > 90 ? String(minuteNum) : rawMin.replace(/\s+/g,'');
+        }
+      } else if(cluster.key && /\+$/.test(String(cluster.key))){
+        // Clustered stoppage at 45+
+        const base = parseInt(String(cluster.key), 10) || 45;
+        labelText = `${base}+`;
+      } else if(Number.isFinite(minuteNum)){
+        labelText = `${minuteNum}`;
+      } else if(rawMin){
+        labelText = rawMin.replace(/\s+/g,'');
+      }
+      // Avoid redundancy and overlap near Start/HT/FT and end ticks
+      const suppressNearTicks = tickPositions.some(tp => {
+        const isEdge = (tp.min===0 || tp.min===90 || tp.min===maxMinute);
+        return isEdge && Math.abs(tp.x - x) < 40; // larger radius near Start/HT/FT/end
+      });
+      // Additional suppression near HT tick specifically
+      const htTick = tickPositions.find(tp => tp.min === 45);
+      const nearHTTick = htTick ? (Math.abs(htTick.x - x) < 36) : false;
+      // Additional suppression very close to container edges
+      const nearLeftEdge = Math.abs(x - cfg.leftPad) < 40;
+      const nearRightEdge = Math.abs(x - (totalWidth - cfg.rightPad)) < 40;
+      const isExactHTNoPlus = (minuteNum===45) && !(rawMin.includes('+'));
+      if(labelText && !suppressNearTicks && !isExactHTNoPlus && !nearLeftEdge && !nearRightEdge && !nearHTTick){
+        const minEl = document.createElement('div');
+        minEl.textContent = `${labelText}'`;
+        minEl.style.cssText = 'margin-top:4px;font-size:12px;font-weight:700;color:#111827;';
+        wrap.appendChild(minEl);
+      }
+    }catch(_e){}
     track.appendChild(wrap);
   });
+
+  // Add colored baseline after all events are placed
+  renderColoredBaseline(track, cfg.leftPad, cfg.rightPad, totalWidth);
 
   scroller.appendChild(track);
   timelineCard.appendChild(scroller);
@@ -682,4 +827,43 @@ function renderMatchTimeline(ev, container){
       scroller.scrollLeft = target;
     }
   }catch(_e){}
+}
+
+function renderColoredBaseline(track, leftPad, rightPad, totalWidth) {
+  if (!track.baselineContainer) return;
+  
+  // Find actual positions of key minutes based on rendered elements
+  const findElementX = (targetMinute) => {
+    const elements = track.querySelectorAll('[data-minute]');
+    for (const el of elements) {
+      const minute = parseInt(el.getAttribute('data-minute'));
+      if (minute === targetMinute) {
+        return el.offsetLeft + (el.offsetWidth / 2); // center of element
+      }
+    }
+    return null;
+  };
+
+  // Try to find 90' position, fallback to calculated position
+  // Prefer exact FT tick if available
+  let ftX = (typeof track.ftX === 'number' ? track.ftX : null);
+  if (!ftX) ftX = findElementX(90);
+  if (!ftX) {
+    // Fallback calculation - estimate 90' position
+    ftX = totalWidth * 0.8; // rough estimate that 90' is about 80% across
+  }
+
+  const startX = leftPad;
+  const endX = totalWidth - rightPad;
+
+  // Green segment from start to FT (90')
+  const greenSegment = document.createElement('div');
+  greenSegment.style.cssText = `position:absolute;left:${startX}px;width:${ftX - startX}px;height:3px;background:linear-gradient(90deg,#10b981,#059669);box-shadow:0 0 6px rgba(16,185,129,0.35);border-radius:2px;`;
+
+  // Red segment from FT to end (extra time)
+  const redSegment = document.createElement('div');
+  redSegment.style.cssText = `position:absolute;left:${ftX}px;width:${endX - ftX}px;height:3px;background:linear-gradient(90deg,#ef4444,#dc2626);box-shadow:0 0 6px rgba(239,68,68,0.35);border-radius:2px;`;
+
+  track.baselineContainer.appendChild(greenSegment);
+  track.baselineContainer.appendChild(redSegment);
 }

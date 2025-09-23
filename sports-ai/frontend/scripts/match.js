@@ -119,6 +119,11 @@
       const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
       const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
       matchTitle.textContent = `${home || 'Home'} vs ${away || 'Away'}`;
+      try {
+        matchTitle.style.maxWidth = '100%';
+        matchTitle.style.overflowWrap = 'anywhere';
+        matchTitle.style.wordBreak = 'break-word';
+      } catch(_e) {}
   // Render the match header card section
   renderMatchHeader(ev);
 
@@ -205,16 +210,16 @@
       const parts = ev.event_final_result.split('-'); homeScore = parts[0]?.trim()||''; awayScore = parts[1]?.trim()||'';
     } else if (ev.home_score !== undefined && ev.away_score !== undefined){ homeScore = String(ev.home_score); awayScore = String(ev.away_score); }
 
-    const card = document.createElement('div');
-    card.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:16px; padding:20px; color:white;';
-    const leagueBar = document.createElement('div'); leagueBar.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px;opacity:.95';
-    leagueBar.innerHTML = `<span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px;">${league||'—'}</span><span style="background: ${getStatusColor(status)}; padding: 4px 12px; border-radius: 20px;">${status || '—'}</span>`;
+  const card = document.createElement('div');
+  card.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:16px; padding:20px; color:white; width:100%; max-width:100%; box-sizing:border-box; overflow:hidden;';
+  const leagueBar = document.createElement('div'); leagueBar.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px;opacity:.95;gap:12px;flex-wrap:wrap;min-width:0;';
+  leagueBar.innerHTML = `<span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; max-width:100%; white-space:normal; word-break:break-word;">${league||'—'}</span><span style="background: ${getStatusColor(status)}; padding: 4px 12px; border-radius: 20px; max-width:100%; white-space:nowrap;">${status || '—'}</span>`;
 
-    const teams = document.createElement('div'); teams.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px';
-    const homeDiv = document.createElement('div'); homeDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-start;flex:1';
-    const awayDiv = document.createElement('div'); awayDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-end;flex:1';
-    const score = document.createElement('div'); score.style.cssText='font-size:36px;font-weight:800'; score.textContent = `${homeScore||'-'} : ${awayScore||'-'}`;
-    homeDiv.innerHTML = `<div style="font-weight:700;font-size:18px">${home}</div>`; awayDiv.innerHTML = `<div style="font-weight:700;font-size:18px">${away}</div>`;
+  const teams = document.createElement('div'); teams.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;min-width:0;flex-wrap:wrap;';
+  const homeDiv = document.createElement('div'); homeDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-start;flex:1 1 240px;min-width:0;';
+  const awayDiv = document.createElement('div'); awayDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-end;flex:1 1 240px;min-width:0;';
+  const score = document.createElement('div'); score.style.cssText='font-size:36px;font-weight:800;flex:0 0 auto;'; score.textContent = `${homeScore||'-'} : ${awayScore||'-'}`;
+  homeDiv.innerHTML = `<div style="font-weight:700;font-size:18px;max-width:100%;white-space:normal;word-break:break-word;">${home}</div>`; awayDiv.innerHTML = `<div style="font-weight:700;font-size:18px;max-width:100%;white-space:normal;word-break:break-word;">${away}</div>`;
     teams.appendChild(homeDiv); teams.appendChild(score); teams.appendChild(awayDiv);
 
     const meta = document.createElement('div'); meta.style.cssText='display:flex;gap:12px;flex-wrap:wrap;font-size:14px;opacity:.9;';
