@@ -192,8 +192,46 @@ class AllSportsRawAgent:
                                 # ensure returned data reflects changes
                                 if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
                                     data['result'][0] = ev
+                            # Best player selection
+                            if a.get('include_best_player'):
+                                best_player = _select_best_player(ev)
+                                if best_player:
+                                    ev['best_player'] = best_player
+                                    # Update data
+                                    if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                                        data['result'][0] = ev
                 except Exception:
                     # never fail the intent due to augmentation/synthesis problems
+                    pass
+
+                # If caller requested best-player but didn't request full augmentation,
+                # compute and attach best player whenever possible. This runs outside
+                # the augment_tags branch so callers that only want the best player
+                # still get it.
+                try:
+                    if a.get('include_best_player') and data:
+                        ev = None
+                        if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                            ev = data['result'][0]
+                        elif isinstance(data, dict) and data.get('event') and isinstance(data.get('event'), dict):
+                            ev = data.get('event')
+                        elif isinstance(data, dict) and (data.get('events') or data.get('fixtures')):
+                            col = data.get('events') or data.get('fixtures')
+                            if isinstance(col, list) and col:
+                                ev = col[0]
+                        elif isinstance(data, dict) and data:
+                            for v in data.values():
+                                if isinstance(v, dict) and v.get('event_key'):
+                                    ev = v
+                                    break
+
+                        if ev is not None:
+                            best_player = _select_best_player(ev)
+                            if best_player:
+                                ev['best_player'] = best_player
+                                if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                                    data['result'][0] = ev
+                except Exception:
                     pass
 
             elif intent == "teams.list":
@@ -460,6 +498,61 @@ def _synthesize_timeline_from_event(ev: Dict[str, Any]) -> list:
         return []
 
     return out
+
+
+def _select_best_player(event_data: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Select the best player from event data based on goals/assists.
+    Returns dict with name, score, reason or None if no data.
+    """
+    players = {}
+    try:
+        # Parse goalscorers for goals and assists
+        goalscorers = event_data.get("goalscorers", [])
+        if isinstance(goalscorers, list):
+            for gs in goalscorers:
+                # Home scorer
+                home_scorer = gs.get("home_scorer")
+                if home_scorer:
+                    players.setdefault(home_scorer, {"goals": 0, "assists": 0})
+                    players[home_scorer]["goals"] += 1
+                # Away scorer
+                away_scorer = gs.get("away_scorer")
+                if away_scorer:
+                    players.setdefault(away_scorer, {"goals": 0, "assists": 0})
+                    players[away_scorer]["goals"] += 1
+                # Home assist
+                home_assist = gs.get("home_assist")
+                if home_assist:
+                    players.setdefault(home_assist, {"goals": 0, "assists": 0})
+                    players[home_assist]["assists"] += 1
+                # Away assist
+                away_assist = gs.get("away_assist")
+                if away_assist:
+                    players.setdefault(away_assist, {"goals": 0, "assists": 0})
+                    players[away_assist]["assists"] += 1
+        
+        # Parse timeline for additional assists/cards if available
+        timeline = event_data.get("timeline", [])
+        if isinstance(timeline, list):
+            for item in timeline:
+                desc = (item.get("description") or "").lower()
+                if "assist" in desc:
+                    for name in players:
+                        if name.lower() in desc:
+                            players[name]["assists"] += 1
+        
+        # Compute scores and select best
+        best = None
+        max_score = 0
+        for name, stats in players.items():
+            score = stats["goals"] * 3 + stats["assists"] * 1  # Weighted score
+            if score > max_score:
+                max_score = score
+                best = {"name": name, "score": score, "reason": f"{stats['goals']} goals, {stats['assists']} assists"}
+        
+        return best
+    except Exception:
+        return None
 
 
 # Simple model cache to avoid repeated disk loads
