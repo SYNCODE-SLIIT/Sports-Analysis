@@ -14,7 +14,7 @@ __pycache__/
 .env
 *.env
 .env.*
-
+.DS_Store
 # Tools
 .mypy_cache/
 .ipynb_checkpoints/
