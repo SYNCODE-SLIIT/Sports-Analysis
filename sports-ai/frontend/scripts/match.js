@@ -395,6 +395,7 @@
 
   function renderSideLeader(sideLabel, p, category){
     if(!p) return `<div style="opacity:.5;">—</div>`;
+    const isAway = sideLabel === 'away';
     const minor = [];
     if(category==='goals') minor.push(`${p.goals||0} GLS`);
     if(category==='assists') minor.push(`${p.assists||0} AST`);
@@ -403,14 +404,14 @@
     const numLine = p.number ? `#${p.number}` : '';
     const posLine = p.position || '';
     return `
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:10px;${isAway ? 'flex-direction:row-reverse;' : ''}">
         ${avatarHtml(p.image, p.name)}
-        <div style="display:flex;flex-direction:column;">
+        <div style="display:flex;flex-direction:column;${isAway ? 'align-items:flex-end;text-align:right;' : ''}">
           <div style="font-weight:600;color:#111827;margin-bottom:2px;">${p.name}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;">
-            ${minor.map(x=>`<span style="color:#4b5563;font-weight:500;">${x}</span>`).join('')}
-            ${posLine ? `<span style="color:#6b7280;">${posLine}</span>` : ''}
-            ${numLine ? `<span style="color:#6b7280;">${numLine}</span>` : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;${isAway ? 'justify-content:flex-end;' : ''}">
+            ${minor.map(x=>`<span style=\"color:#4b5563;font-weight:500;\">${x}</span>`).join('')}
+            ${posLine ? `<span style=\"color:#6b7280;\">${posLine}</span>` : ''}
+            ${numLine ? `<span style=\"color:#6b7280;\">${numLine}</span>` : ''}
           </div>
         </div>
       </div>
