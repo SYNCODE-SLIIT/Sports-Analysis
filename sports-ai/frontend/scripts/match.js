@@ -134,13 +134,13 @@
       try{
         // 1) If backend provided it, render immediately
         if (ev.best_player){
-          const node = renderBestPlayerCard(ev.best_player);
+          const node = renderBestPlayerCard(ev.best_player, ev);
           if(node) insertBestPlayerAfterTimeline(node);
         } else {
           // 2) Try client-side computation from goalscorers/timeline
           const computed = computeBestPlayerFromEvent(ev);
           if(computed){
-            const node = renderBestPlayerCard(computed);
+            const node = renderBestPlayerCard(computed, ev);
             if(node) insertBestPlayerAfterTimeline(node);
           } else {
             // 3) Fallback: fetch only best_player from backend (avoids re-running heavy augmentation)
@@ -154,7 +154,7 @@
                 if (Array.isArray(data) && data.length) cand = data[0];
                 else if (data && typeof data === 'object') cand = data.event || data.result || data;
                 const best = cand && cand.best_player ? cand.best_player : null;
-                if(best){ const node = renderBestPlayerCard(best); if(node) insertBestPlayerAfterTimeline(node); }
+                if(best){ const node = renderBestPlayerCard(best, ev); if(node) insertBestPlayerAfterTimeline(node); }
               }catch(_e){ }
             })();
           }
@@ -228,23 +228,86 @@
     matchInfo.appendChild(card);
   }
 
-  // Render or update the Best Player card
-  function renderBestPlayerCard(bestPlayer){
+  // Resolve image + team logo for best player
+  function resolveBestPlayerAssets(ev, bestPlayer){
+    const out = { playerImg:'', teamLogo:'', side:'' };
+    if(!ev || !bestPlayer) return out;
+    const name = (bestPlayer.name||'').trim();
+    if(!name) return out;
+    // Detect side via goalscorers listing
+    try{
+      const goals = Array.isArray(ev.goalscorers)? ev.goalscorers : [];
+      for(const g of goals){
+        if(g.home_scorer && g.home_scorer === name){ out.side='home'; break; }
+        if(g.away_scorer && g.away_scorer === name){ out.side='away'; break; }
+      }
+    }catch(_e){}
+    // Use timeline.js resolver if available for richer matching (player list cached there)
+    try{ if(typeof resolvePlayerImageByName === 'function'){ out.playerImg = resolvePlayerImageByName(name, ev) || ''; } }catch(_e){}
+    // Fallback manual scan across arrays (players, lineups, etc.)
+    if(!out.playerImg){
+      try{
+        const norm = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+        const target = norm(name);
+        for(const k of Object.keys(ev)){
+          const v = ev[k];
+            if(Array.isArray(v) && v.length && typeof v[0] === 'object'){
+              for(const p of v){
+                const pn = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim();
+                if(pn && norm(pn) === target){
+                  out.playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
+                  break;
+                }
+              }
+              if(out.playerImg) break;
+            }
+        }
+      }catch(_e){}
+    }
+    const homeLogo = ev.home_team_logo || ev.strHomeTeamBadge || ev.homeLogo || ev.event_home_team_logo || ev.home_team_badge;
+    const awayLogo = ev.away_team_logo || ev.strAwayTeamBadge || ev.awayLogo || ev.event_away_team_logo || ev.away_team_badge;
+    if(out.side==='home') out.teamLogo = homeLogo || '';
+    else if(out.side==='away') out.teamLogo = awayLogo || '';
+    else out.teamLogo = homeLogo || awayLogo || '';
+    return out;
+  }
+
+  // Render or update the Best Player card (now with image + logo)
+  function renderBestPlayerCard(bestPlayer, ev){
     if(!bestPlayer) return null;
-    // remove existing if present
-    const existing = document.getElementById('best_player_section');
-    if(existing) existing.remove();
-    const bestPlayerDiv = document.createElement('div');
-    bestPlayerDiv.id = 'best_player_section';
-    bestPlayerDiv.style.cssText = 'background:white;border-radius:12px;padding:16px;margin:12px 0;box-shadow:0 4px 12px rgba(0,0,0,0.06)';
-    bestPlayerDiv.innerHTML = `
-        <h3 style="margin:0 0 8px 0;color:#111827">Best Player</h3>
-        <div class="best-player-body" style="color:#374151">
-            <p style="margin:0"><strong>${bestPlayer.name}</strong> - Score: ${bestPlayer.score}</p>
-            <p style="margin:4px 0 0 0;font-size:13px;color:#6b7280">Reason: ${bestPlayer.reason}</p>
+    const existing = document.getElementById('best_player_section'); if(existing) existing.remove();
+    const assets = resolveBestPlayerAssets(ev, bestPlayer);
+    const div = document.createElement('div');
+    div.id='best_player_section';
+    div.style.cssText='background:linear-gradient(135deg,#ffffff,#f8fafc);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 4px 14px rgba(0,0,0,0.06),0 2px 4px rgba(0,0,0,0.04);position:relative;overflow:hidden';
+    const imgHtml = assets.playerImg ? `<div class="bp-avatar"><img src="${assets.playerImg}" alt="${bestPlayer.name}" onerror="this.remove()"/></div>` : `<div class="bp-avatar placeholder">👤</div>`;
+    const teamHtml = assets.teamLogo ? `<div class="bp-teamlogo" title="Team"><img src="${assets.teamLogo}" alt="team logo" onerror="this.remove()"/></div>` : '';
+    div.innerHTML = `
+      <style>
+        #best_player_section .bp-header{display:flex;align-items:center;gap:16px;margin-bottom:10px;}
+        #best_player_section .bp-avatar{width:78px;height:78px;border-radius:20px;overflow:hidden;background:#1f2937;display:flex;align-items:center;justify-content:center;font-size:30px;color:#e5e7eb;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,0.18);border:3px solid #fff;}
+        #best_player_section .bp-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+        #best_player_section .bp-teamlogo{width:50px;height:50px;border-radius:14px;overflow:hidden;background:#0f1419;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.15);border:2px solid #fff;}
+        #best_player_section .bp-teamlogo img{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 0 2px rgba(0,0,0,.4));}
+        #best_player_section h3{margin:0;font-size:18px;color:#0f172a;}
+        #best_player_section .bp-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+        #best_player_section .bp-score{background:#10b981;color:#fff;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600;box-shadow:0 2px 4px rgba(16,185,129,0.45);} 
+        #best_player_section .bp-reason{background:#f1f5f9;padding:10px 12px;border-radius:12px;border-left:3px solid #10b981;font-size:13px;color:#334155;margin-top:8px;line-height:1.5;}
+      </style>
+      <div class="bp-header">
+        ${imgHtml}
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+          <div class="bp-meta">
+            <h3 style="flex:1;">Best Player</h3>
+            <span class="bp-score" title="Composite performance score">Score: ${bestPlayer.score}</span>
+            ${teamHtml}
+          </div>
+          <div style="font-size:16px;font-weight:700;color:#111827;">${bestPlayer.name}</div>
         </div>
+      </div>
+      <div class="bp-reason">${bestPlayer.reason}</div>
     `;
-    return bestPlayerDiv;
+    return div;
   }
 
   // Insert node after the timeline card; if timeline isn't present yet, observe DOM for it
