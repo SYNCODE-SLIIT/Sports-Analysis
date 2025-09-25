@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .routers.router_collector import RouterCollector
 from .services.highlight_search import search_event_highlights
+from .services.nl_search import parse_nl_query
 from .agents.analysis_agent import AnalysisAgent
 from .agents.game_analytics_agent import AllSportsRawAgent
 
@@ -122,6 +123,61 @@ def history_flat(days: int = 7, end_date: str | None = None):  # pragma: no cove
 @app.get('/history_dual')
 def history_dual_flat(days: int = 7, end_date: str | None = None):  # pragma: no cover
     return router.get_history_dual(days=days, to_date=end_date)
+
+
+# --- Unified NL search endpoint ---
+def _is_non_empty_result(data: dict | None) -> bool:
+    if not data or not isinstance(data, dict):
+        return False
+    for k in ("result", "events", "results", "fixtures"):
+        v = data.get(k)
+        if isinstance(v, list) and len(v) > 0:
+            return True
+    # some endpoints may return scalars/objects; treat presence as non-empty
+    return bool(data)
+
+
+@app.get("/search/nl")
+def search_nl(q: str = Query(..., description="Natural language query")):
+    parsed = parse_nl_query(q)
+    chosen = None
+    result = None
+    tried = []
+    for cand in parsed.candidates:
+        args = dict(cand.get("args") or {})
+        # Normalize single-day date to from/to for fixtures/events.list
+        if cand.get("intent") in ("events.list", "fixtures.list"):
+            if args.get("date") and not (args.get("from") and args.get("to")):
+                d = args.get("date")
+                args.pop("date", None)
+                args["from"], args["to"] = d, d
+        req = {"intent": cand.get("intent"), "args": args}
+        resp = router.handle(req)
+        tried.append({
+            "intent": req["intent"],
+            "args": req["args"],
+            "ok": bool(resp.get("ok")),
+        })
+        if resp.get("ok") and _is_non_empty_result(resp.get("data")):
+            chosen = {"intent": req["intent"], "args": req["args"], "reason": cand.get("reason")}
+            result = resp
+            break
+        # otherwise continue trying candidates
+
+    ok = bool(result and result.get("ok"))
+    return {
+        "ok": ok,
+        "parse": parsed.to_dict(),
+        "chosen": chosen,
+        "tried": tried,
+        "result": result if result else {"ok": False, "data": None},
+    }
+
+
+@app.post("/search/nl")
+def search_nl_post(payload: dict = Body(...)):
+    q = (payload or {}).get("q") or (payload or {}).get("query") or ""
+    return search_nl(q=q)
 
 # --- Additional router to reinforce /matches/history path (defensive) ---
 matches_router = APIRouter(prefix="/matches", tags=["matches"])
