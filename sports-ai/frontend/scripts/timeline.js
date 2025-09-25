@@ -9,7 +9,26 @@ const _eventBriefCache = new Map();
 function ensureTooltip(){
   if(_evtTooltip) return _evtTooltip;
   const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:linear-gradient(145deg,#ffffff,#fafafa);color:#111827;padding:16px 18px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.15),0 4px 20px rgba(0,0,0,0.08);font-size:13px;line-height:1.6;pointer-events:auto;display:none;overflow:hidden;border:1px solid rgba(255,255,255,0.8);backdrop-filter:blur(8px);transform:translateY(-4px);transition:all 0.2s ease;';
+  // Make tooltip vertically scrollable when content exceeds max-height.
+  // We keep a fairly generous max-height to avoid covering the entire screen.
+  // Horizontal overflow is hidden to prevent layout jitter; vertical wheel events
+  // are captured so the page doesn't scroll while the user scrolls inside the tooltip.
+  d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:linear-gradient(145deg,#ffffff,#fafafa);color:#111827;padding:16px 18px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.15),0 4px 20px rgba(0,0,0,0.08);font-size:13px;line-height:1.6;pointer-events:auto;display:none;overflow-x:hidden;overflow-y:auto;border:1px solid rgba(255,255,255,0.8);backdrop-filter:blur(8px);transform:translateY(-4px);transition:all 0.2s ease;scrollbar-width:thin;scrollbar-color:#9ca3af #f3f4f6;';
+  // Custom scrollbar styling for WebKit
+  try{
+    d.style.setProperty('--tw-scrollbar-bg', '#f3f4f6');
+    d.style.setProperty('--tw-scrollbar-thumb', '#d1d5db');
+    // Attach a wheel handler to prevent page scroll when the tooltip can scroll internally
+    d.addEventListener('wheel', (e)=>{
+      const canScroll = d.scrollHeight > d.clientHeight;
+      if(!canScroll) return; // let page scroll
+      const before = d.scrollTop;
+      d.scrollTop += e.deltaY;
+      if(d.scrollTop !== before){
+        e.preventDefault();
+      }
+    }, { passive:false });
+  }catch(_e){}
   d.addEventListener('mouseenter', ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); _tooltipHideTimer=null; } d.style.transform='translateY(-6px)'; d.style.boxShadow='0 25px 60px rgba(0,0,0,0.2),0 6px 25px rgba(0,0,0,0.1)'; });
   d.addEventListener('mouseleave', ()=>{ if(_evtTooltip){ _evtTooltip.style.display='none'; } });
   document.body.appendChild(d); _evtTooltip = d; return d;
