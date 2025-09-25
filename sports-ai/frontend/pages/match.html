@@ -6,6 +6,12 @@
   <title>Match Details — Sports AI</title>
   <link rel="stylesheet" href="../styles/index.css" />
   <link rel="stylesheet" href="../styles/matches.css" />
+  <style>
+    /* Extra vertical spacing between the header card and the rest of the content */
+    #matchHeader { margin-bottom: 32px; }
+    /* If future sections need consistent vertical rhythm, we can rely on this utility */
+    .section-spacer { margin-top: 32px; }
+  </style>
 </head>
 <body>
   <header class="site-header">
@@ -19,7 +25,8 @@
     <a href="javascript:history.back()" class="nav back-link" style="text-decoration:none"><span style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:8px;">← Back</span></a>
   </header>
 
-  <main style="padding:16px;max-width:1100px;margin:0 auto">
+  <main style="padding:16px 16px;margin:0 auto;width:100%;max-width:1280px;box-sizing:border-box;display:block;">
+
     <section id="matchHeader" class="matches-area" style="padding:16px">
       <div class="matches-head">
         <h3 id="matchTitle">Loading match…</h3>
@@ -29,11 +36,6 @@
     </section>
 
     <section class="matches-area" style="padding:16px">
-      <div class="details-controls" style="margin-bottom:.75rem;display:flex;gap:.5rem;flex-wrap:wrap;">
-        <button id="augmentTagsBtn">Augment Timeline Tags</button>
-        <button id="playerAnalyticsBtn">Player Analytics</button>
-        <button id="multimodalBtn">Multimodal Extract</button>
-      </div>
 
       <div id="summary" class="summary">
         <h3>Match Summary</h3>
@@ -63,7 +65,11 @@
     </section>
   </main>
 
-  <script src="../scripts/match.js"></script>
+
+  <script src="../scripts/timeline.js?v=clustered-1"></script>
+  <script src="../scripts/match.js?v=clustered-1"></script>
+  <script src="../scripts/best_player.js?v=enhanced-img-1"></script>
+
 </body>
   
 </html>
