@@ -26,7 +26,6 @@
   </header>
 
   <main style="padding:16px 16px;margin:0 auto;width:100%;max-width:1280px;box-sizing:border-box;display:block;">
-
     <section id="matchHeader" class="matches-area" style="padding:16px">
       <div class="matches-head">
         <h3 id="matchTitle">Loading match…</h3>
@@ -50,26 +49,110 @@
       </div>
 
       <div id="extras" class="extras" style="margin-top:12px">
-        <h3 style="margin:12px 0;color:#0f172a">Extras</h3>
-        <div class="extras-body">
-          <div id="teams_section" class="extra-section"><h4>Teams</h4><div class="body">Loading…</div></div>
-          <div id="players_section" class="extra-section"><h4>Players</h4><div class="body">Loading…</div></div>
-          <div id="league_table_section" class="extra-section"><h4>League Table</h4><div class="body">Loading…</div></div>
-          <div id="odds_section" class="extra-section"><h4>Odds</h4><div class="body">Loading…</div></div>
-          <div id="prob_section" class="extra-section"><h4>Probabilities</h4><div class="body">Loading…</div></div>
-          <div id="comments_section" class="extra-section"><h4>Comments</h4><div class="body">Loading…</div></div>
-          <div id="seasons_section" class="extra-section"><h4>Seasons</h4><div class="body">Loading…</div></div>
-          <div id="h2h_section" class="extra-section"><h4>H2H</h4><div class="body">Loading…</div></div>
+        <h3 style="margin:12px 0;color:#0f172a">Match Details</h3>
+        <div class="extras-container">
+          <div class="extras-nav">
+            <button class="nav-tab active" data-target="teams_section">
+              <span class="nav-icon">👥</span>
+              <span class="nav-label">Teams</span>
+            </button>
+            <button class="nav-tab" data-target="players_section">
+              <span class="nav-icon">⚽</span>
+              <span class="nav-label">Players</span>
+            </button>
+            <button class="nav-tab" data-target="league_table_section">
+              <span class="nav-icon">🏆</span>
+              <span class="nav-label">League Table</span>
+            </button>
+            <button class="nav-tab" data-target="odds_section">
+              <span class="nav-icon">📊</span>
+              <span class="nav-label">Odds</span>
+            </button>
+            <button class="nav-tab" data-target="prob_section">
+              <span class="nav-icon">📈</span>
+              <span class="nav-label">Probabilities</span>
+            </button>
+            <button class="nav-tab" data-target="form_section">
+              <span class="nav-icon">📋</span>
+              <span class="nav-label">Form</span>
+            </button>
+            <button class="nav-tab" data-target="comments_section">
+              <span class="nav-icon">💬</span>
+              <span class="nav-label">Comments</span>
+            </button>
+            <button class="nav-tab" data-target="seasons_section">
+              <span class="nav-icon">📅</span>
+              <span class="nav-label">Seasons</span>
+            </button>
+            <button class="nav-tab" data-target="h2h_section">
+              <span class="nav-icon">⚔️</span>
+              <span class="nav-label">H2H</span>
+            </button>
+          </div>
+          <div class="extras-content">
+            <div id="teams_section" class="extra-section active">
+              <div class="section-header">
+                <h4>Teams</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="players_section" class="extra-section">
+              <div class="section-header">
+                <h4>Players</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="league_table_section" class="extra-section">
+              <div class="section-header">
+                <h4>League Table</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="odds_section" class="extra-section">
+              <div class="section-header">
+                <h4>Odds</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="prob_section" class="extra-section">
+              <div class="section-header">
+                <h4>Probabilities</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="form_section" class="extra-section">
+              <div class="section-header">
+                <h4>Recent Form</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="comments_section" class="extra-section">
+              <div class="section-header">
+                <h4>Comments</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="seasons_section" class="extra-section">
+              <div class="section-header">
+                <h4>Seasons</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+            <div id="h2h_section" class="extra-section">
+              <div class="section-header">
+                <h4>H2H</h4>
+              </div>
+              <div class="body">Loading…</div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
   </main>
 
-
   <script src="../scripts/timeline.js?v=clustered-1"></script>
   <script src="../scripts/match.js?v=clustered-1"></script>
   <script src="../scripts/best_player.js?v=enhanced-img-1"></script>
-
 </body>
   
 </html>

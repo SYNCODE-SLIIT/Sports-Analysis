@@ -5,6 +5,8 @@
   if(loc.port && loc.port !== '8000'){
     apiBase = loc.protocol + '//' + loc.hostname + ':8000';
   }
+  // Expose for other scripts (e.g., tooltip summarizer in timeline utilities)
+  try{ window.apiBase = apiBase; }catch(_e){}
 
   // Elements
   const matchTitle = document.getElementById('matchTitle');
@@ -22,6 +24,25 @@
 
   function setStatus(t){ if(pageStatus) pageStatus.textContent = t; }
   function clear(el){ while(el && el.firstChild) el.removeChild(el.firstChild); }
+
+  // Wire extras navigation tabs (show one section at a time)
+  function initExtrasNavigation(){
+    try{
+      const tabs = Array.from(document.querySelectorAll('#extras .nav-tab'));
+      const sections = Array.from(document.querySelectorAll('#extras .extra-section'));
+      if(!tabs.length || !sections.length) return;
+      const activate = (targetId)=>{
+        tabs.forEach(t=> t.classList.toggle('active', t.getAttribute('data-target') === targetId));
+        sections.forEach(s=> s.classList.toggle('active', s.id === targetId));
+      };
+      tabs.forEach(btn=>{
+        btn.addEventListener('click', ()=> activate(btn.getAttribute('data-target')));
+      });
+      // Ensure one is active initially
+      const activeTab = tabs.find(t=> t.classList.contains('active')) || tabs[0];
+      if(activeTab) activate(activeTab.getAttribute('data-target'));
+    }catch(_e){}
+  }
 
   // Collect API
   async function callIntent(intent, args){
@@ -126,6 +147,9 @@
       fetchMatchSummary(ev).catch(err=>{ if(summaryEl) summaryEl.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err)); });
       fetchHighlights(ev).catch(err=>{ if(highlightsBody) highlightsBody.textContent = 'Highlights error: ' + (err && err.message ? err.message : String(err)); });
       fetchExtras(ev).catch(err=>{ console.warn('Extras error', err); });
+
+  // Initialize extras navigation tabs after sections are present in DOM
+  initExtrasNavigation();
 
       // Wire controls
       if(augmentBtn) augmentBtn.addEventListener('click', ()=> augmentEventTags(ev));
@@ -738,7 +762,7 @@
     const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
     const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
 
-    // Teams
+    // Teams (visual)
     const teamsBody = ensureSection('teams_section','teams');
     if(teamsBody){
       try{
@@ -747,12 +771,12 @@
           away ? callIntent('team.get', { teamName: away }) : Promise.resolve(null),
         ]);
         teamsBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify({home:homeRes,away:awayRes}, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto';
-        teamsBody.appendChild(pre);
+        if(home){ teamsBody.appendChild(createTeamCard(home, homeRes || {status:'rejected'})); }
+        if(away){ teamsBody.appendChild(createTeamCard(away, awayRes || {status:'rejected'})); }
       }catch(e){ teamsBody.textContent = 'Teams error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Players
+    // Players (visual)
     const playersBody = ensureSection('players_section','players');
     if(playersBody){
       try{
@@ -761,73 +785,385 @@
           away ? callIntent('players.list', { teamName: away }) : Promise.resolve(null),
         ]);
         playersBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify({home:homeRes,away:awayRes}, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; playersBody.appendChild(pre);
+        if(home){ const hCard = document.createElement('div'); hCard.appendChild(createPlayersCard(home, homeRes || {status:'rejected'})); playersBody.appendChild(hCard); }
+        if(away){ const aCard = document.createElement('div'); aCard.appendChild(createPlayersCard(away, awayRes || {status:'rejected'})); playersBody.appendChild(aCard); }
       }catch(e){ playersBody.textContent = 'Players error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // League table
+    // League table (visual)
     const tableBody = ensureSection('league_table_section','league table');
     if(tableBody){
       try{
         const args = leagueId ? {leagueId} : (leagueName ? {leagueName} : {});
         const j = Object.keys(args).length ? await callIntent('league.table', args) : null;
         tableBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify(j, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; tableBody.appendChild(pre);
+        const data = j && (j.data || j.result || j.table || j.standings || j);
+        tableBody.appendChild(createLeagueTableCard(data || []));
       }catch(e){ tableBody.textContent = 'League table error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Odds
+    // Odds (visual)
     const oddsBody = ensureSection('odds_section','odds');
     if(oddsBody){
       try{
-        const [listJ, liveJ] = await Promise.allSettled([callIntent('odds.list', eventId?{matchId:eventId}:{}) , callIntent('odds.live', eventId?{matchId:eventId}:{})]);
+        const [listJ, liveJ] = await Promise.allSettled([
+          callIntent('odds.list', eventId?{matchId:eventId}:{}) ,
+          callIntent('odds.live', eventId?{matchId:eventId}:{})
+        ]);
         oddsBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify({listJ, liveJ}, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; oddsBody.appendChild(pre);
+        oddsBody.appendChild(createOddsCard('Odds — Listed', listJ));
+        oddsBody.appendChild(createOddsCard('Odds — Live', liveJ));
       }catch(e){ oddsBody.textContent = 'Odds error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Probabilities
+    // Probabilities (Analysis Agent only)
     const probBody = ensureSection('prob_section','probabilities');
     if(probBody){
       try{
-        const j = await callIntent('probabilities.list', eventId?{matchId: eventId}:{});
         probBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify(j, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; probBody.appendChild(pre);
+        const card = await fetchWinprobOverride(ev, { container: probBody });
+        if(card) probBody.appendChild(card);
       }catch(e){ probBody.textContent = 'Probabilities error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Comments
+    // Form (analysis.form) in its own tab
+    const formBody = ensureSection('form_section','form');
+    if(formBody){
+      try{
+        formBody.innerHTML = '';
+        const formCard = await fetchRecentForm(ev, { container: formBody });
+        if(formCard) formBody.appendChild(formCard);
+      }catch(e){ formBody.textContent = 'Form error: '+(e&&e.message?e.message:String(e)); }
+    }
+
+    // Comments (visual)
     const commBody = ensureSection('comments_section','comments');
     if(commBody){
       try{
         const j = await callIntent('comments.list', eventId?{matchId: eventId}:{ eventName: home && away ? `${home} vs ${away}` : undefined });
         commBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify(j, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; commBody.appendChild(pre);
+        const payload = j && (j.data || j.result || j.comments || j);
+        commBody.appendChild(createCommentsCard(payload || []));
       }catch(e){ commBody.textContent = 'Comments error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Seasons
+    // Seasons (visual)
     const seasBody = ensureSection('seasons_section','seasons');
     if(seasBody){
       try{
         const args = leagueId ? {leagueId} : (leagueName ? {leagueName} : {});
         const j = Object.keys(args).length ? await callIntent('seasons.list', args) : null;
         seasBody.innerHTML = '';
-        const pre = document.createElement('pre'); pre.textContent = JSON.stringify(j, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; seasBody.appendChild(pre);
+        const payload = j && (j.data || j.result || j.seasons || j);
+        seasBody.appendChild(createSeasonsCard(payload || []));
       }catch(e){ seasBody.textContent = 'Seasons error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // H2H
+    // H2H (visual)
     const h2hBody = ensureSection('h2h_section','h2h');
     if(h2hBody){
       try{
         if(home && away){
           const j = await callIntent('h2h', { firstTeam: home, secondTeam: away });
           h2hBody.innerHTML = '';
-          const pre = document.createElement('pre'); pre.textContent = JSON.stringify(j, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; h2hBody.appendChild(pre);
+          const data = j && (j.data || j.result || j);
+          h2hBody.appendChild(createH2HCard(data || {}));
         } else { h2hBody.textContent = 'No team names available.'; }
       }catch(e){ h2hBody.textContent = 'H2H error: '+(e&&e.message?e.message:String(e)); }
     }
+  }
+
+  // ---------- Visual card builders for Extras (ported and adapted from matches.js) ----------
+  function createTeamCard(teamName, result) {
+    const card = document.createElement('div');
+    card.style.cssText = `background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #3b82f6;`;
+
+    const header = document.createElement('div');
+    header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px;`;
+
+    const icon = document.createElement('div');
+    icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #1d4ed8); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`;
+    icon.textContent = '⚽';
+
+    const title = document.createElement('h4');
+    title.style.cssText = 'margin: 0; color: #1f2937; font-size: 18px;';
+    title.textContent = teamName;
+
+    header.appendChild(icon);
+    header.appendChild(title);
+
+    if(result && result.status === 'fulfilled' && result.value && result.value.ok) {
+      const data = result.value.data || result.value.result || result.value.teams || result.value;
+      const team = Array.isArray(data) ? data[0] : data;
+      if(team) {
+        const infoGrid = document.createElement('div');
+        infoGrid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;`;
+        const teamInfo = [
+          ['Founded', team.team_founded || team.intFormedYear || 'N/A'],
+          ['Stadium', team.team_venue || team.strStadium || 'N/A'],
+          ['Manager', team.team_manager || team.strManager || 'N/A'],
+          ['League', team.league_name || team.strLeague || 'N/A'],
+          ['Country', team.team_country || team.strCountry || 'N/A']
+        ].filter(([label, value]) => value && value !== 'N/A');
+        teamInfo.forEach(([label, value]) => {
+          const item = document.createElement('div');
+          item.style.cssText = `padding: 8px; background: #f8fafc; border-radius: 6px;`;
+          item.innerHTML = `<div style="font-size: 11px; color: #6b7280; font-weight: 500; margin-bottom: 2px;">${label}</div><div style="color: #1f2937; font-weight: 600; font-size: 13px;">${value}</div>`;
+          infoGrid.appendChild(item);
+        });
+        card.appendChild(header);
+        card.appendChild(infoGrid);
+      } else {
+        card.appendChild(header);
+        const noData = document.createElement('div');
+        noData.style.cssText = 'color: #6b7280; font-style: italic;';
+        noData.textContent = 'No team details available';
+        card.appendChild(noData);
+      }
+    } else {
+      card.appendChild(header);
+      const error = document.createElement('div');
+      error.style.cssText = 'color: #ef4444; font-style: italic;';
+      error.textContent = 'Failed to load team data';
+      card.appendChild(error);
+    }
+    return card;
+  }
+
+  function createPlayersCard(teamName, result) {
+    const card = document.createElement('div');
+    card.style.cssText = `background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #10b981;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='👥';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent = `${teamName} Squad`;
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+
+    let players = []; let errorMsg = null;
+    try{
+      if (!result) players = [];
+      else if (result.status === 'rejected') errorMsg = (result.reason && result.reason.message) ? result.reason.message : 'Request rejected';
+      else if (result.status === 'fulfilled' && result.value){
+        const v = result.value;
+        if (v.data) {
+          if (Array.isArray(v.data.result)) players = v.data.result;
+          else if (Array.isArray(v.data.results)) players = v.data.results;
+          else if (Array.isArray(v.data.players)) players = v.data.players;
+          else if (Array.isArray(v.data)) players = v.data;
+        }
+        if (players.length === 0) {
+          if (Array.isArray(v.result)) players = v.result;
+          else if (Array.isArray(v.players)) players = v.players;
+        }
+        if (players.length === 0 && v.result && v.result.result && Array.isArray(v.result.result)) players = v.result.result;
+      }
+    }catch(e){ errorMsg = e && e.message ? e.message : String(e); }
+
+    if(errorMsg){ const err=document.createElement('div'); err.style.cssText='color: #ef4444; font-style: italic; text-align: center; padding: 12px;'; err.textContent='Players error: ' + errorMsg; card.appendChild(err); return card; }
+    if(!Array.isArray(players) || players.length===0){ const noPlayers=document.createElement('div'); noPlayers.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noPlayers.textContent='No players found'; card.appendChild(noPlayers); return card; }
+
+    const grid = document.createElement('div'); grid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 6px;`;
+    players.slice(0,40).forEach(p=>{
+      const item = document.createElement('div'); item.style.cssText = `display: flex; align-items: center; gap: 12px; padding: 8px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;`;
+      const imgWrap = document.createElement('div'); imgWrap.style.cssText = `width: 48px; height: 48px; border-radius: 8px; overflow: hidden; flex-shrink: 0; background: linear-gradient(135deg,#e6eefc,#dbeafe); display:flex;align-items:center;justify-content:center;`;
+      const imgUrl = p.player_image || p.player_photo || p.photo || p.thumb || p.playerImage || p.image || '';
+      if(imgUrl){ const img=document.createElement('img'); img.src=imgUrl; img.alt = p.player_name || p.name || ''; img.style.cssText='width:100%;height:100%;object-fit:cover;'; img.onerror = ()=>{ imgWrap.textContent=(p.player_name||p.name||'P').split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase(); }; imgWrap.appendChild(img); }
+      else { imgWrap.textContent=(p.player_name||p.name||'P').split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase(); imgWrap.style.fontWeight='700'; imgWrap.style.color='#0f1724'; }
+      const info = document.createElement('div'); info.style.cssText='flex:1;min-width:0;';
+      const nameRow = document.createElement('div'); nameRow.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;';
+      const playerName = document.createElement('div'); playerName.style.cssText='font-weight:600;color:#1f2937;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; playerName.textContent = p.player_name || p.name || p.strPlayer || 'Unknown';
+      const num = document.createElement('div'); num.style.cssText='font-size:12px;color:#6b7280;font-weight:700;min-width:28px;text-align:center;'; num.textContent = (p.player_number || p.number || p.strNumber) ? String(p.player_number || p.number || p.strNumber) : '';
+      nameRow.appendChild(playerName); nameRow.appendChild(num);
+      const metaRow = document.createElement('div'); metaRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;';
+      const position = document.createElement('div'); position.style.cssText='font-size:11px;color:#6b7280;'; position.textContent = p.player_type || p.position || p.strPosition || '';
+      const stats = document.createElement('div'); stats.style.cssText='font-size:11px;color:#6b7280;'; const goals = p.player_goals || p.goals || p.scored || ''; const assists = p.player_assists || p.assists || ''; const parts=[]; if(goals!==undefined && goals!==null && String(goals).trim() !== '') parts.push(`G:${goals}`); if(assists!==undefined && assists!==null && String(assists).trim()!=='') parts.push(`A:${assists}`); stats.textContent = parts.join(' • ');
+      metaRow.appendChild(position); if(stats.textContent) metaRow.appendChild(stats);
+      info.appendChild(nameRow); info.appendChild(metaRow);
+      item.appendChild(imgWrap); item.appendChild(info); grid.appendChild(item);
+    });
+    card.appendChild(grid);
+    if(players.length>40){ const more=document.createElement('div'); more.style.cssText='margin-top: 8px; text-align: center; color: #6b7280; font-size: 12px;'; more.textContent = `... and ${players.length - 40} more players`; card.appendChild(more); }
+    return card;
+  }
+
+  function createLeagueTableCard(data) {
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #f59e0b;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='🏆';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='League Table';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+
+    let teams = [];
+    if (Array.isArray(data)) teams = data; else if (data){
+      if (Array.isArray(data.total)) teams = data.total; else if (Array.isArray(data.teams)) teams = data.teams; else if (Array.isArray(data.result)) teams = data.result; else if (Array.isArray(data.table)) teams = data.table; else if (Array.isArray(data.standings)) teams = data.standings; else if (data.result && Array.isArray(data.result.total)) teams = data.result.total; else if (data.data && Array.isArray(data.data.total)) teams = data.data.total; else teams = [];
+    }
+    if(Array.isArray(teams) && teams.length>0){
+      const table = document.createElement('div'); table.style.cssText='overflow-x: auto;';
+      const thead = document.createElement('div'); thead.style.cssText = `display: grid; grid-template-columns: 40px 1fr 60px 60px 60px 60px 60px; gap: 8px; padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 4px;`; thead.innerHTML = '<div>Pos</div><div>Team</div><div>P</div><div>W</div><div>D</div><div>L</div><div>PTS</div>';
+      table.appendChild(thead);
+      teams.slice(0,10).forEach((team, index)=>{
+        const row = document.createElement('div'); row.style.cssText = `display: grid; grid-template-columns: 40px 1fr 60px 60px 60px 60px; gap: 8px; padding: 8px; border-radius: 6px; font-size: 13px; ${index % 2 === 0 ? 'background: #f9fafb;' : ''} border-left: 3px solid ${getPositionColor(index + 1)};`;
+        const position = team.standing_place || team.position || team.overall_league_position || (index + 1);
+        const teamName = team.standing_team || team.team_name || team.strTeam || team.name || 'Unknown';
+        const played = team.standing_P || team.overall_league_payed || team.overall_league_played || team.played || team.matches || team.games || '-';
+        const wins = team.standing_W || team.overall_league_W || team.wins || team.W || '-';
+        const draws = team.standing_D || team.overall_league_D || team.draws || team.D || '-';
+        const losses = team.standing_L || team.overall_league_L || team.losses || team.L || '-';
+        const points = team.standing_PTS || team.points || team.pts || team.overall_league_PTS || '-';
+        const teamLogo = team.team_logo || team.teamLogo || team.logo || '';
+        row.innerHTML = `
+          <div style="font-weight: 600; color: #1f2937;">${position}</div>
+          <div style="font-weight: 500; color: #1f2937; display:flex; align-items:center; gap:8px;">
+            ${teamLogo ? `<img src="${teamLogo}" style="width:24px;height:24px;object-fit:contain;border-radius:4px;" onerror="this.remove()" />` : ''}
+            <span>${teamName}</span>
+          </div>
+          <div style="text-align: center;">${played}</div>
+          <div style="text-align: center; color: #10b981;">${wins}</div>
+          <div style="text-align: center; color: #f59e0b;">${draws}</div>
+          <div style="text-align: center; color: #ef4444;">${losses}</div>
+          <div style="text-align: center; font-weight:600;">${points}</div>
+        `;
+        table.appendChild(row);
+      });
+      card.appendChild(table);
+    } else {
+      const noData = document.createElement('div'); noData.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noData.textContent = 'League table not available'; card.appendChild(noData);
+    }
+    return card;
+  }
+  function getPositionColor(position){ if(position <= 4) return '#10b981'; if(position <= 6) return '#3b82f6'; if(position >= 18) return '#ef4444'; return '#6b7280'; }
+
+  function createOddsCard(title, result) {
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #8b5cf6;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='💰';
+    const titleEl = document.createElement('h4'); titleEl.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; titleEl.textContent = title;
+    header.appendChild(icon); header.appendChild(titleEl); card.appendChild(header);
+    if(result && result.status === 'fulfilled' && result.value && result.value.ok){
+      const v = result.value; let odds = [];
+      try{
+        if(v.data){ if(Array.isArray(v.data)) odds = v.data; else if(Array.isArray(v.data.result)) odds = v.data.result; else if(v.data.result && typeof v.data.result === 'object'){ const vals = Object.values(v.data.result).filter(Boolean); odds = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); } else if(Array.isArray(v.data.results)) odds = v.data.results; else if(Array.isArray(v.data.odds)) odds = v.data.odds; }
+        if(odds.length===0 && v.result){ if(Array.isArray(v.result)) odds = v.result; else if(typeof v.result === 'object'){ const vals = Object.values(v.result).filter(Boolean); odds = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); } }
+      }catch(e){ odds = []; }
+      if(Array.isArray(odds) && odds.length>0){
+        const grid = document.createElement('div'); grid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px;`;
+        const fmt = (n)=> (n===null||n===undefined||n==='')? '-' : (typeof n === 'number' ? n.toFixed(2) : String(n));
+        odds.slice(0,12).forEach(odd=>{
+          const item = document.createElement('div'); item.style.cssText = `padding: 12px; background: #f8fafc; border-radius: 6px; text-align: left; border: 1px solid #e2e8f0; display:flex;flex-direction:column;gap:6px;`;
+          const bookmaker = odd.odd_bookmakers || odd.bookmaker_name || odd.strBookmaker || odd.bookmaker || 'Unknown';
+          const headerRow = document.createElement('div'); headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;';
+          const nameEl = document.createElement('div'); nameEl.style.cssText = 'font-weight:600;color:#1f2937;font-size:13px;'; nameEl.textContent = bookmaker;
+          const idEl = document.createElement('div'); idEl.style.cssText = 'font-size:12px;color:#6b7280;'; idEl.textContent = odd.match_id ? `id:${odd.match_id}` : '';
+          headerRow.appendChild(nameEl); headerRow.appendChild(idEl);
+          const markets = document.createElement('div'); markets.style.cssText = 'display:flex;flex-direction:column;gap:4px;font-size:12px;color:#374151;';
+          const h = fmt(odd.odd_1 || odd.home || odd.h); const d = fmt(odd.odd_x || odd.draw || odd.x); const a = fmt(odd.odd_2 || odd.away || odd.a);
+          const row132 = document.createElement('div'); row132.style.cssText = 'display:flex;justify-content:space-between;gap:8px;'; row132.innerHTML = `<div style="color:#6b7280;font-weight:600">1X2</div><div style="display:flex;gap:8px"><span style=\"color:#3b82f6;\">H:${h}</span><span style=\"color:#f59e0b;\">D:${d}</span><span style=\"color:#ef4444;\">A:${a}</span></div>`; markets.appendChild(row132);
+          const btsYes = odd.bts_yes || odd.btst_yes || odd.btsy || odd.bts_yes; const btsNo = odd.bts_no || odd.btst_no || odd.btsn || odd.bts_no;
+          if(btsYes !== undefined || btsNo !== undefined){ const btsRow=document.createElement('div'); btsRow.style.cssText='display:flex;justify-content:space-between;gap:8px;'; btsRow.innerHTML = `<div style=\"color:#6b7280;font-weight:600\">BTTS</div><div style=\"display:flex;gap:8px\"><span style=\"color:#10b981;\">Y:${fmt(btsYes)}</span><span style=\"color:#ef4444;\">N:${fmt(btsNo)}</span></div>`; markets.appendChild(btsRow); }
+          const ou25 = (odd['o+2.5'] !== undefined || odd['u+2.5'] !== undefined) ? {o: odd['o+2.5'], u: odd['u+2.5']} : null;
+          if(ou25){ const ouRow=document.createElement('div'); ouRow.style.cssText='display:flex;justify-content:space-between;gap:8px;'; ouRow.innerHTML = `<div style=\"color:#6b7280;font-weight:600\">O/U 2.5</div><div style=\"display:flex;gap:8px\"><span style=\"color:#3b82f6;\">O:${fmt(ou25.o)}</span><span style=\"color:#ef4444;\">U:${fmt(ou25.u)}</span></div>`; markets.appendChild(ouRow); }
+          const ah0_1 = odd.ah0_1 || odd['ah0_1']; const ah0_2 = odd.ah0_2 || odd['ah0_2'];
+          if(ah0_1 !== undefined || ah0_2 !== undefined){ const ahRow=document.createElement('div'); ahRow.style.cssText='display:flex;justify-content:space-between;gap:8px;'; ahRow.innerHTML = `<div style=\"color:#6b7280;font-weight:600\">AH 0</div><div style=\"display:flex;gap:8px\"><span style=\"color:#3b82f6;\">H:${fmt(ah0_1)}</span><span style=\"color:#ef4444;\">A:${fmt(ah0_2)}</span></div>`; markets.appendChild(ahRow); }
+          item.appendChild(headerRow); item.appendChild(markets); grid.appendChild(item);
+        });
+        card.appendChild(grid);
+      } else {
+        const noOdds=document.createElement('div'); noOdds.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noOdds.textContent='No odds available'; card.appendChild(noOdds);
+      }
+    } else {
+      const errMsg = (result && result.status === 'rejected') ? (result.reason && result.reason.message ? result.reason.message : 'Request rejected') : 'Failed to load odds';
+      const error = document.createElement('div'); error.style.cssText='color: #ef4444; font-style: italic; text-align: center; padding: 20px;'; error.textContent = errMsg; card.appendChild(error);
+    }
+    return card;
+  }
+
+  function createCommentsCard(data) {
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #ec4899;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #ec4899, #db2777); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='💬';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='Match Commentary';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+    let comments = [];
+    try{
+      if(!data) comments = [];
+      else if(Array.isArray(data)) comments = data;
+      else if(Array.isArray(data.comments)) comments = data.comments;
+      else if(Array.isArray(data.result)) comments = data.result;
+      else if(data.result && typeof data.result === 'object'){ const vals = Object.values(data.result).filter(Boolean); comments = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); }
+      else if(data.data && Array.isArray(data.data)) comments = data.data;
+    }catch(e){ comments = []; }
+    if(Array.isArray(comments) && comments.length>0){
+      const list = document.createElement('div'); list.style.cssText = 'max-height: 400px; overflow-y: auto; padding-right: 6px;';
+      const extractMinute = (c)=> c.comments_time || c.time || c.minute || c.match_minute || c.comment_minute || '';
+      const extractText = (c)=> c.comments_text || c.comment_text || c.comment || c.text || '';
+      const extractType = (c)=> c.comments_type || c.comment_type || c.type || 'Comment';
+      comments.slice(0,100).forEach((c,idx)=>{
+        const item = document.createElement('div'); item.style.cssText = `padding: 12px; margin-bottom: 8px; background: ${idx%2===0?'#f8fafc':'white'}; border-radius: 8px; border-left: 3px solid #ec4899;`;
+        const head = document.createElement('div'); head.style.cssText='display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;';
+        const minute = document.createElement('div'); minute.style.cssText='font-size: 12px; color: #ec4899; font-weight: 600;'; const m = extractMinute(c); minute.textContent = m ? String(m) : '';
+        const type = document.createElement('div'); type.style.cssText='font-size: 11px; color: #6b7280; text-transform: uppercase;'; type.textContent = extractType(c) || 'Comment';
+        head.appendChild(minute); head.appendChild(type);
+        const text = document.createElement('div'); text.style.cssText = 'color: #374151; font-size: 13px; line-height: 1.4;'; text.textContent = extractText(c) || 'No comment available';
+        item.appendChild(head); item.appendChild(text); list.appendChild(item);
+      });
+      card.appendChild(list);
+      if(comments.length>100){ const more=document.createElement('div'); more.style.cssText='margin-top: 8px; text-align: center; color: #6b7280; font-size: 12px;'; more.textContent = `... and ${comments.length - 100} more comments`; card.appendChild(more); }
+    } else {
+      const noData=document.createElement('div'); noData.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noData.textContent='No match commentary available'; card.appendChild(noData);
+    }
+    return card;
+  }
+
+  function createSeasonsCard(data){
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #14b8a6;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #14b8a6, #0f766e); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='📅';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='Seasons';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+    let seasons = [];
+    try{ if(!data) seasons=[]; else if(Array.isArray(data)) seasons = data; else if(Array.isArray(data.seasons)) seasons = data.seasons; else if(Array.isArray(data.result)) seasons = data.result; else if(data.result && typeof data.result==='object'){ const vals = Object.values(data.result).filter(Boolean); seasons = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); } else if(data.data && Array.isArray(data.data)) seasons = data.data; }catch(e){ seasons=[]; }
+    if(seasons.length>0){ const grid=document.createElement('div'); grid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 240px; overflow-y: auto;`;
+      seasons.slice(0,20).forEach(season=>{ const item=document.createElement('div'); item.style.cssText = `padding: 12px; background: #f0fdfa; border-radius: 8px; text-align: center; border: 1px solid #14b8a620; cursor: pointer; transition: all 0.2s;`; item.onmouseover=()=> item.style.background='#ccfbf1'; item.onmouseout=()=> item.style.background='#f0fdfa'; const name=document.createElement('div'); name.style.cssText='font-weight: 600; color: #0f766e; font-size: 14px;'; name.textContent = season.season_name || season.strSeason || season.name || 'Unknown Season'; const year=document.createElement('div'); year.style.cssText='font-size: 12px; color: #6b7280; margin-top: 4px;'; year.textContent = season.season_year || season.year || ''; item.appendChild(name); if(year.textContent) item.appendChild(year); grid.appendChild(item); }); card.appendChild(grid); if(seasons.length>20){ const more=document.createElement('div'); more.style.cssText='margin-top: 8px; text-align: center; color: #6b7280; font-size: 12px;'; more.textContent = `... and ${seasons.length - 20} more seasons`; card.appendChild(more); } }
+    else { const noData=document.createElement('div'); noData.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noData.textContent='No seasons data available'; card.appendChild(noData); }
+    return card;
+  }
+
+  function createH2HCard(data){
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #f97316;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #f97316, #ea580c); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='⚔️';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='Head-to-Head History';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+    const sections = [ { title: 'Recent Meetings', data: data.H2H, color: '#3b82f6' }, { title: 'First Team Recent', data: data.firstTeamResults, color: '#10b981' }, { title: 'Second Team Recent', data: data.secondTeamResults, color: '#ef4444' } ];
+    sections.forEach(section=>{
+      if(Array.isArray(section.data) && section.data.length>0){
+        const sectionDiv=document.createElement('div'); sectionDiv.style.cssText='margin-bottom: 20px;';
+        const st=document.createElement('h5'); st.style.cssText = `margin: 0 0 8px 0; color: ${section.color}; font-size: 14px; font-weight: 600;`; st.textContent = section.title;
+        const list=document.createElement('div');
+        section.data.slice(0,5).forEach(match=>{
+          const item=document.createElement('div'); item.style.cssText = `display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #f9fafb; border-radius: 6px; margin-bottom: 4px; font-size: 12px; cursor:pointer;`;
+          const date = match.event_date || match.date || '';
+          const home = match.event_home_team || match.home_team || match.strHomeTeam || '';
+          const away = match.event_away_team || match.away_team || match.strAwayTeam || '';
+          const score = match.event_final_result || match.event_ft_result || ((match.home_score!=null && match.away_score!=null) ? `${match.home_score} - ${match.away_score}` : '');
+          const dateSpan=document.createElement('span'); dateSpan.style.cssText='color: #6b7280;'; dateSpan.textContent = date;
+          const teamsWrap=document.createElement('div'); teamsWrap.style.cssText='display:flex;align-items:center;gap:8px;flex:1;justify-content:center;';
+          const homeWrap=document.createElement('div'); homeWrap.style.cssText='display:flex;align-items:center;gap:8px;';
+          const homeLogo=document.createElement('img'); homeLogo.src = match.home_team_logo || match.homeTeamLogo || match.home_logo || match.home_team_image || ''; homeLogo.style.cssText='width:28px;height:20px;object-fit:contain;border-radius:4px;'; homeLogo.onerror=()=>homeLogo.remove();
+          const homeNameEl=document.createElement('div'); homeNameEl.style.cssText='font-weight:600;color:#1f2937;font-size:13px;'; homeNameEl.textContent = home; homeWrap.appendChild(homeLogo); homeWrap.appendChild(homeNameEl);
+          const vsEl=document.createElement('div'); vsEl.style.cssText='font-size:12px;color:#6b7280;font-weight:600;'; vsEl.textContent='vs';
+          const awayWrap=document.createElement('div'); awayWrap.style.cssText='display:flex;align-items:center;gap:8px;';
+          const awayLogo=document.createElement('img'); awayLogo.src = match.away_team_logo || match.awayTeamLogo || match.away_logo || match.away_team_image || ''; awayLogo.style.cssText='width:28px;height:20px;object-fit:contain;border-radius:4px;'; awayLogo.onerror=()=>awayLogo.remove();
+          const awayNameEl=document.createElement('div'); awayNameEl.style.cssText='font-weight:600;color:#1f2937;font-size:13px;'; awayNameEl.textContent = away; awayWrap.appendChild(awayLogo); awayWrap.appendChild(awayNameEl);
+          teamsWrap.appendChild(homeWrap); teamsWrap.appendChild(vsEl); teamsWrap.appendChild(awayWrap);
+          const scoreSpan=document.createElement('span'); scoreSpan.style.cssText='color: #374151; font-weight: 600; min-width:60px; text-align:center;'; scoreSpan.textContent = score || 'vs';
+          item.appendChild(dateSpan); item.appendChild(teamsWrap); item.appendChild(scoreSpan);
+          item.addEventListener('click', ()=>{ try{ const id = extractEventId(match); if(id){ const url = new URL(window.location.href); url.searchParams.set('eventId', String(id)); window.location.href = url.toString(); } }catch(_e){} });
+          list.appendChild(item);
+        });
+        sectionDiv.appendChild(st); sectionDiv.appendChild(list); card.appendChild(sectionDiv);
+      }
+    });
+    return card;
   }
 
   // Feature stubs
@@ -835,7 +1171,166 @@
   async function runPlayerAnalytics(_ev){ alert('Player analytics not implemented yet'); }
   async function runMultimodalExtract(_ev){ alert('Multimodal extract not implemented yet'); }
 
+  // ---- Analysis Agent integrations (win probabilities + recent form) ----
+  function inferVenueInfo(hints){
+    const country = (hints && (hints.country_name || hints.event_country || hints.country)) || '';
+    const home = (hints && (hints.event_home_team || hints.home_team || hints.strHomeTeam)) || '';
+    const away = (hints && (hints.event_away_team || hints.away_team || hints.strAwayTeam)) || '';
+    const norm = s => String(s || '').toLowerCase();
+    const matchCountry = (team, country) => { const t = norm(team); const c = norm(country); if(!t || !c) return false; return t.includes(c) || c.includes(t); };
+    const homeMatches = matchCountry(home, country);
+    const awayMatches = matchCountry(away, country);
+    const neutral = !!country && !homeMatches && !awayMatches;
+    return { country, home, away, homeMatches, awayMatches, neutral };
+  }
+
+  function createProbabilitiesCardEnhanced(ctx){
+    const { res } = ctx || {};
+    const data = (res && res.data) || {};
+    const probs = data.probs || {};
+    let pH = Number(probs.home || 0), pD = Number(probs.draw || 0), pA = Number(probs.away || 0);
+    const sum = pH + pD + pA; if(sum>0){ pH/=sum; pD/=sum; pA/=sum; }
+    const pct = v => (Number(v*100).toFixed(1));
+
+    const homeName = (data.home_team && (data.home_team.name || data.home_team.short_name)) || ctx.home_team_name || ctx.event_home_team || 'Home';
+    const awayName = (data.away_team && (data.away_team.name || data.away_team.short_name)) || ctx.away_team_name || ctx.event_away_team || 'Away';
+    const hLogo = (data.home_team && data.home_team.logo) || ctx.home_team_logo || '';
+    const aLogo = (data.away_team && data.away_team.logo) || ctx.away_team_logo || '';
+
+    let neutral = !!(data.venue && (data.venue.neutral === true));
+    if (data.venue == null || typeof data.venue.neutral === 'undefined'){
+      try{ const vinf = inferVenueInfo({ country_name: ctx.country_name, event_home_team: homeName, event_away_team: awayName }); neutral = !!vinf.neutral; }catch(_e){}
+    }
+    const homeRole = neutral ? 'Neutral' : 'Home';
+    const awayRole = neutral ? 'Neutral' : 'Away';
+
+    const card = document.createElement('div'); card.className='prob-card'; card.setAttribute('data-agent-prob','1');
+    const head = document.createElement('div'); head.className='prob-headline';
+    head.innerHTML = `
+      <div class="side side-left">
+        ${hLogo? `<img class="logo" src="${hLogo}" alt="${homeName} logo" onerror="this.remove()">` : ''}
+        <span class="name">${homeName}</span>
+        <span class="role" style="font-size:11px;color:#64748b;">(${homeRole})</span>
+      </div>
+      <div class="middle">${homeName} (${homeRole}) ${pct(pH)}% | Draw ${pct(pD)}% | ${awayName} (${awayRole}) ${pct(pA)}%</div>
+      <div class="side side-right">
+        <span class="role" style="font-size:11px;color:#64748b;">(${awayRole})</span>
+        <span class="name">${awayName}</span>
+        ${aLogo? `<img class="logo" src="${aLogo}" alt="${awayName} logo" onerror="this.remove()">` : ''}
+      </div>`;
+    card.appendChild(head);
+
+    const stacked = document.createElement('div'); stacked.className='prob-stacked';
+    const wH = Math.max(0, Math.min(100, Number(pH*100).toFixed(1)));
+    const wD = Math.max(0, Math.min(100, Number(pD*100).toFixed(1)));
+    let wA = Math.max(0, Math.min(100, Number(pA*100).toFixed(1)));
+    const totalRounded = Number(wH) + Number(wD) + Number(wA); if(totalRounded !== 100){ wA = (100 - Number(wH) - Number(wD)).toFixed(1); }
+    stacked.innerHTML = `
+      <span class="seg home" style="width:${wH}%;"></span>
+      <span class="seg draw" style="width:${wD}%;"></span>
+      <span class="seg away" style="width:${wA}%;"></span>`;
+    card.appendChild(stacked);
+
+    const labels = document.createElement('div'); labels.className='prob-labels';
+    labels.innerHTML = `
+      <span class="lbl">${homeName} (${homeRole}) ${Number(wH).toFixed(1)}%</span>
+      <span class="lbl">Draw ${Number(wD).toFixed(1)}%</span>
+      <span class="lbl">${awayName} (${awayRole}) ${Number(wA).toFixed(1)}%</span>`;
+    card.appendChild(labels);
+
+    const mkMini = (key, label, width) => { const row=document.createElement('div'); row.className='prob-mini'; row.innerHTML = `
+        <div class="label">${label}</div>
+        <div class="bar"><span class="fill ${key}" style="width:${width}%"></span></div>
+        <div class="value">${Number(width).toFixed(1)}%</div>`; return row; };
+    card.appendChild(mkMini('home', `${homeName} ${neutral? '(Neutral)':'(Home)'}`, wH));
+    card.appendChild(mkMini('draw', 'Draw', wD));
+    card.appendChild(mkMini('away', `${awayName} ${neutral? '(Neutral)':'(Away)'}`, wA));
+
+    const meta = document.createElement('div'); meta.className='prob-meta';
+    const method = data.method || 'unknown'; const sample = (data.inputs && (data.inputs.sample_size || data.inputs.effective_weight)) || undefined;
+    const leftMeta = document.createElement('div'); leftMeta.textContent = `Method: ${method}${sample? ` • n=${sample}`:''}`;
+    const btnMeta = document.createElement('button'); btnMeta.className='raw-toggle'; btnMeta.textContent='Show raw';
+    const pre = document.createElement('pre'); try{ pre.textContent = JSON.stringify(res, null, 2); }catch(_e){ pre.textContent = String(res); }
+    btnMeta.addEventListener('click', ()=>{ const shown = pre.style.display==='block'; pre.style.display = shown?'none':'block'; btnMeta.textContent = shown? 'Show raw':'Hide raw'; });
+    meta.appendChild(leftMeta); meta.appendChild(btnMeta); card.appendChild(meta); card.appendChild(pre);
+    return card;
+  }
+
+  async function fetchWinprobOverride(ev, opts){
+    const probBody = document.querySelector('#prob_section .body');
+    if(!probBody) return null;
+    // Clear previous agent card
+    const existing = probBody.querySelector('[data-agent-prob="1"]'); if(existing) existing.remove();
+
+    const eventId = extractEventId(ev);
+    if(!eventId){
+      const err = document.createElement('div'); err.className='prob-error'; err.textContent='Missing eventId'; return err;
+    }
+    try{
+      const url = new URL(apiBase + '/analysis/winprob');
+      url.searchParams.set('eventId', String(eventId));
+      url.searchParams.set('source', 'auto');
+      url.searchParams.set('lookback', '10');
+      const resp = await fetch(url.toString());
+      const res = await resp.json().catch(()=> ({}));
+
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const country = ev.country_name || ev.strCountry || ev.country || '';
+      const hLogo = (ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '');
+      const aLogo = (ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '');
+
+      const _inferFromLogo = (url)=>{ try{ if(!url) return ''; const last = String(url).split('?')[0].split('#')[0].split('/').pop() || ''; const base = last.replace(/\.[a-zA-Z0-9]+$/, ''); const t = decodeURIComponent(base).replace(/[\-_]+/g, ' ').trim(); return t ? t.split(' ').map(w=> w? (w[0].toUpperCase()+w.slice(1)) : '').join(' ') : ''; }catch(_e){ return ''; } };
+      const derivedHomeName = home || _inferFromLogo(hLogo) || 'Home';
+      const derivedAwayName = away || _inferFromLogo(aLogo) || 'Away';
+      const card = createProbabilitiesCardEnhanced({
+        __from: 'override', event_key: eventId,
+        event_home_team: home, event_away_team: away,
+        home_team_name: derivedHomeName, away_team_name: derivedAwayName,
+        country_name: country, home_team_logo: hLogo, away_team_logo: aLogo,
+        res
+      });
+      return card;
+    }catch(e){
+      const err = document.createElement('div'); err.className='prob-error'; err.textContent='Failed to load probabilities'; return err;
+    }
+  }
+
+  async function fetchRecentForm(ev, opts){
+    const root = (opts && opts.container) || document.querySelector('#prob_section .body');
+    if(!root) return null;
+    const prev = root.querySelector('[data-agent-form="1"]'); if(prev) prev.remove();
+    const eventId = extractEventId(ev); if(!eventId){ const err=document.createElement('div'); err.className='prob-error'; err.textContent='Missing eventId'; return err; }
+    try{
+      const url = new URL(apiBase + '/analysis/form'); url.searchParams.set('eventId', String(eventId)); url.searchParams.set('lookback','5');
+      const resp = await fetch(url.toString()); const res = await resp.json().catch(()=> ({})); if(!resp.ok || !res || res.ok === false) throw new Error('Form error');
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const hLogo = ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '';
+      const aLogo = ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '';
+      const card = createFormCard({ res, homeName: home, awayName: away, hLogo, aLogo });
+      return card;
+    }catch(e){ const err=document.createElement('div'); err.className='prob-error'; err.textContent='Failed to load recent form'; return err; }
+  }
+
+  function createFormCard(ctx){
+    const { res, homeName, awayName, hLogo, aLogo } = ctx || {};
+    const data = (res && res.data) || {};
+    const home = data.home_team || {}; const away = data.away_team || {};
+    const hm = data.home_metrics || {}; const am = data.away_metrics || {};
+    const lookback = (hm.games || am.games || 0);
+    const HN = home.name || homeName || 'Home'; const AN = away.name || awayName || 'Away';
+    const card = document.createElement('div'); card.className='form-card'; card.setAttribute('data-agent-form','1');
+    const grid = document.createElement('div'); grid.className='form-grid'; card.appendChild(grid);
+    const mkChips = (arr)=>{ const wrap=document.createElement('div'); wrap.className='chips'; (Array.isArray(arr)?arr:[]).forEach(x=>{ const t=String(x||'').trim().toUpperCase(); const span=document.createElement('span'); span.className='chip '+(t==='W'?'win':(t==='D'?'draw':'loss')); span.textContent=t||'?'; wrap.appendChild(span); }); if(!wrap.children.length){ const empty=document.createElement('div'); empty.style.cssText='font-size:12px;color:#64748b'; empty.textContent='No recent results'; wrap.appendChild(empty);} return wrap; };
+    const mkTeam = (side)=>{ const isHome = side==='home'; const team=isHome?home:away; const met=isHome?hm:am; const nm=isHome?HN:AN; const logo=isHome? (home.logo || hLogo) : (away.logo || aLogo); const role=isHome?'Home':'Away'; const box=document.createElement('div'); box.className='form-team'; const hdr=document.createElement('div'); hdr.className='hdr'; hdr.innerHTML = `${logo? `<img class="logo" src="${logo}" alt="${nm} logo" onerror="this.remove()">` : ''}<span class="name">${nm}</span> <span class="role">(${role})</span>`; box.appendChild(hdr); const summary=document.createElement('div'); summary.className='form-summary'; summary.textContent = (team.summary || ''); box.appendChild(summary); box.appendChild(mkChips(met.last_results)); const tbl=document.createElement('table'); tbl.className='metric-table'; const addRow=(k,v)=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td class="k">${k}</td><td class="v">${v}</td>`; tbl.appendChild(tr); }; addRow('Games', met.games ?? '—'); addRow('Wins / Draws / Losses', `${met.wins ?? '—'} / ${met.draws ?? '—'} / ${met.losses ?? '—'}`); addRow('Goals For / Against', `${met.gf ?? '—'} / ${met.ga ?? '—'}`); addRow('Goal Difference', `${met.gd ?? '—'}`); box.appendChild(tbl); return box; };
+    grid.appendChild(mkTeam('home')); grid.appendChild(mkTeam('away'));
+    const footer=document.createElement('div'); footer.className='form-footer'; const left=document.createElement('div'); left.textContent = `Lookback: ${lookback || 5} games`; const btn=document.createElement('button'); btn.className='raw-toggle'; btn.textContent='Show raw'; const pre=document.createElement('pre'); try{ pre.textContent = JSON.stringify(res, null, 2);}catch(_e){ pre.textContent = String(res);} btn.addEventListener('click', ()=>{ const shown=pre.style.display==='block'; pre.style.display = shown? 'none':'block'; btn.textContent = shown? 'Show raw':'Hide raw'; }); footer.appendChild(left); footer.appendChild(btn); card.appendChild(footer); card.appendChild(pre); return card;
+  }
+
   // Start
   load();
+  // Pre-wire extras nav just in case
+  initExtrasNavigation();
 })();
 
