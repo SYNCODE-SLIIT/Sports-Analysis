@@ -605,7 +605,7 @@ def _compute_best_player_from_event(ev: Dict[str, Any]) -> Dict[str, Any] | None
         st = players.setdefault(n, {"goals": 0, "assists": 0})
         st["assists"] += 1
 
-    # Candidate lists/keys to examine (order matters for providers)
+    # Candidate lists/keys to examine 
     list_keys = (
         "scorers",
         "scorers_home",
