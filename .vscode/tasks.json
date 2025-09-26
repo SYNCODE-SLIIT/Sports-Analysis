@@ -1,0 +1,30 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "web: typecheck and lint",
+			"type": "shell",
+			"command": "pnpm -s -C web dlx turbo-ignore true >/dev/null 2>&1 || true; if command -v pnpm >/dev/null 2>&1; then pnpm -C web -s run lint; else if command -v npm >/dev/null 2>&1; then npm --prefix web run lint; else yarn --cwd web run lint; fi; fi",
+			"problemMatcher": [
+				"$eslint-stylish"
+			],
+			"group": "build"
+		},
+		{
+			"label": "web: build",
+			"type": "shell",
+			"command": "if command -v pnpm >/dev/null 2>&1; then pnpm -C web -s run build; else if command -v npm >/dev/null 2>&1; then npm --prefix web run build; else yarn --cwd web run build; fi; fi",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "web: build (logo swap)",
+			"type": "shell",
+			"command": "if command -v pnpm >/dev/null 2>&1; then pnpm -C web -s run build; else if command -v npm >/dev/null 2>&1; then npm --prefix web run build; else yarn --cwd web run build; fi; fi",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}
