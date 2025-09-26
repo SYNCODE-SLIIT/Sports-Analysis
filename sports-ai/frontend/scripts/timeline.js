@@ -979,6 +979,47 @@ function renderMatchTimeline(ev, container){
       scroller.scrollLeft = target;
     }
   }catch(_e){}
+
+}
+
+function renderColoredBaseline(track, leftPad, rightPad, totalWidth) {
+  if (!track.baselineContainer) return;
+  
+  // Find actual positions of key minutes based on rendered elements
+  const findElementX = (targetMinute) => {
+    const elements = track.querySelectorAll('[data-minute]');
+    for (const el of elements) {
+      const minute = parseInt(el.getAttribute('data-minute'));
+      if (minute === targetMinute) {
+        return el.offsetLeft + (el.offsetWidth / 2); // center of element
+      }
+    }
+    return null;
+  };
+
+  // Try to find 90' position, fallback to calculated position
+  // Prefer exact FT tick if available
+  let ftX = (typeof track.ftX === 'number' ? track.ftX : null);
+  if (!ftX) ftX = findElementX(90);
+  if (!ftX) {
+    // Fallback calculation - estimate 90' position
+    ftX = totalWidth * 0.8; // rough estimate that 90' is about 80% across
+  }
+
+  const startX = leftPad;
+  const endX = totalWidth - rightPad;
+
+  // Green segment from start to FT (90')
+  const greenSegment = document.createElement('div');
+  greenSegment.style.cssText = `position:absolute;left:${startX}px;width:${ftX - startX}px;height:3px;background:linear-gradient(90deg,#10b981,#059669);box-shadow:0 0 6px rgba(16,185,129,0.35);border-radius:2px;`;
+
+  // Red segment from FT to end (extra time)
+  const redSegment = document.createElement('div');
+  redSegment.style.cssText = `position:absolute;left:${ftX}px;width:${endX - ftX}px;height:3px;background:linear-gradient(90deg,#ef4444,#dc2626);box-shadow:0 0 6px rgba(239,68,68,0.35);border-radius:2px;`;
+
+  track.baselineContainer.appendChild(greenSegment);
+  track.baselineContainer.appendChild(redSegment);
+
 }
 
 function renderColoredBaseline(track, leftPad, rightPad, totalWidth) {

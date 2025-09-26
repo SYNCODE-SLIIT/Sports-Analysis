@@ -15,18 +15,10 @@ __pycache__/
 *.env
 .env.*
 
-# macOS system files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
 # Tools
 .mypy_cache/
 .ipynb_checkpoints/
 .dist/
 .build/
 highlight_shorts/
+sports-ai/backend/app/cache/.DS_Store

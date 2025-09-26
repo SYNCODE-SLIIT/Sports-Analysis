@@ -33,6 +33,7 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
 .close:hover{background:#475569;}
 /* Extras / Highlights / Timeline styling (match history style) */
 .extras{margin-top:12px}
+
 /* Prevent horizontal overflow within match page sections */
 .matches-area,
 .matches-area > *,
@@ -426,7 +427,9 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
   }
 }
 
+
 .highlights{margin-top:12px}
+.highlights h3{margin:0 0 8px 0;color:#0f172a}
 .hl-body{background:#fff;padding:12px;border-radius:10px;border:1px solid rgba(15,23,42,0.06);max-height:36vh;overflow:auto}
 .hl-list{display:flex;flex-direction:column;gap:8px}
 .hl-item{display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:8px;background:#fbfdff;border:1px solid rgba(15,23,42,0.03)}
@@ -511,64 +514,3 @@ section h2{margin:.2rem 0 1rem;font-size:1.1rem;font-weight:600;display:flex;ali
 .form-footer{ margin-top:8px; font-size:11px; color:#64748b; display:flex; justify-content:space-between; align-items:center; gap:8px; }
 .form-footer .raw-toggle{ background:transparent; border:1px dashed #cbd5e1; color:#475569; padding:2px 8px; border-radius:6px; cursor:pointer; font-size:11px; }
 .form-footer pre{ background:#0f1419; color:#e5e7eb; padding:8px; border-radius:8px; overflow:auto; max-height:240px; display:none; margin-top:8px; }
-
-/* === Teams UI === */
-.team-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; max-width: 800px; margin: 0 auto; }
-.team-card{ background:#f8fafc; border:1px solid rgba(15,23,42,0.08); border-radius:12px; padding:16px; transition: all 0.3s ease; }
-.team-card:hover{ background:#f1f5f9; border-color:rgba(59,130,246,0.2); transform: translateY(-2px); }
-.team-head{ display:flex; justify-content:space-between; align-items:center; }
-.team-row{ display:flex; align-items:center; gap:12px; }
-.team-logo{ width:32px; height:32px; object-fit:contain; background:#0f1419; border-radius:8px; padding:3px; }
-.team-name{ font-weight:800; color:#0f172a; font-size:16px; }
-.team-meta{ margin-top:12px; color:#334155; font-size:13px; display:flex; flex-direction:column; gap:8px; }
-.chip.soft{ background:#e2e8f0; color:#0f172a; padding:4px 8px; border-radius:6px; font-size:12px; }
-
-/* === Players UI === */
-.players-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:16px; max-width: 1000px; margin: 0 auto; }
-.players-col{ background:#f8fafc; border:1px solid rgba(15,23,42,0.08); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:12px; }
-.players-title{ margin:0; color:#0f172a; font-size:16px; font-weight:800; }
-.player-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:12px; }
-.player-card{ background:#fff; border:1px solid rgba(15,23,42,0.08); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:8px; transition: all 0.3s ease; }
-.player-card:hover{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-color:rgba(59,130,246,0.2); }
-.pc-head{ display:flex; align-items:center; gap:10px; }
-.pc-img{ width:32px; height:32px; object-fit:cover; border-radius:50%; background:#0f1419; }
-.pc-name{ font-weight:700; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px; }
-.pc-meta{ font-size:12px; color:#475569; }
-.pc-chip{ background:#e2e8f0; color:#0f172a; padding:3px 8px; border-radius:999px; font-weight:700; font-size:11px; }
-.players-more{ align-self:flex-start; background:#334155; color:#fff; border:none; border-radius:8px; padding:8px 12px; font-size:12px; cursor:pointer; transition: all 0.3s ease; }
-.players-more:hover{ background:#475569; transform: translateY(-1px); }
-
-/* === Standings UI === */
-.standings-head{ display:flex; justify-content:flex-end; margin-bottom:6px; }
-.standings-tabs{ display:flex; gap:6px; }
-.standings-tabs .tab{ background:#e2e8f0; color:#0f172a; border:1px solid rgba(15,23,42,0.08); border-radius:999px; padding:4px 10px; font-size:12px; cursor:pointer; }
-.standings-tabs .tab.active{ background:#2563eb; color:#fff; border-color:#2563eb; }
-.standings-wrap{ overflow:auto; }
-.standings{ width:100%; border-collapse:collapse; font-size:12px; }
-.standings thead th{ position:sticky; top:0; background:#fff; color:#0f172a; text-align:left; border-bottom:1px solid rgba(15,23,42,0.06); padding:6px; }
-.standings tbody td{ padding:6px; border-bottom:1px dashed rgba(15,23,42,0.06); }
-.standings .tlogo{ width:18px; height:18px; object-fit:contain; background:#0f1419; border-radius:4px; padding:1px; margin-right:6px; }
-.standings .tname{ display:flex; align-items:center; gap:6px; }
-
-/* === Odds UI === */
-.odds-head{ font-size:12px; color:#475569; margin-bottom:6px; }
-.odds-group{ background:#fff; border:1px solid rgba(15,23,42,0.06); border-radius:10px; padding:8px; margin-top:6px; }
-.odds-group.hidden{ display:none; }
-.odds-group h5{ margin:0 0 6px 0; font-size:13px; color:#0f172a; }
-.odds-table{ width:100%; border-collapse:collapse; font-size:12px; }
-.odds-table thead th{ text-align:left; padding:6px; border-bottom:1px solid rgba(15,23,42,0.06); color:#0f172a; }
-.odds-table tbody td{ padding:6px; border-bottom:1px dashed rgba(15,23,42,0.06); }
-.odds-more{ background:#334155; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:12px; cursor:pointer; margin-top:6px; }
-.odds-more:hover{ background:#475569; }
-
-/* === Comments UI === */
-.comments-list{ display:flex; flex-direction:column; gap:6px; }
-.comment-item{ display:grid; grid-template-columns: 56px 1fr; gap:8px; align-items:flex-start; background:#fff; border:1px solid rgba(15,23,42,0.06); border-radius:8px; padding:6px; }
-.comment-item .ct{ background:#f1f5f9; color:#475569; padding:2px 6px; border-radius:6px; font-weight:700; font-variant-numeric: tabular-nums; text-align:center; }
-.comment-item .cx{ color:#0f172a; }
-
-/* === Seasons UI === */
-.seasons-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
-.season-chip{ display:flex; align-items:center; gap:8px; background:#fff; border:1px solid rgba(15,23,42,0.06); border-radius:10px; padding:6px 8px; }
-.season-logo{ width:20px; height:20px; object-fit:contain; background:#0f1419; border-radius:6px; padding:1px; }
-.season-name{ font-size:12px; color:#0f172a; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
