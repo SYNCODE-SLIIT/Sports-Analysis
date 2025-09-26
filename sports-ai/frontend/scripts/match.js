@@ -5,7 +5,7 @@
   if(loc.port && loc.port !== '8000'){
     apiBase = loc.protocol + '//' + loc.hostname + ':8000';
   }
-  // Expose globally so shared utilities (timeline.js) can use it
+  // Expose for other scripts (e.g., tooltip summarizer in timeline utilities)
   try{ window.apiBase = apiBase; }catch(_e){}
 
   // Elements
@@ -24,6 +24,25 @@
 
   function setStatus(t){ if(pageStatus) pageStatus.textContent = t; }
   function clear(el){ while(el && el.firstChild) el.removeChild(el.firstChild); }
+
+  // Wire extras navigation tabs (show one section at a time)
+  function initExtrasNavigation(){
+    try{
+      const tabs = Array.from(document.querySelectorAll('#extras .nav-tab'));
+      const sections = Array.from(document.querySelectorAll('#extras .extra-section'));
+      if(!tabs.length || !sections.length) return;
+      const activate = (targetId)=>{
+        tabs.forEach(t=> t.classList.toggle('active', t.getAttribute('data-target') === targetId));
+        sections.forEach(s=> s.classList.toggle('active', s.id === targetId));
+      };
+      tabs.forEach(btn=>{
+        btn.addEventListener('click', ()=> activate(btn.getAttribute('data-target')));
+      });
+      // Ensure one is active initially
+      const activeTab = tabs.find(t=> t.classList.contains('active')) || tabs[0];
+      if(activeTab) activate(activeTab.getAttribute('data-target'));
+    }catch(_e){}
+  }
 
   // Collect API
   async function callIntent(intent, args){
@@ -51,7 +70,7 @@
       const id = eventId || (ev ? extractEventId(ev) : '');
       if(id){
         try{
-          const j = await callIntent('event.get', { eventId: id, augment_tags: true, include_best_player: true });
+          const j = await callIntent('event.get', { eventId: id, augment_tags: true });
           const data = j && (j.data || j.result || j.event || j.events || j.fixtures);
           let cand = null;
           if(Array.isArray(data) && data.length) cand = data[0];
@@ -61,81 +80,35 @@
       }
       if(!ev){ throw new Error('No event context available'); }
 
-      // Try to enrich with commentary for better timeline synthesis (cards/subs often live in comments)
-      try{
-        const idForComments = eventId || (ev ? extractEventId(ev) : '');
-        if(idForComments){
-          const comm = await callIntent('comments.list', { matchId: String(idForComments) }).catch(()=> null);
-          if(comm){
-            let arr = [];
-            const d = comm.data || comm.result || comm.comments || comm;
-            if(Array.isArray(d)) arr = d;
-            else if (d && Array.isArray(d.data)) arr = d.data;
-            else if (d && d.result && typeof d.result === 'object'){
-              const vals = Object.values(d.result).filter(Boolean);
-              arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
-            }
-            if(Array.isArray(arr) && arr.length){
-              // attach under common keys checked by synthesizeTimelineFromEvent
-              ev.commentary = arr;
-              ev.comments = arr;
-            }
-          }
-        }
-      }catch(_e){ /* non-fatal */ }
-
-      // Prefetch players for both teams to enable player image resolution in timeline
-      try{
-        const homeName = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
-        const awayName = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
-        if(homeName || awayName){
-          const [homeRes, awayRes] = await Promise.allSettled([
-            homeName ? callIntent('players.list', { teamName: homeName }) : Promise.resolve(null),
-            awayName ? callIntent('players.list', { teamName: awayName }) : Promise.resolve(null),
-          ]);
-          const extractPlayers = (settled)=>{
-            if(!settled || settled.status !== 'fulfilled' || !settled.value) return [];
-            const j = settled.value;
-            const d = j.data || j.result || j.players || j;
-            if(Array.isArray(d)) return d;
-            if(d && Array.isArray(d.result)) return d.result;
-            if(d && d.data && Array.isArray(d.data)) return d.data;
-            if(d && d.result && typeof d.result === 'object'){
-              const vals = Object.values(d.result).filter(Boolean);
-              return vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
-            }
-            return [];
-          };
-          const homePlayers = extractPlayers(homeRes);
-          const awayPlayers = extractPlayers(awayRes);
-          if(homePlayers.length) ev.players_home = homePlayers;
-          if(awayPlayers.length) ev.players_away = awayPlayers;
-          const combined = [...(homePlayers||[]), ...(awayPlayers||[])];
-          if(combined.length) ev.players = combined;
-        }
-      }catch(_e){ /* non-fatal */ }
-
       // Render header title
       const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
       const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
       matchTitle.textContent = `${home || 'Home'} vs ${away || 'Away'}`;
+
+      try {
+        matchTitle.style.maxWidth = '100%';
+        matchTitle.style.overflowWrap = 'anywhere';
+        matchTitle.style.wordBreak = 'break-word';
+      } catch(_e) {}
   // Render the match header card section
   renderMatchHeader(ev);
 
+
       // Details + summary
-      try{ ev.timeline = buildMergedTimeline(ev); }catch(_e){ try{ ev.timeline = buildCleanTimeline(ev); }catch(_e2){} }
+      try{ ev.timeline = buildCleanTimeline(ev); }catch(_e){}
       renderEventDetails(ev, detailsInfo);
+
       // Insert best player UI after the timeline card (so it doesn't interfere with summary)
       try{
         // 1) If backend provided it, render immediately
         if (ev.best_player){
-          const node = renderBestPlayerCard(ev.best_player);
+          const node = renderBestPlayerCard(ev.best_player, ev);
           if(node) insertBestPlayerAfterTimeline(node);
         } else {
           // 2) Try client-side computation from goalscorers/timeline
           const computed = computeBestPlayerFromEvent(ev);
           if(computed){
-            const node = renderBestPlayerCard(computed);
+            const node = renderBestPlayerCard(computed, ev);
             if(node) insertBestPlayerAfterTimeline(node);
           } else {
             // 3) Fallback: fetch only best_player from backend (avoids re-running heavy augmentation)
@@ -149,7 +122,7 @@
                 if (Array.isArray(data) && data.length) cand = data[0];
                 else if (data && typeof data === 'object') cand = data.event || data.result || data;
                 const best = cand && cand.best_player ? cand.best_player : null;
-                if(best){ const node = renderBestPlayerCard(best); if(node) insertBestPlayerAfterTimeline(node); }
+                if(best){ const node = renderBestPlayerCard(best, ev); if(node) insertBestPlayerAfterTimeline(node); }
               }catch(_e){ }
             })();
           }
@@ -170,9 +143,13 @@
           if(card) insertAfterBestPlayerOrTimeline(card);
         }
       }catch(_e){ /* non-fatal */ }
+
       fetchMatchSummary(ev).catch(err=>{ if(summaryEl) summaryEl.textContent = 'Summary error: ' + (err && err.message ? err.message : String(err)); });
       fetchHighlights(ev).catch(err=>{ if(highlightsBody) highlightsBody.textContent = 'Highlights error: ' + (err && err.message ? err.message : String(err)); });
       fetchExtras(ev).catch(err=>{ console.warn('Extras error', err); });
+
+  // Initialize extras navigation tabs after sections are present in DOM
+  initExtrasNavigation();
 
       // Wire controls
       if(augmentBtn) augmentBtn.addEventListener('click', ()=> augmentEventTags(ev));
@@ -186,7 +163,7 @@
     }
   }
 
-  function getStatusColor(status){ const s = String(status).toLowerCase(); if(s.includes('live')||s.includes('1st')||s.includes('2nd')) return 'rgba(34,197,94,0.8)'; if(s.includes('finished')||s.includes('ft')) return 'rgba(107,114,128,0.8)'; if(s.includes('postponed')||s.includes('cancelled')) return 'rgba(239,68,68,0.8)'; return 'rgba(107,114,128,0.8)'; }
+  function getStatusColor(status){ const s = String(status||'').toLowerCase(); if(s.includes('live')||s.includes('1st')||s.includes('2nd')) return 'rgba(34,197,94,0.15)'; if(s.includes('finished')||s.includes('ft')) return 'rgba(107,114,128,0.2)'; if(s.includes('postponed')||s.includes('cancelled')) return 'rgba(239,68,68,0.2)'; return 'rgba(107,114,128,0.2)'; }
 
   function renderMatchHeader(ev){
     clear(matchInfo);
@@ -205,16 +182,16 @@
       const parts = ev.event_final_result.split('-'); homeScore = parts[0]?.trim()||''; awayScore = parts[1]?.trim()||'';
     } else if (ev.home_score !== undefined && ev.away_score !== undefined){ homeScore = String(ev.home_score); awayScore = String(ev.away_score); }
 
-    const card = document.createElement('div');
-    card.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:16px; padding:20px; color:white;';
-    const leagueBar = document.createElement('div'); leagueBar.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px;opacity:.95';
-    leagueBar.innerHTML = `<span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px;">${league||'—'}</span><span style="background: ${getStatusColor(status)}; padding: 4px 12px; border-radius: 20px;">${status || '—'}</span>`;
+  const card = document.createElement('div');
+  card.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius:16px; padding:20px; color:white; width:100%; max-width:100%; box-sizing:border-box; overflow:hidden;';
+  const leagueBar = document.createElement('div'); leagueBar.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:14px;opacity:.95;gap:12px;flex-wrap:wrap;min-width:0;';
+  leagueBar.innerHTML = `<span style="background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; max-width:100%; white-space:normal; word-break:break-word;">${league||'—'}</span><span style="background: ${getStatusColor(status)}; padding: 4px 12px; border-radius: 20px; max-width:100%; white-space:nowrap;">${status || '—'}</span>`;
 
-    const teams = document.createElement('div'); teams.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px';
-    const homeDiv = document.createElement('div'); homeDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-start;flex:1';
-    const awayDiv = document.createElement('div'); awayDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-end;flex:1';
-    const score = document.createElement('div'); score.style.cssText='font-size:36px;font-weight:800'; score.textContent = `${homeScore||'-'} : ${awayScore||'-'}`;
-    homeDiv.innerHTML = `<div style="font-weight:700;font-size:18px">${home}</div>`; awayDiv.innerHTML = `<div style="font-weight:700;font-size:18px">${away}</div>`;
+  const teams = document.createElement('div'); teams.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;min-width:0;flex-wrap:wrap;';
+  const homeDiv = document.createElement('div'); homeDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-start;flex:1 1 240px;min-width:0;';
+  const awayDiv = document.createElement('div'); awayDiv.style.cssText='display:flex;flex-direction:column;align-items:flex-end;flex:1 1 240px;min-width:0;';
+  const score = document.createElement('div'); score.style.cssText='font-size:36px;font-weight:800;flex:0 0 auto;'; score.textContent = `${homeScore||'-'} : ${awayScore||'-'}`;
+  homeDiv.innerHTML = `<div style="font-weight:700;font-size:18px;max-width:100%;white-space:normal;word-break:break-word;">${home}</div>`; awayDiv.innerHTML = `<div style="font-weight:700;font-size:18px;max-width:100%;white-space:normal;word-break:break-word;">${away}</div>`;
     teams.appendChild(homeDiv); teams.appendChild(score); teams.appendChild(awayDiv);
 
     const meta = document.createElement('div'); meta.style.cssText='display:flex;gap:12px;flex-wrap:wrap;font-size:14px;opacity:.9;';
@@ -223,23 +200,86 @@
     matchInfo.appendChild(card);
   }
 
-  // Render or update the Best Player card
-  function renderBestPlayerCard(bestPlayer){
+  // Resolve image + team logo for best player
+  function resolveBestPlayerAssets(ev, bestPlayer){
+    const out = { playerImg:'', teamLogo:'', side:'' };
+    if(!ev || !bestPlayer) return out;
+    const name = (bestPlayer.name||'').trim();
+    if(!name) return out;
+    // Detect side via goalscorers listing
+    try{
+      const goals = Array.isArray(ev.goalscorers)? ev.goalscorers : [];
+      for(const g of goals){
+        if(g.home_scorer && g.home_scorer === name){ out.side='home'; break; }
+        if(g.away_scorer && g.away_scorer === name){ out.side='away'; break; }
+      }
+    }catch(_e){}
+    // Use timeline.js resolver if available for richer matching (player list cached there)
+    try{ if(typeof resolvePlayerImageByName === 'function'){ out.playerImg = resolvePlayerImageByName(name, ev) || ''; } }catch(_e){}
+    // Fallback manual scan across arrays (players, lineups, etc.)
+    if(!out.playerImg){
+      try{
+        const norm = s => (s||'').toString().replace(/[\.]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+        const target = norm(name);
+        for(const k of Object.keys(ev)){
+          const v = ev[k];
+            if(Array.isArray(v) && v.length && typeof v[0] === 'object'){
+              for(const p of v){
+                const pn = (p.player_name || p.name || p.strPlayer || p.player || p.player_fullname || '').trim();
+                if(pn && norm(pn) === target){
+                  out.playerImg = p.player_image || p.player_photo || p.playerImage || p.photo || p.thumb || p.photo_url || p.strThumb || p.strThumbBig || p.player_cutout || p.player_pic || p.img || p.avatar || p.headshot || p.image || '';
+                  break;
+                }
+              }
+              if(out.playerImg) break;
+            }
+        }
+      }catch(_e){}
+    }
+    const homeLogo = ev.home_team_logo || ev.strHomeTeamBadge || ev.homeLogo || ev.event_home_team_logo || ev.home_team_badge;
+    const awayLogo = ev.away_team_logo || ev.strAwayTeamBadge || ev.awayLogo || ev.event_away_team_logo || ev.away_team_badge;
+    if(out.side==='home') out.teamLogo = homeLogo || '';
+    else if(out.side==='away') out.teamLogo = awayLogo || '';
+    else out.teamLogo = homeLogo || awayLogo || '';
+    return out;
+  }
+
+  // Render or update the Best Player card (now with image + logo)
+  function renderBestPlayerCard(bestPlayer, ev){
     if(!bestPlayer) return null;
-    // remove existing if present
-    const existing = document.getElementById('best_player_section');
-    if(existing) existing.remove();
-    const bestPlayerDiv = document.createElement('div');
-    bestPlayerDiv.id = 'best_player_section';
-    bestPlayerDiv.style.cssText = 'background:white;border-radius:12px;padding:16px;margin:12px 0;box-shadow:0 4px 12px rgba(0,0,0,0.06)';
-    bestPlayerDiv.innerHTML = `
-        <h3 style="margin:0 0 8px 0;color:#111827">Best Player</h3>
-        <div class="best-player-body" style="color:#374151">
-            <p style="margin:0"><strong>${bestPlayer.name}</strong> - Score: ${bestPlayer.score}</p>
-            <p style="margin:4px 0 0 0;font-size:13px;color:#6b7280">Reason: ${bestPlayer.reason}</p>
+    const existing = document.getElementById('best_player_section'); if(existing) existing.remove();
+    const assets = resolveBestPlayerAssets(ev, bestPlayer);
+    const div = document.createElement('div');
+    div.id='best_player_section';
+    div.style.cssText='background:linear-gradient(135deg,#ffffff,#f8fafc);border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 4px 14px rgba(0,0,0,0.06),0 2px 4px rgba(0,0,0,0.04);position:relative;overflow:hidden';
+    const imgHtml = assets.playerImg ? `<div class="bp-avatar"><img src="${assets.playerImg}" alt="${bestPlayer.name}" onerror="this.remove()"/></div>` : `<div class="bp-avatar placeholder">👤</div>`;
+    const teamHtml = assets.teamLogo ? `<div class="bp-teamlogo" title="Team"><img src="${assets.teamLogo}" alt="team logo" onerror="this.remove()"/></div>` : '';
+    div.innerHTML = `
+      <style>
+        #best_player_section .bp-header{display:flex;align-items:center;gap:16px;margin-bottom:10px;}
+        #best_player_section .bp-avatar{width:78px;height:78px;border-radius:20px;overflow:hidden;background:#1f2937;display:flex;align-items:center;justify-content:center;font-size:30px;color:#e5e7eb;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,0.18);border:3px solid #fff;}
+        #best_player_section .bp-avatar img{width:100%;height:100%;object-fit:cover;display:block;}
+        #best_player_section .bp-teamlogo{width:50px;height:50px;border-radius:14px;overflow:hidden;background:#0f1419;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.15);border:2px solid #fff;}
+        #best_player_section .bp-teamlogo img{width:100%;height:100%;object-fit:contain;display:block;filter:drop-shadow(0 0 2px rgba(0,0,0,.4));}
+        #best_player_section h3{margin:0;font-size:18px;color:#0f172a;}
+        #best_player_section .bp-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+        #best_player_section .bp-score{background:#10b981;color:#fff;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600;box-shadow:0 2px 4px rgba(16,185,129,0.45);} 
+        #best_player_section .bp-reason{background:#f1f5f9;padding:10px 12px;border-radius:12px;border-left:3px solid #10b981;font-size:13px;color:#334155;margin-top:8px;line-height:1.5;}
+      </style>
+      <div class="bp-header">
+        ${imgHtml}
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+          <div class="bp-meta">
+            <h3 style="flex:1;">Best Player</h3>
+            <span class="bp-score" title="Composite performance score">Score: ${bestPlayer.score}</span>
+            ${teamHtml}
+          </div>
+          <div style="font-size:16px;font-weight:700;color:#111827;">${bestPlayer.name}</div>
         </div>
+      </div>
+      <div class="bp-reason">${bestPlayer.reason}</div>
     `;
-    return bestPlayerDiv;
+    return div;
   }
 
   // Insert node after the timeline card; if timeline isn't present yet, observe DOM for it
@@ -395,6 +435,7 @@
 
   function renderSideLeader(sideLabel, p, category){
     if(!p) return `<div style="opacity:.5;">—</div>`;
+    const isAway = sideLabel === 'away';
     const minor = [];
     if(category==='goals') minor.push(`${p.goals||0} GLS`);
     if(category==='assists') minor.push(`${p.assists||0} AST`);
@@ -403,14 +444,14 @@
     const numLine = p.number ? `#${p.number}` : '';
     const posLine = p.position || '';
     return `
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:10px;${isAway ? 'flex-direction:row-reverse;' : ''}">
         ${avatarHtml(p.image, p.name)}
-        <div style="display:flex;flex-direction:column;">
+        <div style="display:flex;flex-direction:column;${isAway ? 'align-items:flex-end;text-align:right;' : ''}">
           <div style="font-weight:600;color:#111827;margin-bottom:2px;">${p.name}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;">
-            ${minor.map(x=>`<span style="color:#4b5563;font-weight:500;">${x}</span>`).join('')}
-            ${posLine ? `<span style="color:#6b7280;">${posLine}</span>` : ''}
-            ${numLine ? `<span style="color:#6b7280;">${numLine}</span>` : ''}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px;${isAway ? 'justify-content:flex-end;' : ''}">
+            ${minor.map(x=>`<span style=\"color:#4b5563;font-weight:500;\">${x}</span>`).join('')}
+            ${posLine ? `<span style=\"color:#6b7280;\">${posLine}</span>` : ''}
+            ${numLine ? `<span style=\"color:#6b7280;\">${numLine}</span>` : ''}
           </div>
         </div>
       </div>
@@ -548,78 +589,35 @@
   }
 
   // ---- Details rendering & timeline helpers (ported from matches.js) ----
+
   function renderEventDetails(ev, container){
-    if(!container) return;
-    container.innerHTML = '';
-
-    const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
-    const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
-    const _league = ev.league_name || ev.strLeague || '';
-    const _country = ev.country_name || ev.strCountry || ev.country || '';
-    const league = _country && _league ? (_country + ' — ' + _league) : _league;
-    const date = ev.event_date || ev.dateEvent || ev.date || '';
-    const time = ev.event_time || ev.strTime || '';
-    const status = ev.event_status || ev.status || '';
-    const venue = ev.venue || ev.stadium || ev.strVenue || ev.location || ev.event_venue || '';
-
-    // Score determination
-    let homeScore = '', awayScore = '';
-    if (ev.event_final_result && ev.event_final_result.includes('-')) {
-      const parts = ev.event_final_result.split('-'); homeScore = parts[0]?.trim()||''; awayScore = parts[1]?.trim()||'';
-    } else if (ev.home_score !== undefined && ev.away_score !== undefined){ homeScore = String(ev.home_score); awayScore = String(ev.away_score); }
-
-  // Removed the gradient match header card in details to show timeline directly
-
+    if(!container) return; container.innerHTML = '';
     renderMatchStats(ev, container);
     renderMatchTimeline(ev, container);
-  renderAdditionalInfo(ev, container);
-  }
-
-  function createTeamDisplay(teamName, logo, isHome){
-    const team = document.createElement('div'); team.style.cssText = `display:flex;flex-direction:column;align-items:${isHome? 'flex-start':'flex-end'};flex:1;`;
-    if(logo){ const logoImg = document.createElement('img'); logoImg.src = logo; logoImg.style.cssText='width:48px;height:48px;object-fit:contain;margin-bottom:8px'; logoImg.onerror=()=>logoImg.remove(); team.appendChild(logoImg); }
-    const name = document.createElement('div'); name.style.cssText='font-weight:600;font-size:18px;'; name.textContent = teamName; team.appendChild(name);
-    return team;
-  }
-
-  function createScoreDisplay(homeScore, awayScore){
-    const scoreContainer = document.createElement('div'); scoreContainer.style.cssText='display:flex;align-items:center;gap:16px;font-size:36px;font-weight:700;text-shadow:0 2px 4px rgba(0,0,0,0.3)';
-    scoreContainer.innerHTML = `<span>${homeScore||'-'}</span><span style="font-size:24px;opacity:.7;">:</span><span>${awayScore||'-'}</span>`; return scoreContainer;
+    // Additional info card can be added here if needed.
   }
 
   function renderMatchStats(ev, container){
-    const statsData = extractMatchStats(ev); if(Object.keys(statsData).length===0) return;
-    const statsCard = document.createElement('div'); statsCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)';
-    const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='📊 Match Statistics'; statsCard.appendChild(title);
-    Object.entries(statsData).forEach(([statName, values])=>{ statsCard.appendChild(createStatRow(statName, values.home, values.away)); }); container.appendChild(statsCard);
+    const stats = extractMatchStats(ev); if(!Object.keys(stats).length) return;
+    const card = document.createElement('div'); card.className='timeline-card';
+    const h = document.createElement('h3'); h.textContent='Match Statistics'; card.appendChild(h);
+    Object.entries(stats).forEach(([name, v])=> card.appendChild(createStatRow(name, v.home, v.away)) );
+    container.appendChild(card);
   }
-
-  // No-op placeholder to avoid runtime errors; timeline.js handles additional UI elsewhere if needed
-  function renderAdditionalInfo(_ev, _container){ /* intentionally empty */ }
-
   function extractMatchStats(ev){
     const stats = {};
-    const statMappings = {
-      'Possession':['possession_home','possession_away'],'Shots':['shots_home','shots_away'],'Shots on Target':['shots_on_target_home','shots_on_target_away'],'Corners':['corners_home','corners_away'],'Yellow Cards':['yellow_cards_home','yellow_cards_away'],'Red Cards':['red_cards_home','red_cards_away'],'Fouls':['fouls_home','fouls_away'],'Offsides':['offsides_home','offsides_away']
-    };
-    Object.entries(statMappings).forEach(([displayName,[homeKey,awayKey]])=>{ if(ev[homeKey]!==undefined||ev[awayKey]!==undefined) stats[displayName]={home:ev[homeKey]||0,away:ev[awayKey]||0}; });
-    return stats;
+    const map = {'Possession':['possession_home','possession_away'],'Shots':['shots_home','shots_away'],'Shots on Target':['shots_on_target_home','shots_on_target_away'],'Corners':['corners_home','corners_away'],'Yellow Cards':['yellow_cards_home','yellow_cards_away'],'Red Cards':['red_cards_home','red_cards_away'],'Fouls':['fouls_home','fouls_away'],'Offsides':['offsides_home','offsides_away']};
+    Object.entries(map).forEach(([label,[hk,ak]])=>{ if(ev[hk]!==undefined||ev[ak]!==undefined) stats[label]={home:ev[hk]||0,away:ev[ak]||0}; }); return stats;
   }
-
-  function createStatRow(statName, homeValue, awayValue){
-    const row = document.createElement('div'); row.style.cssText='margin-bottom:16px;';
-    const header = document.createElement('div'); header.style.cssText='display:flex;justify-content:space-between;margin-bottom:8px;font-weight:600;color:#374151'; header.innerHTML = `<span>${homeValue}</span><span>${statName}</span><span>${awayValue}</span>`;
-    row.appendChild(header); row.appendChild(createProgressBar(homeValue, awayValue, statName.toLowerCase().includes('possession'))); return row;
+  function createStatRow(name, homeVal, awayVal){
+    const row = document.createElement('div'); row.style.margin='8px 0 12px';
+    const head = document.createElement('div'); head.style.cssText='display:flex;justify-content:space-between;margin-bottom:6px;font-weight:600;color:#374151'; head.innerHTML=`<span>${homeVal}</span><span>${name}</span><span>${awayVal}</span>`; row.appendChild(head);
+    row.appendChild(createProgressBar(homeVal, awayVal, name.toLowerCase().includes('possession')));
+    return row;
   }
+  function createProgressBar(hv, av, pct){ const c=document.createElement('div'); c.style.cssText='height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;display:flex;'; const hn=parseFloat(hv)||0; const an=parseFloat(av)||0; const tot=hn+an; if(tot>0){ const hp=pct?hn:(hn/tot*100); const ap=pct?an:(an/tot*100); const hb=document.createElement('div'); hb.style.cssText=`width:${hp}%;background:linear-gradient(90deg,#3b82f6,#1d4ed8)`; const ab=document.createElement('div'); ab.style.cssText=`width:${ap}%;background:linear-gradient(90deg,#ef4444,#dc2626)`; c.appendChild(hb); c.appendChild(ab);} return c; }
 
-  function createProgressBar(homeValue, awayValue, isPercentage){
-    const container = document.createElement('div'); container.style.cssText='height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;display:flex;';
-    const homeNum = parseFloat(homeValue)||0; const awayNum = parseFloat(awayValue)||0; const total = homeNum+awayNum;
-    if(total>0){ const homePercent = isPercentage?homeNum: (homeNum/total)*100; const awayPercent = isPercentage?awayNum: (awayNum/total)*100; const homeBar = document.createElement('div'); homeBar.style.cssText=`width:${homePercent}%;background:linear-gradient(90deg,#3b82f6,#1d4ed8);transition:width 0.3s ease;`; const awayBar=document.createElement('div'); awayBar.style.cssText=`width:${awayPercent}%;background:linear-gradient(90deg,#ef4444,#dc2626);transition:width 0.3s ease;`; container.appendChild(homeBar); container.appendChild(awayBar); }
-    return container;
-  }
-
-  // Timeline functions are now provided by timeline.js (renderMatchTimeline, synthesizeTimelineFromEvent, buildMergedTimeline)
+  // Removed local timeline helper stubs so global implementations from timeline.js are used.
 
   // ---- Summary ----
   async function fetchMatchSummary(ev){
@@ -746,73 +744,21 @@
     const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
     const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
 
-    // Local helpers for UI
-    const by = (arr, key) => (Array.isArray(arr)?arr:[]).reduce((m, x)=>{ const k = String(x[key]||''); (m[k]=m[k]||[]).push(x); return m; }, {});
-    const el = (tag, cls, html) => { const d=document.createElement(tag); if(cls) d.className=cls; if(html!==undefined) d.innerHTML = html; return d; };
-    const img = (src, cls) => { const i=new Image(); i.className=cls||''; i.src=src||''; i.loading='lazy'; i.onerror=()=>i.remove(); return i; };
-    const fmtPct = v => {
-      const n = parseFloat(v); if(Number.isFinite(n)) return (n%1===0? n.toFixed(0): n.toFixed(2)) + '%';
-      const s = String(v||''); return s.endsWith('%')? s : (s? (s+'%') : '');
-    };
-
-    // We'll capture team ids/logos for reuse across sections
-    let homeTeamId='', awayTeamId='';
-    const teamLogos = { home:'', away:'' };
-
-    // Teams (nice cards)
+    // Teams (visual)
     const teamsBody = ensureSection('teams_section','teams');
-    let teamsHomeRaw=null, teamsAwayRaw=null;
     if(teamsBody){
       try{
         const [homeRes, awayRes] = await Promise.allSettled([
           home ? callIntent('team.get', { teamName: home }) : Promise.resolve(null),
           away ? callIntent('team.get', { teamName: away }) : Promise.resolve(null),
         ]);
-        teamsHomeRaw = homeRes; teamsAwayRaw = awayRes;
-        const extractTeam = (settled)=>{
-          if(!settled || settled.status!== 'fulfilled' || !settled.value) return null;
-          const j = settled.value; const d = j.data || j.result || j.team || j;
-          if(d && Array.isArray(d.result) && d.result.length) return d.result[0];
-          if(Array.isArray(d)) return d[0]||null; return null;
-        };
-        const tHome = extractTeam(homeRes);
-        const tAway = extractTeam(awayRes);
         teamsBody.innerHTML = '';
-
-        const wrap = el('div', 'team-grid');
-        const cardFor = (t, side)=>{
-          const c = el('div', 'team-card');
-          const head = el('div', 'team-head');
-          const row = el('div', 'team-row');
-          if(t && t.team_logo) { const i = img(t.team_logo, 'team-logo'); row.appendChild(i); if(side==='home') teamLogos.home = t.team_logo; else teamLogos.away = t.team_logo; }
-          const name = el('div', 'team-name', (t && (t.team_name||t.name)) || (side==='home'?home:away) || '—');
-          row.appendChild(name);
-          head.appendChild(row);
-          c.appendChild(head);
-
-          // meta
-          const meta = el('div', 'team-meta');
-          if(t && Array.isArray(t.coaches) && t.coaches.length){
-            meta.appendChild(el('div','coach', `Coach: <strong>${t.coaches[0].coach_name || '—'}</strong>`));
-          }
-          if(t && Array.isArray(t.players)){
-            const counts = by(t.players, 'player_type');
-            const chips = el('div','chips');
-            Object.entries(counts).forEach(([k,v])=> chips.appendChild(el('span','chip soft', `${k}: ${v.length}`)));
-            if(chips.childElementCount) meta.appendChild(chips);
-          }
-          c.appendChild(meta);
-          return c;
-        };
-        if(tHome) homeTeamId = String(tHome.team_key||'');
-        if(tAway) awayTeamId = String(tAway.team_key||'');
-        wrap.appendChild(cardFor(tHome,'home'));
-        wrap.appendChild(cardFor(tAway,'away'));
-        teamsBody.appendChild(wrap);
+        if(home){ teamsBody.appendChild(createTeamCard(home, homeRes || {status:'rejected'})); }
+        if(away){ teamsBody.appendChild(createTeamCard(away, awayRes || {status:'rejected'})); }
       }catch(e){ teamsBody.textContent = 'Teams error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Players (gallery)
+    // Players (visual)
     const playersBody = ensureSection('players_section','players');
     if(playersBody){
       try{
@@ -820,291 +766,406 @@
           home ? callIntent('players.list', { teamName: home }) : Promise.resolve(null),
           away ? callIntent('players.list', { teamName: away }) : Promise.resolve(null),
         ]);
-        const extractPlayers = (settled)=>{
-          if(!settled || settled.status!=='fulfilled' || !settled.value) return [];
-          const j= settled.value; const d=j.data||j.result||j.players||j;
-          if(Array.isArray(d)) return d; if(d && Array.isArray(d.result)) return d.result; return [];
-        };
-        const homePlayers = extractPlayers(homeRes).filter(p=>p && (p.player_name||p.name));
-        const awayPlayers = extractPlayers(awayRes).filter(p=>p && (p.player_name||p.name));
         playersBody.innerHTML = '';
-        const grid = el('div','players-grid');
-        const col = (title, arr, side)=>{
-          const box = el('div','players-col');
-          box.appendChild(el('h5','players-title', title));
-          const list = el('div','player-list');
-          const show = 12; const more = arr.slice(show);
-          const renderCard = (p)=>{
-            const card = el('div','player-card');
-            const top = el('div','pc-head');
-            const i = (p.player_image||'') ? img(p.player_image,'pc-img') : null;
-            if(i) top.appendChild(i);
-            const nm = el('div','pc-name', p.player_name || p.name || '—');
-            top.appendChild(nm);
-            card.appendChild(top);
-            const meta = el('div','pc-meta');
-            const t = p.player_type || p.position || '';
-            const num = (p.player_number!=null && p.player_number!=='')? ('#'+p.player_number): '';
-            const age = p.player_age ? (String(p.player_age)+'y') : '';
-            meta.appendChild(el('span','pc-chip', [t,num,age].filter(Boolean).join(' • ')));
-            card.appendChild(meta);
-            return card;
-          };
-          arr.slice(0,show).forEach(p=> list.appendChild(renderCard(p)));
-          if(more.length){
-            const btn = el('button','players-more','Show all');
-            btn.addEventListener('click', ()=>{ more.forEach(p=> list.appendChild(renderCard(p))); btn.remove(); });
-            box.appendChild(btn);
-          }
-          box.appendChild(list);
-          return box;
-        };
-        grid.appendChild(col('Home', homePlayers, 'home'));
-        grid.appendChild(col('Away', awayPlayers, 'away'));
-        playersBody.appendChild(grid);
+        if(home){ const hCard = document.createElement('div'); hCard.appendChild(createPlayersCard(home, homeRes || {status:'rejected'})); playersBody.appendChild(hCard); }
+        if(away){ const aCard = document.createElement('div'); aCard.appendChild(createPlayersCard(away, awayRes || {status:'rejected'})); playersBody.appendChild(aCard); }
       }catch(e){ playersBody.textContent = 'Players error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // League table (standings with toggle)
+    // League table (visual)
     const tableBody = ensureSection('league_table_section','league table');
     if(tableBody){
       try{
         const args = leagueId ? {leagueId} : (leagueName ? {leagueName} : {});
         const j = Object.keys(args).length ? await callIntent('league.table', args) : null;
-        const d = j && (j.data||j.result||j.table||j);
-        const res = d && (d.result || d.results || d);
-        const sets = { total:[], home:[], away:[] };
-        if(res && res.total) sets.total = res.total;
-        if(res && res.home) sets.home = res.home;
-        if(res && res.away) sets.away = res.away;
-        const firstKey = sets.total.length? 'total' : (sets.home.length? 'home' : 'away');
         tableBody.innerHTML = '';
-
-        const header = el('div','standings-head');
-        const tabs = el('div','standings-tabs');
-        const makeTab = (key, label)=>{ const b=el('button','tab'+(key===firstKey?' active':''),label); b.addEventListener('click',()=>{ [...tabs.children].forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderTable(key); }); return b; };
-        tabs.appendChild(makeTab('total','Total'));
-        if(sets.home.length) tabs.appendChild(makeTab('home','Home'));
-        if(sets.away.length) tabs.appendChild(makeTab('away','Away'));
-        header.appendChild(tabs);
-        tableBody.appendChild(header);
-
-        const tblWrap = el('div','standings-wrap');
-        tableBody.appendChild(tblWrap);
-
-        const renderTable = (key)=>{
-          tblWrap.innerHTML = '';
-          const list = (sets[key]||[]).slice().sort((a,b)=> (a.standing_place||0) - (b.standing_place||0));
-          const table = el('table','standings');
-          table.innerHTML = '<thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>PTS</th></tr></thead>';
-          const tb = el('tbody');
-          list.forEach(r=>{
-            const tr = document.createElement('tr');
-            const logo = r.team_logo ? `<img class="tlogo" src="${r.team_logo}" onerror="this.remove()">` : '';
-            tr.innerHTML = `<td>${r.standing_place||''}</td><td class="tname">${logo}<span>${r.standing_team||''}</span></td><td>${r.standing_P||''}</td><td>${r.standing_W||''}</td><td>${r.standing_D||''}</td><td>${r.standing_L||''}</td><td>${r.standing_GD||''}</td><td><strong>${r.standing_PTS||''}</strong></td>`;
-            tb.appendChild(tr);
-          });
-          table.appendChild(tb); tblWrap.appendChild(table);
-        };
-        renderTable(firstKey);
+        const data = j && (j.data || j.result || j.table || j.standings || j);
+        tableBody.appendChild(createLeagueTableCard(data || []));
       }catch(e){ tableBody.textContent = 'League table error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Odds (group by market)
+    // Odds (visual)
     const oddsBody = ensureSection('odds_section','odds');
     if(oddsBody){
       try{
-        const [_listRes, liveRes] = await Promise.allSettled([
-          callIntent('odds.list', eventId?{matchId:eventId}:{}),
+        const [listJ, liveJ] = await Promise.allSettled([
+          callIntent('odds.list', eventId?{matchId:eventId}:{}) ,
           callIntent('odds.live', eventId?{matchId:eventId}:{})
         ]);
         oddsBody.innerHTML = '';
-        const extractLiveArray = (settled)=>{
-          if(!settled || settled.status!=='fulfilled' || !settled.value) return [];
-          const j = settled.value; const d = j.data || j.result || j.items || j;
-          const res = d && (d.result || d.results || d);
-          if(res && typeof res==='object'){ const vals = Object.values(res).filter(Boolean); return vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); }
-          return [];
-        };
-        const arr = extractLiveArray(liveRes);
-        if(!arr.length){ oddsBody.textContent = 'No live odds available.'; }
-        else{
-          const groups = by(arr, 'odd_name');
-          const order = [
-            'Fulltime Result','Double Chance','Both Teams To Score','Match Goals','Over/Under Line','Over/Under (1st Half)','Asian Handicap','3-Way Handicap','Half Time/Full Time'
-          ];
-          const keys = Object.keys(groups);
-          keys.sort((a,b)=>{
-            const ia = order.indexOf(a); const ib = order.indexOf(b);
-            if(ia===-1 && ib===-1) return a.localeCompare(b); if(ia===-1) return 1; if(ib===-1) return -1; return ia-ib;
-          });
-          const maxGroups = 6;
-          const head = el('div','odds-head', `<span>${keys.length} markets</span>`);
-          oddsBody.appendChild(head);
-          let shown = 0;
-          keys.forEach((k, idx)=>{
-            const hidden = idx >= maxGroups;
-            const block = el('div','odds-group' + (hidden?' hidden':''));
-            block.appendChild(el('h5','', k));
-            const table = el('table','odds-table');
-            table.innerHTML = '<thead><tr><th>Type</th><th>Hcap</th><th>Value</th><th>Updated</th></tr></thead>';
-            const tb = el('tbody');
-            (groups[k]||[]).slice(0,10).forEach(o=>{
-              const tr = document.createElement('tr');
-              tr.innerHTML = `<td>${o.odd_type||''}</td><td>${o.odd_participant_handicap||''}</td><td><strong>${o.odd_value||''}</strong></td><td>${(o.odd_last_updated||'').replace(' ','\u00a0')}</td>`;
-              tb.appendChild(tr);
-            });
-            table.appendChild(tb); block.appendChild(table); oddsBody.appendChild(block); shown++;
-          });
-          if(keys.length > maxGroups){
-            const btn = el('button','odds-more','Show all markets');
-            btn.addEventListener('click', ()=>{ oddsBody.querySelectorAll('.odds-group.hidden').forEach(x=> x.classList.remove('hidden')); btn.remove(); });
-            oddsBody.appendChild(btn);
-          }
-        }
+        oddsBody.appendChild(createOddsCard('Odds — Listed', listJ));
+        oddsBody.appendChild(createOddsCard('Odds — Live', liveJ));
       }catch(e){ oddsBody.textContent = 'Odds error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Probabilities (stacked bar + minis)
+    // Probabilities (Analysis Agent only)
     const probBody = ensureSection('prob_section','probabilities');
     if(probBody){
       try{
-        const j = await callIntent('probabilities.list', eventId?{matchId: eventId}:{});
         probBody.innerHTML = '';
-        const d = j && (j.data||j.result||j);
-        const arr = d && (d.result || d.results || []);
-        const p = Array.isArray(arr) && arr.length ? arr[0] : null;
-        if(!p){ probBody.textContent = 'No probabilities available.'; }
-        else{
-          const card = el('div','prob-card');
-          // headline: logos + names
-          const headline = el('div','prob-headline');
-          const left = el('div','side');
-          if(teamLogos.home) left.appendChild(img(teamLogos.home,'logo'));
-          left.appendChild(el('div','name', home||p.event_home_team||'Home'));
-          const mid = el('div','middle', 'Win Probabilities');
-          const right = el('div','side');
-          if(teamLogos.away) right.appendChild(img(teamLogos.away,'logo'));
-          right.appendChild(el('div','name', away||p.event_away_team||'Away'));
-          headline.appendChild(left); headline.appendChild(mid); headline.appendChild(right);
-          card.appendChild(headline);
-
-          const hw = parseFloat(p.event_HW||0)||0;
-          const dr = parseFloat(p.event_D||0)||0;
-          const aw = parseFloat(p.event_AW||0)||0;
-          const sum = (hw+dr+aw)||1;
-          const stacked = el('div','prob-stacked');
-          const segHome = el('span','seg home'); segHome.style.width = (hw/sum*100)+'%';
-          const segDraw = el('span','seg draw'); segDraw.style.width = (dr/sum*100)+'%';
-          const segAway = el('span','seg away'); segAway.style.width = (aw/sum*100)+'%';
-          stacked.appendChild(segHome); stacked.appendChild(segDraw); stacked.appendChild(segAway);
-          card.appendChild(stacked);
-          const labels = el('div','prob-labels');
-          labels.innerHTML = `<span class="lbl">${home||'Home'} ${fmtPct(hw)}</span><span class="lbl">Draw ${fmtPct(dr)}</span><span class="lbl">${away||'Away'} ${fmtPct(aw)}</span>`;
-          card.appendChild(labels);
-
-          // mini bars (Over/Under and BTS if present)
-          const minis = [
-            { key:'event_O', label:'Over 2.5' },
-            { key:'event_U', label:'Under 2.5' },
-            { key:'event_bts', label:'Both Teams Score' },
-            { key:'event_ots', label:'One Team Scores' }
-          ];
-          minis.forEach(m=>{
-            if(p[m.key]!==undefined){
-              const row = el('div','prob-mini');
-              row.appendChild(el('div','label', m.label));
-              const bar = el('div','bar');
-              const fill = el('span','fill home'); fill.style.width = (parseFloat(p[m.key])||0)+'%'; bar.appendChild(fill); row.appendChild(bar);
-              row.appendChild(el('div','value', fmtPct(p[m.key])));
-              card.appendChild(row);
-            }
-          });
-
-          const meta = el('div','prob-meta');
-          const ts = p.event_time || (j.meta && j.meta.trace && j.meta.trace[0] && j.meta.trace[0]._ts) || '';
-          meta.appendChild(el('div','', ts? `Updated: ${p.event_date||''} ${p.event_time||''}`: ''));
-          const rawBtn = el('button','raw-toggle','Show raw'); const rawPre = el('pre','', JSON.stringify(j, null, 2));
-          rawBtn.addEventListener('click', ()=>{ rawPre.style.display = rawPre.style.display==='block'?'none':'block'; rawBtn.textContent = rawPre.style.display==='block'?'Hide raw':'Show raw'; });
-          meta.appendChild(rawBtn);
-          card.appendChild(meta);
-          card.appendChild(rawPre);
-          probBody.appendChild(card);
-        }
+        const card = await fetchWinprobOverride(ev, { container: probBody });
+        if(card) probBody.appendChild(card);
       }catch(e){ probBody.textContent = 'Probabilities error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Comments (timeline list)
+    // Form (analysis.form) in its own tab
+    const formBody = ensureSection('form_section','form');
+    if(formBody){
+      try{
+        formBody.innerHTML = '';
+        const formCard = await fetchRecentForm(ev, { container: formBody });
+        if(formCard) formBody.appendChild(formCard);
+      }catch(e){ formBody.textContent = 'Form error: '+(e&&e.message?e.message:String(e)); }
+    }
+
+    // Comments (visual)
     const commBody = ensureSection('comments_section','comments');
     if(commBody){
       try{
         const j = await callIntent('comments.list', eventId?{matchId: eventId}:{ eventName: home && away ? `${home} vs ${away}` : undefined });
-        const d = j && (j.data||j.result||j.comments||j);
-        let arr = [];
-        if(Array.isArray(d)) arr = d; else if(d && d.result && typeof d.result==='object'){ const vals = Object.values(d.result).filter(Boolean); arr = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); }
         commBody.innerHTML = '';
-        if(!arr.length){ commBody.textContent = 'No comments available.'; }
-        else{
-          const list = el('div','comments-list');
-          arr.forEach(c=>{
-            const item = el('div','comment-item');
-            item.innerHTML = `<span class="ct">${c.comments_time||''}</span><span class="cx">${c.comments_text||c.text||''}</span>`;
-            list.appendChild(item);
-          });
-          commBody.appendChild(list);
-        }
+        const payload = j && (j.data || j.result || j.comments || j);
+        commBody.appendChild(createCommentsCard(payload || []));
       }catch(e){ commBody.textContent = 'Comments error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // Seasons (chips, filtered)
+    // Seasons (visual)
     const seasBody = ensureSection('seasons_section','seasons');
     if(seasBody){
       try{
         const args = leagueId ? {leagueId} : (leagueName ? {leagueName} : {});
         const j = Object.keys(args).length ? await callIntent('seasons.list', args) : null;
-        const d = j && (j.data||j.result||j.leagues||j);
-        const arr = (d && (d.result||d.results)) || [];
         seasBody.innerHTML = '';
-        if(!Array.isArray(arr) || !arr.length){ seasBody.textContent = 'No seasons/leagues found.'; }
-        else{
-          // Prefer same country as current match if available
-          const country = ev.country_name || ev.strCountry || '';
-          const filtered = country ? arr.filter(x=> (x.country_name||'').toLowerCase() === country.toLowerCase()) : arr;
-          const top = filtered.slice(0, 12);
-          const grid = el('div','seasons-grid');
-          top.forEach(s=>{
-            const chip = el('div','season-chip');
-            if(s.league_logo) chip.appendChild(img(s.league_logo, 'season-logo'));
-            chip.appendChild(el('span','season-name', s.league_name||'League'));
-            grid.appendChild(chip);
-          });
-          seasBody.appendChild(grid);
-        }
+        const payload = j && (j.data || j.result || j.seasons || j);
+        seasBody.appendChild(createSeasonsCard(payload || []));
       }catch(e){ seasBody.textContent = 'Seasons error: '+(e&&e.message?e.message:String(e)); }
     }
 
-    // H2H (use team IDs when available)
+    // H2H (visual)
     const h2hBody = ensureSection('h2h_section','h2h');
     if(h2hBody){
       try{
-        h2hBody.innerHTML = '';
-        const params = {};
-        if(homeTeamId && awayTeamId){ params.firstTeamId = homeTeamId; params.secondTeamId = awayTeamId; }
-        else if(home && away){ params.firstTeam = home; params.secondTeam = away; }
-        if(Object.keys(params).length){
-          const j = await callIntent('h2h', params);
-          // Render a simple status; if error present, show hint
-          const err = j && (j.error || (j.data && j.data.error));
-          if(err){
-            h2hBody.textContent = 'H2H unavailable (needs team IDs)';
-          }else{
-            const pre = document.createElement('pre'); pre.textContent = JSON.stringify(j, null, 2); pre.style.maxHeight='32vh'; pre.style.overflow='auto'; h2hBody.appendChild(pre);
+        if(home && away){
+          // Resolve team identifiers similar to matches.js / history.js for backend compatibility
+          const firstTeamRaw = ev.home_team_key || ev.home_team_id || ev.homeId || ev.homeTeamId || ev.home_team || ev.strHomeTeam || home;
+          const secondTeamRaw = ev.away_team_key || ev.away_team_id || ev.awayId || ev.awayTeamId || ev.away_team || ev.strAwayTeam || away;
+          const args = {};
+          if(firstTeamRaw){
+            if(String(firstTeamRaw).match(/^\d+$/)) args.firstTeamId = String(firstTeamRaw); else args.firstTeamId = firstTeamRaw;
           }
-        } else {
-          h2hBody.textContent = 'H2H: missing team identifiers.';
-        }
-      }catch(e){ h2hBody.textContent = 'H2H error: '+(e&&e.message?e.message:String(e)); }
+            if(secondTeamRaw){
+            if(String(secondTeamRaw).match(/^\d+$/)) args.secondTeamId = String(secondTeamRaw); else args.secondTeamId = secondTeamRaw;
+          }
+          // Fallback safety: if ids somehow missing, attempt using names
+          if(!args.firstTeamId && home) args.firstTeamId = home;
+          if(!args.secondTeamId && away) args.secondTeamId = away;
+
+          const j = await callIntent('h2h', args);
+          h2hBody.innerHTML = '';
+          if(j && (j.ok !== false)){ // treat absence of ok as success for legacy
+            const root = j.data || j.result || j;
+            const res = root.result || root.data || root; // provider nesting
+            const card = createH2HCard(res || {});
+            if(card) h2hBody.appendChild(card); else h2hBody.textContent = 'No H2H data available';
+          } else {
+            h2hBody.textContent = 'No H2H: ' + (j && j.error && j.error.message ? j.error.message : 'no data');
+          }
+        } else { h2hBody.textContent = 'No team names available.'; }
+      }catch(e){ console.warn('[H2H] error', e); h2hBody.textContent = 'H2H error: '+(e&&e.message?e.message:String(e)); }
     }
+  }
+
+  // ---------- Visual card builders for Extras (ported and adapted from matches.js) ----------
+  function createTeamCard(teamName, result) {
+    const card = document.createElement('div');
+    card.style.cssText = `background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #3b82f6;`;
+
+    const header = document.createElement('div');
+    header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px;`;
+
+    const icon = document.createElement('div');
+    icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #3b82f6, #1d4ed8); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`;
+    icon.textContent = '⚽';
+
+    const title = document.createElement('h4');
+    title.style.cssText = 'margin: 0; color: #1f2937; font-size: 18px;';
+    title.textContent = teamName;
+
+    header.appendChild(icon);
+    header.appendChild(title);
+
+    if(result && result.status === 'fulfilled' && result.value && result.value.ok) {
+      const data = result.value.data || result.value.result || result.value.teams || result.value;
+      const team = Array.isArray(data) ? data[0] : data;
+      if(team) {
+        const infoGrid = document.createElement('div');
+        infoGrid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;`;
+        const teamInfo = [
+          ['Founded', team.team_founded || team.intFormedYear || 'N/A'],
+          ['Stadium', team.team_venue || team.strStadium || 'N/A'],
+          ['Manager', team.team_manager || team.strManager || 'N/A'],
+          ['League', team.league_name || team.strLeague || 'N/A'],
+          ['Country', team.team_country || team.strCountry || 'N/A']
+        ].filter(([label, value]) => value && value !== 'N/A');
+        teamInfo.forEach(([label, value]) => {
+          const item = document.createElement('div');
+          item.style.cssText = `padding: 8px; background: #f8fafc; border-radius: 6px;`;
+          item.innerHTML = `<div style="font-size: 11px; color: #6b7280; font-weight: 500; margin-bottom: 2px;">${label}</div><div style="color: #1f2937; font-weight: 600; font-size: 13px;">${value}</div>`;
+          infoGrid.appendChild(item);
+        });
+        card.appendChild(header);
+        card.appendChild(infoGrid);
+      } else {
+        card.appendChild(header);
+        const noData = document.createElement('div');
+        noData.style.cssText = 'color: #6b7280; font-style: italic;';
+        noData.textContent = 'No team details available';
+        card.appendChild(noData);
+      }
+    } else {
+      card.appendChild(header);
+      const error = document.createElement('div');
+      error.style.cssText = 'color: #ef4444; font-style: italic;';
+      error.textContent = 'Failed to load team data';
+      card.appendChild(error);
+    }
+    return card;
+  }
+
+  function createPlayersCard(teamName, result) {
+    const card = document.createElement('div');
+    card.style.cssText = `background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #10b981;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='👥';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent = `${teamName} Squad`;
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+
+    let players = []; let errorMsg = null;
+    try{
+      if (!result) players = [];
+      else if (result.status === 'rejected') errorMsg = (result.reason && result.reason.message) ? result.reason.message : 'Request rejected';
+      else if (result.status === 'fulfilled' && result.value){
+        const v = result.value;
+        if (v.data) {
+          if (Array.isArray(v.data.result)) players = v.data.result;
+          else if (Array.isArray(v.data.results)) players = v.data.results;
+          else if (Array.isArray(v.data.players)) players = v.data.players;
+          else if (Array.isArray(v.data)) players = v.data;
+        }
+        if (players.length === 0) {
+          if (Array.isArray(v.result)) players = v.result;
+          else if (Array.isArray(v.players)) players = v.players;
+        }
+        if (players.length === 0 && v.result && v.result.result && Array.isArray(v.result.result)) players = v.result.result;
+      }
+    }catch(e){ errorMsg = e && e.message ? e.message : String(e); }
+
+    if(errorMsg){ const err=document.createElement('div'); err.style.cssText='color: #ef4444; font-style: italic; text-align: center; padding: 12px;'; err.textContent='Players error: ' + errorMsg; card.appendChild(err); return card; }
+    if(!Array.isArray(players) || players.length===0){ const noPlayers=document.createElement('div'); noPlayers.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noPlayers.textContent='No players found'; card.appendChild(noPlayers); return card; }
+
+    const grid = document.createElement('div'); grid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; max-height: 360px; overflow-y: auto; padding-right: 6px;`;
+    players.slice(0,40).forEach(p=>{
+      const item = document.createElement('div'); item.style.cssText = `display: flex; align-items: center; gap: 12px; padding: 8px; background: #f8fafc; border-radius: 6px; border: 1px solid #e2e8f0;`;
+      const imgWrap = document.createElement('div'); imgWrap.style.cssText = `width: 48px; height: 48px; border-radius: 8px; overflow: hidden; flex-shrink: 0; background: linear-gradient(135deg,#e6eefc,#dbeafe); display:flex;align-items:center;justify-content:center;`;
+      const imgUrl = p.player_image || p.player_photo || p.photo || p.thumb || p.playerImage || p.image || '';
+      if(imgUrl){ const img=document.createElement('img'); img.src=imgUrl; img.alt = p.player_name || p.name || ''; img.style.cssText='width:100%;height:100%;object-fit:cover;'; img.onerror = ()=>{ imgWrap.textContent=(p.player_name||p.name||'P').split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase(); }; imgWrap.appendChild(img); }
+      else { imgWrap.textContent=(p.player_name||p.name||'P').split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase(); imgWrap.style.fontWeight='700'; imgWrap.style.color='#0f1724'; }
+      const info = document.createElement('div'); info.style.cssText='flex:1;min-width:0;';
+      const nameRow = document.createElement('div'); nameRow.style.cssText='display:flex;justify-content:space-between;align-items:center;gap:8px;';
+      const playerName = document.createElement('div'); playerName.style.cssText='font-weight:600;color:#1f2937;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'; playerName.textContent = p.player_name || p.name || p.strPlayer || 'Unknown';
+      const num = document.createElement('div'); num.style.cssText='font-size:12px;color:#6b7280;font-weight:700;min-width:28px;text-align:center;'; num.textContent = (p.player_number || p.number || p.strNumber) ? String(p.player_number || p.number || p.strNumber) : '';
+      nameRow.appendChild(playerName); nameRow.appendChild(num);
+      const metaRow = document.createElement('div'); metaRow.style.cssText='display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;';
+      const position = document.createElement('div'); position.style.cssText='font-size:11px;color:#6b7280;'; position.textContent = p.player_type || p.position || p.strPosition || '';
+      const stats = document.createElement('div'); stats.style.cssText='font-size:11px;color:#6b7280;'; const goals = p.player_goals || p.goals || p.scored || ''; const assists = p.player_assists || p.assists || ''; const parts=[]; if(goals!==undefined && goals!==null && String(goals).trim() !== '') parts.push(`G:${goals}`); if(assists!==undefined && assists!==null && String(assists).trim()!=='') parts.push(`A:${assists}`); stats.textContent = parts.join(' • ');
+      metaRow.appendChild(position); if(stats.textContent) metaRow.appendChild(stats);
+      info.appendChild(nameRow); info.appendChild(metaRow);
+      item.appendChild(imgWrap); item.appendChild(info); grid.appendChild(item);
+    });
+    card.appendChild(grid);
+    if(players.length>40){ const more=document.createElement('div'); more.style.cssText='margin-top: 8px; text-align: center; color: #6b7280; font-size: 12px;'; more.textContent = `... and ${players.length - 40} more players`; card.appendChild(more); }
+    return card;
+  }
+
+  function createLeagueTableCard(data) {
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #f59e0b;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #f59e0b, #d97706); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='🏆';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='League Table';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+
+    let teams = [];
+    if (Array.isArray(data)) teams = data; else if (data){
+      if (Array.isArray(data.total)) teams = data.total; else if (Array.isArray(data.teams)) teams = data.teams; else if (Array.isArray(data.result)) teams = data.result; else if (Array.isArray(data.table)) teams = data.table; else if (Array.isArray(data.standings)) teams = data.standings; else if (data.result && Array.isArray(data.result.total)) teams = data.result.total; else if (data.data && Array.isArray(data.data.total)) teams = data.data.total; else teams = [];
+    }
+    if(Array.isArray(teams) && teams.length>0){
+      const table = document.createElement('div'); table.style.cssText='overflow-x: auto;';
+      const thead = document.createElement('div'); thead.style.cssText = `display: grid; grid-template-columns: 40px 1fr 60px 60px 60px 60px 60px; gap: 8px; padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 4px;`; thead.innerHTML = '<div>Pos</div><div>Team</div><div>P</div><div>W</div><div>D</div><div>L</div><div>PTS</div>';
+      table.appendChild(thead);
+      teams.slice(0,10).forEach((team, index)=>{
+        const row = document.createElement('div'); row.style.cssText = `display: grid; grid-template-columns: 40px 1fr 60px 60px 60px 60px; gap: 8px; padding: 8px; border-radius: 6px; font-size: 13px; ${index % 2 === 0 ? 'background: #f9fafb;' : ''} border-left: 3px solid ${getPositionColor(index + 1)};`;
+        const position = team.standing_place || team.position || team.overall_league_position || (index + 1);
+        const teamName = team.standing_team || team.team_name || team.strTeam || team.name || 'Unknown';
+        const played = team.standing_P || team.overall_league_payed || team.overall_league_played || team.played || team.matches || team.games || '-';
+        const wins = team.standing_W || team.overall_league_W || team.wins || team.W || '-';
+        const draws = team.standing_D || team.overall_league_D || team.draws || team.D || '-';
+        const losses = team.standing_L || team.overall_league_L || team.losses || team.L || '-';
+        const points = team.standing_PTS || team.points || team.pts || team.overall_league_PTS || '-';
+        const teamLogo = team.team_logo || team.teamLogo || team.logo || '';
+        row.innerHTML = `
+          <div style="font-weight: 600; color: #1f2937;">${position}</div>
+          <div style="font-weight: 500; color: #1f2937; display:flex; align-items:center; gap:8px;">
+            ${teamLogo ? `<img src="${teamLogo}" style="width:24px;height:24px;object-fit:contain;border-radius:4px;" onerror="this.remove()" />` : ''}
+            <span>${teamName}</span>
+          </div>
+          <div style="text-align: center;">${played}</div>
+          <div style="text-align: center; color: #10b981;">${wins}</div>
+          <div style="text-align: center; color: #f59e0b;">${draws}</div>
+          <div style="text-align: center; color: #ef4444;">${losses}</div>
+          <div style="text-align: center; font-weight:600;">${points}</div>
+        `;
+        table.appendChild(row);
+      });
+      card.appendChild(table);
+    } else {
+      const noData = document.createElement('div'); noData.style.cssText = 'color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noData.textContent = 'League table not available'; card.appendChild(noData);
+    }
+    return card;
+  }
+  function getPositionColor(position){ if(position <= 4) return '#10b981'; if(position <= 6) return '#3b82f6'; if(position >= 18) return '#ef4444'; return '#6b7280'; }
+
+  function createOddsCard(title, result) {
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #8b5cf6;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 12px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='💰';
+    const titleEl = document.createElement('h4'); titleEl.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; titleEl.textContent = title;
+    header.appendChild(icon); header.appendChild(titleEl); card.appendChild(header);
+    if(result && result.status === 'fulfilled' && result.value && result.value.ok){
+      const v = result.value; let odds = [];
+      try{
+        if(v.data){ if(Array.isArray(v.data)) odds = v.data; else if(Array.isArray(v.data.result)) odds = v.data.result; else if(v.data.result && typeof v.data.result === 'object'){ const vals = Object.values(v.data.result).filter(Boolean); odds = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); } else if(Array.isArray(v.data.results)) odds = v.data.results; else if(Array.isArray(v.data.odds)) odds = v.data.odds; }
+        if(odds.length===0 && v.result){ if(Array.isArray(v.result)) odds = v.result; else if(typeof v.result === 'object'){ const vals = Object.values(v.result).filter(Boolean); odds = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); } }
+      }catch(e){ odds = []; }
+      if(Array.isArray(odds) && odds.length>0){
+        const grid = document.createElement('div'); grid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px;`;
+        const fmt = (n)=> (n===null||n===undefined||n==='')? '-' : (typeof n === 'number' ? n.toFixed(2) : String(n));
+        odds.slice(0,12).forEach(odd=>{
+          const item = document.createElement('div'); item.style.cssText = `padding: 12px; background: #f8fafc; border-radius: 6px; text-align: left; border: 1px solid #e2e8f0; display:flex;flex-direction:column;gap:6px;`;
+          const bookmaker = odd.odd_bookmakers || odd.bookmaker_name || odd.strBookmaker || odd.bookmaker || 'Unknown';
+          const headerRow = document.createElement('div'); headerRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;';
+          const nameEl = document.createElement('div'); nameEl.style.cssText = 'font-weight:600;color:#1f2937;font-size:13px;'; nameEl.textContent = bookmaker;
+          const idEl = document.createElement('div'); idEl.style.cssText = 'font-size:12px;color:#6b7280;'; idEl.textContent = odd.match_id ? `id:${odd.match_id}` : '';
+          headerRow.appendChild(nameEl); headerRow.appendChild(idEl);
+          const markets = document.createElement('div'); markets.style.cssText = 'display:flex;flex-direction:column;gap:4px;font-size:12px;color:#374151;';
+          const h = fmt(odd.odd_1 || odd.home || odd.h); const d = fmt(odd.odd_x || odd.draw || odd.x); const a = fmt(odd.odd_2 || odd.away || odd.a);
+          const row132 = document.createElement('div'); row132.style.cssText = 'display:flex;justify-content:space-between;gap:8px;'; row132.innerHTML = `<div style="color:#6b7280;font-weight:600">1X2</div><div style="display:flex;gap:8px"><span style=\"color:#3b82f6;\">H:${h}</span><span style=\"color:#f59e0b;\">D:${d}</span><span style=\"color:#ef4444;\">A:${a}</span></div>`; markets.appendChild(row132);
+          const btsYes = odd.bts_yes || odd.btst_yes || odd.btsy || odd.bts_yes; const btsNo = odd.bts_no || odd.btst_no || odd.btsn || odd.bts_no;
+          if(btsYes !== undefined || btsNo !== undefined){ const btsRow=document.createElement('div'); btsRow.style.cssText='display:flex;justify-content:space-between;gap:8px;'; btsRow.innerHTML = `<div style=\"color:#6b7280;font-weight:600\">BTTS</div><div style=\"display:flex;gap:8px\"><span style=\"color:#10b981;\">Y:${fmt(btsYes)}</span><span style=\"color:#ef4444;\">N:${fmt(btsNo)}</span></div>`; markets.appendChild(btsRow); }
+          const ou25 = (odd['o+2.5'] !== undefined || odd['u+2.5'] !== undefined) ? {o: odd['o+2.5'], u: odd['u+2.5']} : null;
+          if(ou25){ const ouRow=document.createElement('div'); ouRow.style.cssText='display:flex;justify-content:space-between;gap:8px;'; ouRow.innerHTML = `<div style=\"color:#6b7280;font-weight:600\">O/U 2.5</div><div style=\"display:flex;gap:8px\"><span style=\"color:#3b82f6;\">O:${fmt(ou25.o)}</span><span style=\"color:#ef4444;\">U:${fmt(ou25.u)}</span></div>`; markets.appendChild(ouRow); }
+          const ah0_1 = odd.ah0_1 || odd['ah0_1']; const ah0_2 = odd.ah0_2 || odd['ah0_2'];
+          if(ah0_1 !== undefined || ah0_2 !== undefined){ const ahRow=document.createElement('div'); ahRow.style.cssText='display:flex;justify-content:space-between;gap:8px;'; ahRow.innerHTML = `<div style=\"color:#6b7280;font-weight:600\">AH 0</div><div style=\"display:flex;gap:8px\"><span style=\"color:#3b82f6;\">H:${fmt(ah0_1)}</span><span style=\"color:#ef4444;\">A:${fmt(ah0_2)}</span></div>`; markets.appendChild(ahRow); }
+          item.appendChild(headerRow); item.appendChild(markets); grid.appendChild(item);
+        });
+        card.appendChild(grid);
+      } else {
+        const noOdds=document.createElement('div'); noOdds.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noOdds.textContent='No odds available'; card.appendChild(noOdds);
+      }
+    } else {
+      const errMsg = (result && result.status === 'rejected') ? (result.reason && result.reason.message ? result.reason.message : 'Request rejected') : 'Failed to load odds';
+      const error = document.createElement('div'); error.style.cssText='color: #ef4444; font-style: italic; text-align: center; padding: 20px;'; error.textContent = errMsg; card.appendChild(error);
+    }
+    return card;
+  }
+
+  function createCommentsCard(data) {
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #ec4899;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #ec4899, #db2777); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='💬';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='Match Commentary';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+    let comments = [];
+    try{
+      if(!data) comments = [];
+      else if(Array.isArray(data)) comments = data;
+      else if(Array.isArray(data.comments)) comments = data.comments;
+      else if(Array.isArray(data.result)) comments = data.result;
+      else if(data.result && typeof data.result === 'object'){ const vals = Object.values(data.result).filter(Boolean); comments = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); }
+      else if(data.data && Array.isArray(data.data)) comments = data.data;
+    }catch(e){ comments = []; }
+    if(Array.isArray(comments) && comments.length>0){
+      const list = document.createElement('div'); list.style.cssText = 'max-height: 400px; overflow-y: auto; padding-right: 6px;';
+      const extractMinute = (c)=> c.comments_time || c.time || c.minute || c.match_minute || c.comment_minute || '';
+      const extractText = (c)=> c.comments_text || c.comment_text || c.comment || c.text || '';
+      const extractType = (c)=> c.comments_type || c.comment_type || c.type || 'Comment';
+      comments.slice(0,100).forEach((c,idx)=>{
+        const item = document.createElement('div'); item.style.cssText = `padding: 12px; margin-bottom: 8px; background: ${idx%2===0?'#f8fafc':'white'}; border-radius: 8px; border-left: 3px solid #ec4899;`;
+        const head = document.createElement('div'); head.style.cssText='display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;';
+        const minute = document.createElement('div'); minute.style.cssText='font-size: 12px; color: #ec4899; font-weight: 600;'; const m = extractMinute(c); minute.textContent = m ? String(m) : '';
+        const type = document.createElement('div'); type.style.cssText='font-size: 11px; color: #6b7280; text-transform: uppercase;'; type.textContent = extractType(c) || 'Comment';
+        head.appendChild(minute); head.appendChild(type);
+        const text = document.createElement('div'); text.style.cssText = 'color: #374151; font-size: 13px; line-height: 1.4;'; text.textContent = extractText(c) || 'No comment available';
+        item.appendChild(head); item.appendChild(text); list.appendChild(item);
+      });
+      card.appendChild(list);
+      if(comments.length>100){ const more=document.createElement('div'); more.style.cssText='margin-top: 8px; text-align: center; color: #6b7280; font-size: 12px;'; more.textContent = `... and ${comments.length - 100} more comments`; card.appendChild(more); }
+    } else {
+      const noData=document.createElement('div'); noData.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noData.textContent='No match commentary available'; card.appendChild(noData);
+    }
+    return card;
+  }
+
+  function createSeasonsCard(data){
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #14b8a6;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #14b8a6, #0f766e); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='📅';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='Seasons';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+    let seasons = [];
+    try{ if(!data) seasons=[]; else if(Array.isArray(data)) seasons = data; else if(Array.isArray(data.seasons)) seasons = data.seasons; else if(Array.isArray(data.result)) seasons = data.result; else if(data.result && typeof data.result==='object'){ const vals = Object.values(data.result).filter(Boolean); seasons = vals.reduce((acc,cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); } else if(data.data && Array.isArray(data.data)) seasons = data.data; }catch(e){ seasons=[]; }
+    if(seasons.length>0){ const grid=document.createElement('div'); grid.style.cssText = `display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; max-height: 240px; overflow-y: auto;`;
+      seasons.slice(0,20).forEach(season=>{ const item=document.createElement('div'); item.style.cssText = `padding: 12px; background: #f0fdfa; border-radius: 8px; text-align: center; border: 1px solid #14b8a620; cursor: pointer; transition: all 0.2s;`; item.onmouseover=()=> item.style.background='#ccfbf1'; item.onmouseout=()=> item.style.background='#f0fdfa'; const name=document.createElement('div'); name.style.cssText='font-weight: 600; color: #0f766e; font-size: 14px;'; name.textContent = season.season_name || season.strSeason || season.name || 'Unknown Season'; const year=document.createElement('div'); year.style.cssText='font-size: 12px; color: #6b7280; margin-top: 4px;'; year.textContent = season.season_year || season.year || ''; item.appendChild(name); if(year.textContent) item.appendChild(year); grid.appendChild(item); }); card.appendChild(grid); if(seasons.length>20){ const more=document.createElement('div'); more.style.cssText='margin-top: 8px; text-align: center; color: #6b7280; font-size: 12px;'; more.textContent = `... and ${seasons.length - 20} more seasons`; card.appendChild(more); } }
+    else { const noData=document.createElement('div'); noData.style.cssText='color: #6b7280; font-style: italic; text-align: center; padding: 20px;'; noData.textContent='No seasons data available'; card.appendChild(noData); }
+    return card;
+  }
+
+  function createH2HCard(data){
+    const card = document.createElement('div'); card.style.cssText = `background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-left: 4px solid #f97316;`;
+    const header = document.createElement('div'); header.style.cssText = `display: flex; align-items: center; gap: 12px; margin-bottom: 16px;`;
+    const icon = document.createElement('div'); icon.style.cssText = `width: 40px; height: 40px; background: linear-gradient(135deg, #f97316, #ea580c); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;`; icon.textContent='⚔️';
+    const title = document.createElement('h4'); title.style.cssText='margin: 0; color: #1f2937; font-size: 18px;'; title.textContent='Head-to-Head History';
+    header.appendChild(icon); header.appendChild(title); card.appendChild(header);
+    const sections = [ { title: 'Recent Meetings', data: data.H2H, color: '#3b82f6' }, { title: 'First Team Recent', data: data.firstTeamResults, color: '#10b981' }, { title: 'Second Team Recent', data: data.secondTeamResults, color: '#ef4444' } ];
+    sections.forEach(section=>{
+      if(Array.isArray(section.data) && section.data.length>0){
+        const sectionDiv=document.createElement('div'); sectionDiv.style.cssText='margin-bottom: 20px;';
+        const st=document.createElement('h5'); st.style.cssText = `margin: 0 0 8px 0; color: ${section.color}; font-size: 14px; font-weight: 600;`; st.textContent = section.title;
+        const list=document.createElement('div');
+        section.data.slice(0,5).forEach(match=>{
+          const item=document.createElement('div'); item.style.cssText = `display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #f9fafb; border-radius: 6px; margin-bottom: 4px; font-size: 12px; cursor:pointer;`;
+          const date = match.event_date || match.date || '';
+          const home = match.event_home_team || match.home_team || match.strHomeTeam || '';
+          const away = match.event_away_team || match.away_team || match.strAwayTeam || '';
+          const score = match.event_final_result || match.event_ft_result || ((match.home_score!=null && match.away_score!=null) ? `${match.home_score} - ${match.away_score}` : '');
+          const dateSpan=document.createElement('span'); dateSpan.style.cssText='color: #6b7280;'; dateSpan.textContent = date;
+          const teamsWrap=document.createElement('div'); teamsWrap.style.cssText='display:flex;align-items:center;gap:8px;flex:1;justify-content:center;';
+          const homeWrap=document.createElement('div'); homeWrap.style.cssText='display:flex;align-items:center;gap:8px;';
+          const homeLogo=document.createElement('img'); homeLogo.src = match.home_team_logo || match.homeTeamLogo || match.home_logo || match.home_team_image || ''; homeLogo.style.cssText='width:28px;height:20px;object-fit:contain;border-radius:4px;'; homeLogo.onerror=()=>homeLogo.remove();
+          const homeNameEl=document.createElement('div'); homeNameEl.style.cssText='font-weight:600;color:#1f2937;font-size:13px;'; homeNameEl.textContent = home; homeWrap.appendChild(homeLogo); homeWrap.appendChild(homeNameEl);
+          const vsEl=document.createElement('div'); vsEl.style.cssText='font-size:12px;color:#6b7280;font-weight:600;'; vsEl.textContent='vs';
+          const awayWrap=document.createElement('div'); awayWrap.style.cssText='display:flex;align-items:center;gap:8px;';
+          const awayLogo=document.createElement('img'); awayLogo.src = match.away_team_logo || match.awayTeamLogo || match.away_logo || match.away_team_image || ''; awayLogo.style.cssText='width:28px;height:20px;object-fit:contain;border-radius:4px;'; awayLogo.onerror=()=>awayLogo.remove();
+          const awayNameEl=document.createElement('div'); awayNameEl.style.cssText='font-weight:600;color:#1f2937;font-size:13px;'; awayNameEl.textContent = away; awayWrap.appendChild(awayLogo); awayWrap.appendChild(awayNameEl);
+          teamsWrap.appendChild(homeWrap); teamsWrap.appendChild(vsEl); teamsWrap.appendChild(awayWrap);
+          const scoreSpan=document.createElement('span'); scoreSpan.style.cssText='color: #374151; font-weight: 600; min-width:60px; text-align:center;'; scoreSpan.textContent = score || 'vs';
+          item.appendChild(dateSpan); item.appendChild(teamsWrap); item.appendChild(scoreSpan);
+          item.addEventListener('click', ()=>{ try{ const id = extractEventId(match); if(id){ const url = new URL(window.location.href); url.searchParams.set('eventId', String(id)); window.location.href = url.toString(); } }catch(_e){} });
+          list.appendChild(item);
+        });
+        sectionDiv.appendChild(st); sectionDiv.appendChild(list); card.appendChild(sectionDiv);
+      }
+    });
+    return card;
   }
 
   // Feature stubs
@@ -1112,32 +1173,166 @@
   async function runPlayerAnalytics(_ev){ alert('Player analytics not implemented yet'); }
   async function runMultimodalExtract(_ev){ alert('Multimodal extract not implemented yet'); }
 
-  // Tab switching functionality for extras section
-  function initExtrasNavigation() {
-    const navTabs = document.querySelectorAll('.nav-tab');
-    const sections = document.querySelectorAll('.extra-section');
+  // ---- Analysis Agent integrations (win probabilities + recent form) ----
+  function inferVenueInfo(hints){
+    const country = (hints && (hints.country_name || hints.event_country || hints.country)) || '';
+    const home = (hints && (hints.event_home_team || hints.home_team || hints.strHomeTeam)) || '';
+    const away = (hints && (hints.event_away_team || hints.away_team || hints.strAwayTeam)) || '';
+    const norm = s => String(s || '').toLowerCase();
+    const matchCountry = (team, country) => { const t = norm(team); const c = norm(country); if(!t || !c) return false; return t.includes(c) || c.includes(t); };
+    const homeMatches = matchCountry(home, country);
+    const awayMatches = matchCountry(away, country);
+    const neutral = !!country && !homeMatches && !awayMatches;
+    return { country, home, away, homeMatches, awayMatches, neutral };
+  }
 
-    navTabs.forEach(tab => {
-      tab.addEventListener('click', () => {
-        const targetId = tab.getAttribute('data-target');
-        
-        // Remove active class from all tabs and sections
-        navTabs.forEach(t => t.classList.remove('active'));
-        sections.forEach(s => s.classList.remove('active'));
-        
-        // Add active class to clicked tab and corresponding section
-        tab.classList.add('active');
-        const targetSection = document.getElementById(targetId);
-        if (targetSection) {
-          targetSection.classList.add('active');
-        }
+  function createProbabilitiesCardEnhanced(ctx){
+    const { res } = ctx || {};
+    const data = (res && res.data) || {};
+    const probs = data.probs || {};
+    let pH = Number(probs.home || 0), pD = Number(probs.draw || 0), pA = Number(probs.away || 0);
+    const sum = pH + pD + pA; if(sum>0){ pH/=sum; pD/=sum; pA/=sum; }
+    const pct = v => (Number(v*100).toFixed(1));
+
+    const homeName = (data.home_team && (data.home_team.name || data.home_team.short_name)) || ctx.home_team_name || ctx.event_home_team || 'Home';
+    const awayName = (data.away_team && (data.away_team.name || data.away_team.short_name)) || ctx.away_team_name || ctx.event_away_team || 'Away';
+    const hLogo = (data.home_team && data.home_team.logo) || ctx.home_team_logo || '';
+    const aLogo = (data.away_team && data.away_team.logo) || ctx.away_team_logo || '';
+
+    let neutral = !!(data.venue && (data.venue.neutral === true));
+    if (data.venue == null || typeof data.venue.neutral === 'undefined'){
+      try{ const vinf = inferVenueInfo({ country_name: ctx.country_name, event_home_team: homeName, event_away_team: awayName }); neutral = !!vinf.neutral; }catch(_e){}
+    }
+    const homeRole = neutral ? 'Neutral' : 'Home';
+    const awayRole = neutral ? 'Neutral' : 'Away';
+
+    const card = document.createElement('div'); card.className='prob-card'; card.setAttribute('data-agent-prob','1');
+    const head = document.createElement('div'); head.className='prob-headline';
+    head.innerHTML = `
+      <div class="side side-left">
+        ${hLogo? `<img class="logo" src="${hLogo}" alt="${homeName} logo" onerror="this.remove()">` : ''}
+        <span class="name">${homeName}</span>
+        <span class="role" style="font-size:11px;color:#64748b;">(${homeRole})</span>
+      </div>
+      <div class="middle">${homeName} (${homeRole}) ${pct(pH)}% | Draw ${pct(pD)}% | ${awayName} (${awayRole}) ${pct(pA)}%</div>
+      <div class="side side-right">
+        <span class="role" style="font-size:11px;color:#64748b;">(${awayRole})</span>
+        <span class="name">${awayName}</span>
+        ${aLogo? `<img class="logo" src="${aLogo}" alt="${awayName} logo" onerror="this.remove()">` : ''}
+      </div>`;
+    card.appendChild(head);
+
+    const stacked = document.createElement('div'); stacked.className='prob-stacked';
+    const wH = Math.max(0, Math.min(100, Number(pH*100).toFixed(1)));
+    const wD = Math.max(0, Math.min(100, Number(pD*100).toFixed(1)));
+    let wA = Math.max(0, Math.min(100, Number(pA*100).toFixed(1)));
+    const totalRounded = Number(wH) + Number(wD) + Number(wA); if(totalRounded !== 100){ wA = (100 - Number(wH) - Number(wD)).toFixed(1); }
+    stacked.innerHTML = `
+      <span class="seg home" style="width:${wH}%;"></span>
+      <span class="seg draw" style="width:${wD}%;"></span>
+      <span class="seg away" style="width:${wA}%;"></span>`;
+    card.appendChild(stacked);
+
+    const labels = document.createElement('div'); labels.className='prob-labels';
+    labels.innerHTML = `
+      <span class="lbl">${homeName} (${homeRole}) ${Number(wH).toFixed(1)}%</span>
+      <span class="lbl">Draw ${Number(wD).toFixed(1)}%</span>
+      <span class="lbl">${awayName} (${awayRole}) ${Number(wA).toFixed(1)}%</span>`;
+    card.appendChild(labels);
+
+    const mkMini = (key, label, width) => { const row=document.createElement('div'); row.className='prob-mini'; row.innerHTML = `
+        <div class="label">${label}</div>
+        <div class="bar"><span class="fill ${key}" style="width:${width}%"></span></div>
+        <div class="value">${Number(width).toFixed(1)}%</div>`; return row; };
+    card.appendChild(mkMini('home', `${homeName} ${neutral? '(Neutral)':'(Home)'}`, wH));
+    card.appendChild(mkMini('draw', 'Draw', wD));
+    card.appendChild(mkMini('away', `${awayName} ${neutral? '(Neutral)':'(Away)'}`, wA));
+
+    const meta = document.createElement('div'); meta.className='prob-meta';
+    const method = data.method || 'unknown'; const sample = (data.inputs && (data.inputs.sample_size || data.inputs.effective_weight)) || undefined;
+    const leftMeta = document.createElement('div'); leftMeta.textContent = `Method: ${method}${sample? ` • n=${sample}`:''}`;
+    const btnMeta = document.createElement('button'); btnMeta.className='raw-toggle'; btnMeta.textContent='Show raw';
+    const pre = document.createElement('pre'); try{ pre.textContent = JSON.stringify(res, null, 2); }catch(_e){ pre.textContent = String(res); }
+    btnMeta.addEventListener('click', ()=>{ const shown = pre.style.display==='block'; pre.style.display = shown?'none':'block'; btnMeta.textContent = shown? 'Show raw':'Hide raw'; });
+    meta.appendChild(leftMeta); meta.appendChild(btnMeta); card.appendChild(meta); card.appendChild(pre);
+    return card;
+  }
+
+  async function fetchWinprobOverride(ev, opts){
+    const probBody = document.querySelector('#prob_section .body');
+    if(!probBody) return null;
+    // Clear previous agent card
+    const existing = probBody.querySelector('[data-agent-prob="1"]'); if(existing) existing.remove();
+
+    const eventId = extractEventId(ev);
+    if(!eventId){
+      const err = document.createElement('div'); err.className='prob-error'; err.textContent='Missing eventId'; return err;
+    }
+    try{
+      const url = new URL(apiBase + '/analysis/winprob');
+      url.searchParams.set('eventId', String(eventId));
+      url.searchParams.set('source', 'auto');
+      url.searchParams.set('lookback', '10');
+      const resp = await fetch(url.toString());
+      const res = await resp.json().catch(()=> ({}));
+
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const country = ev.country_name || ev.strCountry || ev.country || '';
+      const hLogo = (ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '');
+      const aLogo = (ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '');
+
+      const _inferFromLogo = (url)=>{ try{ if(!url) return ''; const last = String(url).split('?')[0].split('#')[0].split('/').pop() || ''; const base = last.replace(/\.[a-zA-Z0-9]+$/, ''); const t = decodeURIComponent(base).replace(/[\-_]+/g, ' ').trim(); return t ? t.split(' ').map(w=> w? (w[0].toUpperCase()+w.slice(1)) : '').join(' ') : ''; }catch(_e){ return ''; } };
+      const derivedHomeName = home || _inferFromLogo(hLogo) || 'Home';
+      const derivedAwayName = away || _inferFromLogo(aLogo) || 'Away';
+      const card = createProbabilitiesCardEnhanced({
+        __from: 'override', event_key: eventId,
+        event_home_team: home, event_away_team: away,
+        home_team_name: derivedHomeName, away_team_name: derivedAwayName,
+        country_name: country, home_team_logo: hLogo, away_team_logo: aLogo,
+        res
       });
-    });
+      return card;
+    }catch(e){
+      const err = document.createElement('div'); err.className='prob-error'; err.textContent='Failed to load probabilities'; return err;
+    }
+  }
+
+  async function fetchRecentForm(ev, opts){
+    const root = (opts && opts.container) || document.querySelector('#prob_section .body');
+    if(!root) return null;
+    const prev = root.querySelector('[data-agent-form="1"]'); if(prev) prev.remove();
+    const eventId = extractEventId(ev); if(!eventId){ const err=document.createElement('div'); err.className='prob-error'; err.textContent='Missing eventId'; return err; }
+    try{
+      const url = new URL(apiBase + '/analysis/form'); url.searchParams.set('eventId', String(eventId)); url.searchParams.set('lookback','5');
+      const resp = await fetch(url.toString()); const res = await resp.json().catch(()=> ({})); if(!resp.ok || !res || res.ok === false) throw new Error('Form error');
+      const home = ev.event_home_team || ev.strHomeTeam || ev.home_team || '';
+      const away = ev.event_away_team || ev.strAwayTeam || ev.away_team || '';
+      const hLogo = ev.home_team_logo || ev.strHomeTeamBadge || ev.homeBadge || ev.home_logo || ev.team_home_badge || '';
+      const aLogo = ev.away_team_logo || ev.strAwayTeamBadge || ev.awayBadge || ev.away_logo || ev.team_away_badge || '';
+      const card = createFormCard({ res, homeName: home, awayName: away, hLogo, aLogo });
+      return card;
+    }catch(e){ const err=document.createElement('div'); err.className='prob-error'; err.textContent='Failed to load recent form'; return err; }
+  }
+
+  function createFormCard(ctx){
+    const { res, homeName, awayName, hLogo, aLogo } = ctx || {};
+    const data = (res && res.data) || {};
+    const home = data.home_team || {}; const away = data.away_team || {};
+    const hm = data.home_metrics || {}; const am = data.away_metrics || {};
+    const lookback = (hm.games || am.games || 0);
+    const HN = home.name || homeName || 'Home'; const AN = away.name || awayName || 'Away';
+    const card = document.createElement('div'); card.className='form-card'; card.setAttribute('data-agent-form','1');
+    const grid = document.createElement('div'); grid.className='form-grid'; card.appendChild(grid);
+    const mkChips = (arr)=>{ const wrap=document.createElement('div'); wrap.className='chips'; (Array.isArray(arr)?arr:[]).forEach(x=>{ const t=String(x||'').trim().toUpperCase(); const span=document.createElement('span'); span.className='chip '+(t==='W'?'win':(t==='D'?'draw':'loss')); span.textContent=t||'?'; wrap.appendChild(span); }); if(!wrap.children.length){ const empty=document.createElement('div'); empty.style.cssText='font-size:12px;color:#64748b'; empty.textContent='No recent results'; wrap.appendChild(empty);} return wrap; };
+    const mkTeam = (side)=>{ const isHome = side==='home'; const team=isHome?home:away; const met=isHome?hm:am; const nm=isHome?HN:AN; const logo=isHome? (home.logo || hLogo) : (away.logo || aLogo); const role=isHome?'Home':'Away'; const box=document.createElement('div'); box.className='form-team'; const hdr=document.createElement('div'); hdr.className='hdr'; hdr.innerHTML = `${logo? `<img class="logo" src="${logo}" alt="${nm} logo" onerror="this.remove()">` : ''}<span class="name">${nm}</span> <span class="role">(${role})</span>`; box.appendChild(hdr); const summary=document.createElement('div'); summary.className='form-summary'; summary.textContent = (team.summary || ''); box.appendChild(summary); box.appendChild(mkChips(met.last_results)); const tbl=document.createElement('table'); tbl.className='metric-table'; const addRow=(k,v)=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td class="k">${k}</td><td class="v">${v}</td>`; tbl.appendChild(tr); }; addRow('Games', met.games ?? '—'); addRow('Wins / Draws / Losses', `${met.wins ?? '—'} / ${met.draws ?? '—'} / ${met.losses ?? '—'}`); addRow('Goals For / Against', `${met.gf ?? '—'} / ${met.ga ?? '—'}`); addRow('Goal Difference', `${met.gd ?? '—'}`); box.appendChild(tbl); return box; };
+    grid.appendChild(mkTeam('home')); grid.appendChild(mkTeam('away'));
+    const footer=document.createElement('div'); footer.className='form-footer'; const left=document.createElement('div'); left.textContent = `Lookback: ${lookback || 5} games`; const btn=document.createElement('button'); btn.className='raw-toggle'; btn.textContent='Show raw'; const pre=document.createElement('pre'); try{ pre.textContent = JSON.stringify(res, null, 2);}catch(_e){ pre.textContent = String(res);} btn.addEventListener('click', ()=>{ const shown=pre.style.display==='block'; pre.style.display = shown? 'none':'block'; btn.textContent = shown? 'Show raw':'Hide raw'; }); footer.appendChild(left); footer.appendChild(btn); card.appendChild(footer); card.appendChild(pre); return card;
   }
 
   // Start
-  load().then(() => {
-    // Initialize navigation after content is loaded
-    initExtrasNavigation();
-  });
+  load();
+  // Pre-wire extras nav just in case
+  initExtrasNavigation();
 })();
+

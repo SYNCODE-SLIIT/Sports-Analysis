@@ -3,22 +3,92 @@
 
 // --- Tooltip + brief caches ---
 let _evtTooltip;
+let _tooltipHideTimer = null;
 const _eventBriefCache = new Map();
 
 function ensureTooltip(){
   if(_evtTooltip) return _evtTooltip;
   const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;z-index:9999;max-width:320px;background:#111827;color:#e5e7eb;padding:8px 10px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,0.25);font-size:12px;line-height:1.4;pointer-events:none;display:none;';
+  // Make tooltip vertically scrollable when content exceeds max-height.
+  d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:linear-gradient(145deg,#ffffff,#fafafa);color:#111827;padding:16px 18px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.15),0 4px 20px rgba(0,0,0,0.08);font-size:13px;line-height:1.6;pointer-events:auto;display:none;overflow-x:hidden;overflow-y:auto;border:1px solid rgba(255,255,255,0.8);backdrop-filter:blur(8px);transform:translateY(-4px);transition:all 0.2s ease;scrollbar-width:thin;scrollbar-color:#9ca3af #f3f4f6;';
+  // Custom scrollbar styling for WebKit
+  try{
+    d.style.setProperty('--tw-scrollbar-bg', '#f3f4f6');
+    d.style.setProperty('--tw-scrollbar-thumb', '#d1d5db');
+    // Attach a wheel handler to prevent page scroll when the tooltip can scroll internally
+    d.addEventListener('wheel', (e)=>{
+      const canScroll = d.scrollHeight > d.clientHeight;
+      if(!canScroll) return; // let page scroll
+      const before = d.scrollTop;
+      d.scrollTop += e.deltaY;
+      if(d.scrollTop !== before){
+        e.preventDefault();
+      }
+    }, { passive:false });
+  }catch(_e){}
+  d.addEventListener('mouseenter', ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); _tooltipHideTimer=null; } d.style.transform='translateY(-6px)'; d.style.boxShadow='0 25px 60px rgba(0,0,0,0.2),0 6px 25px rgba(0,0,0,0.1)'; });
+  d.addEventListener('mouseleave', ()=>{ if(_evtTooltip){ _evtTooltip.style.display='none'; } });
   document.body.appendChild(d); _evtTooltip = d; return d;
 }
-function showEventTooltip(anchor, text){ const d=ensureTooltip(); d.textContent = String(text||''); d.style.display='block'; positionEventTooltip(anchor); }
-function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
-function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
+function showEventTooltip(anchor, html){ 
+  const d=ensureTooltip(); 
+  d.innerHTML = String(html||''); 
+  d.style.display='block'; 
+  positionEventTooltip(anchor); 
+}
+
+function hideEventTooltip(){ 
+  if(_evtTooltip) _evtTooltip.style.display='none'; 
+}
+function positionEventTooltip(anchor){ 
+  if(!_evtTooltip) return; 
+  const r = anchor.getBoundingClientRect(); 
+  const pad=8; let x = r.right + pad; 
+  let y = r.top - 4; 
+  const vw = window.innerWidth; 
+  const vh = window.innerHeight; 
+  const dw = _evtTooltip.offsetWidth; 
+  const dh = _evtTooltip.offsetHeight; 
+  if(x+dw+12>vw) x = r.left - dw - pad; 
+  if(x<4) x=4; 
+  if(y+dh+12>vh) y = vh - dh - 8; 
+  if(y<4) y=4; 
+  _evtTooltip.style.left = `${Math.round(x)}px`;
+  _evtTooltip.style.top = `${Math.round(y)}px`; 
+}
 
 // --- Icons/colors/tags ---
-function getEventIcon(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; if(desc.includes('red')||tagStr.includes('red')) return '🟥'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '🔄'; if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; return '⚪'; }
-function getEventColor(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '#10b981'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '#f59e0b'; if(desc.includes('red')||tagStr.includes('red')) return '#ef4444'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '#8b5cf6'; return '#6b7280'; }
-function getTagColor(tag){ const t = String(tag).toLowerCase(); if(t.includes('goal')) return '#10b981'; if(t.includes('card')) return '#f59e0b'; if(t.includes('substitution')) return '#8b5cf6'; if(t.includes('penalty')) return '#ef4444'; return '#6b7280'; }
+function getEventIcon(description, tags){ 
+  const desc=String(description).toLowerCase(); 
+  const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); 
+  if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; 
+  if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; 
+  if(desc.includes('red')||tagStr.includes('red')) return '🟥';
+  if(desc.includes('substitution')||tagStr.includes('substitution')) return '↔️'; 
+  if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; 
+  if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; 
+  if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; 
+  return '⚪';
+}
+
+function getEventColor(description, tags){ 
+  const desc=String(description).toLowerCase(); 
+  const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); 
+  if(desc.includes('goal')||tagStr.includes('goal')) return '#10b981'; 
+  if(desc.includes('yellow')||tagStr.includes('yellow')) return '#f59e0b'; 
+  if(desc.includes('red')||tagStr.includes('red')) return '#ef4444'; 
+  if(desc.includes('substitution')||tagStr.includes('substitution')) return '#8b5cf6'; 
+  return '#6b7280'; 
+}
+
+function getTagColor(tag){ 
+  const t = String(tag).toLowerCase(); 
+  if(t.includes('goal')) return '#10b981'; 
+  if(t.includes('card')) return '#f59e0b'; 
+  if(t.includes('substitution')) return '#8b5cf6'; 
+  if(t.includes('penalty')) return '#ef4444'; 
+  return '#6b7280'; 
+}
 
 // --- Player image resolution helpers ---
 function ensurePlayersMap(matchCtx){
@@ -196,7 +266,7 @@ function normalizeEventTags(evt){
   if(evt){
     if(evt.tags !== undefined) candidates.push(evt.tags);
     if(evt.card !== undefined) candidates.push(evt.card);
-    if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
+    // if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
     if(evt.predictedTags !== undefined) candidates.push(evt.predictedTags);
     if(evt.labels !== undefined) candidates.push(evt.labels);
     if(evt.labels_list !== undefined) candidates.push(evt.labels_list);
@@ -204,24 +274,97 @@ function normalizeEventTags(evt){
   let raw = [];
   for(const c of candidates){ if(c === undefined || c === null) continue; if(Array.isArray(c) && c.length>0){ raw = c; break; } if(typeof c === 'string' && c.trim()){ raw = [c]; break; } if(typeof c === 'object' && !Array.isArray(c)){ raw = [c]; break; } }
   const out = []; if(!raw) return out; try{ if(!Array.isArray(raw)){ if(typeof raw === 'string') raw = [raw]; else if(typeof raw === 'object') raw = [raw]; else raw = []; } }catch(e){ return out; }
-  raw.forEach(r=>{ if(r===undefined||r===null) return; if(typeof r === 'string'){ const isModel = /^model[:\-\s]/i.test(r) || /\bmodel\b|\bml\b/i.test(r); const text = r.replace(/^model[:\-\s]+/i,'').trim(); out.push({ text: text||r, source: isModel? 'model':'rule', confidence: undefined, isModel }); return; } if(typeof r === 'object'){ const text = r.label||r.text||r.name||r.tag||JSON.stringify(r); const src = r.source||r.origin||r.by||r.src||r.provider||''; const conf = r.confidence||r.score||r.probability||r.p||r.conf||undefined; const isModel = String(src).toLowerCase().includes('model')||String(src).toLowerCase().includes('ml')||/^model[:\-\s]/i.test(text)||!!r.isModel; out.push({ text, source: src || (isModel ? 'model':'rule'), confidence: conf, isModel }); return; } }); return out; }
+  raw.forEach(r=>{ if(r===undefined||r===null) return; 
+    if(typeof r === 'string'){ const isModel = /^model[:\-\s]/i.test(r) || /\bmodel\b|\bml\b/i.test(r); 
+      const text = r.replace(/^model[:\-\s]+/i,'').trim(); 
+      out.push({ text: text||r, source: isModel? 'model':'rule', confidence: undefined, isModel }); 
+      return; } 
+      if(typeof r === 'object'){ const text = r.label||r.text||r.name||r.tag||JSON.stringify(r); 
+        const src = r.source||r.origin||r.by||r.src||r.provider||''; 
+        const conf = r.confidence||r.score||r.probability||r.p||r.conf||undefined; 
+        const isModel = String(src).toLowerCase().includes('model')||String(src).toLowerCase().includes('ml')||/^model[:\-\s]/i.test(text)||!!r.isModel; 
+        out.push({ text, source: src || (isModel ? 'model':'rule'), confidence: conf, isModel }); 
+        return; } }); 
+        return out;
+       }
 
 // --- Synthesis/clean/merge ---
-function detectTagsFromText(text){ if(!text) return []; const t=String(text).toLowerCase(); const tags=new Set(); if(t.includes('goal')||/scores?|scored|goal by|assist/.test(t)) tags.add('goal'); if(t.includes('penalty')) tags.add('penalty'); if(t.includes('yellow card')||t.includes('yellow')) tags.add('yellow card'); if(t.includes('red card')||t.includes('sent off')||t.includes('red')) tags.add('red card'); if(t.includes('substitution')||t.includes('sub')||t.includes('replaced')) tags.add('substitution'); if(t.includes('corner')) tags.add('corner'); if(t.includes('offside')) tags.add('offside'); if(t.includes('penalty shootout')||t.includes('shootout')) tags.add('shootout'); const playerMatch = String(text).match(/by\s+([A-Z][a-z]+\s?[A-Z]?[a-z]*)/); if(playerMatch) tags.add('player'); return Array.from(tags).map(s=>({ text: s, source: 'heuristic', confidence: undefined, isModel: false })); }
+function detectTagsFromText(text){
+   if(!text) return []; const t=String(text).toLowerCase();
+    const tags=new Set(); 
+    if(t.includes('goal')||/scores?|scored|goal by|assist/.test(t)) tags.add('goal'); 
+    
+    if(t.includes('penalty')) tags.add('penalty'); 
+    if(t.includes('yellow card')||t.includes('yellow')) tags.add('yellow card'); 
+    if(t.includes('red card')||t.includes('sent off')||t.includes('red')) tags.add('red card'); 
+    if(t.includes('substitution')||t.includes('sub')||t.includes('replaced')) tags.add('substitution'); 
+    if(t.includes('corner')) tags.add('corner'); 
+    if(t.includes('offside')) tags.add('offside'); 
+    if(t.includes('penalty shootout')||t.includes('shootout')) tags.add('shootout'); 
+    const playerMatch = String(text).match(/by\s+([A-Z][a-z]+\s?[A-Z]?[a-z]*)/); 
+    if(playerMatch) tags.add('player'); 
+    return Array.from(tags).map(s=>({ text: s, source: 'heuristic', confidence: undefined, isModel: false })); }
 
 function buildCleanTimeline(ev){
-  const out=[]; const goalsSrc = ev.goalscorers||ev.goals||ev.goalscorer||[]; (goalsSrc||[]).forEach(g=>{ const minute = g.time||g.minute||''; const player = g.home_scorer||g.away_scorer||g.scorer||g.player||''; const assist = g.home_assist||g.away_assist||g.assist||''; const team = (g.away_scorer? ev.event_away_team : (g.home_scorer? ev.event_home_team : '')); const score = g.score||''; out.push({ minute, type:'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] }); });
-  const subs = ev.substitutes||ev.subs||ev.substitutions||[]; (subs||[]).forEach(s=>{ const minute = s.time||''; if(s.home_scorer && typeof s.home_scorer === 'object' && Object.keys(s.home_scorer).length>0){ out.push({ minute, type:'substitution', player_in: s.home_scorer.in, player_out: s.home_scorer.out, team: ev.event_home_team || 'home', description: `${minute} — ${s.home_scorer.in} ON for ${s.home_scorer.out} (${ev.event_home_team})`, tags: ['substitution'] }); } if(s.away_scorer && typeof s.away_scorer === 'object' && Object.keys(s.away_scorer).length>0){ out.push({ minute, type:'substitution', player_in: s.away_scorer.in, player_out: s.away_scorer.out, team: ev.event_away_team || 'away', description: `${minute} — ${s.away_scorer.in} ON for ${s.away_scorer.out} (${ev.event_away_team})`, tags: ['substitution'] }); } });
-  const cards = ev.cards||[]; (cards||[]).forEach(c=>{ const minute = c.time||''; const player = c.home_fault||c.away_fault||''; const cardType = (c.card||'').toLowerCase(); const team = c.home_fault? ev.event_home_team : (c.away_fault? ev.event_away_team : ''); out.push({ minute, type:'card', player, card: cardType, team, description: `${minute} — ${cardType} for ${player} (${team})`, tags: [cardType] }); });
-  function minuteSortKey(m){ if(!m) return 0; const plus = String(m).includes('+'); if(plus){ const parts = String(m).split('+'); return Number(parts[0]) + Number(parts[1]) / 100; } return Number(m)||0; }
+  const out=[]; const goalsSrc = ev.goalscorers||ev.goals||ev.goalscorer||[]; 
+  (goalsSrc||[]).forEach(g=>{ const minute = g.time||g.minute||''; 
+    const player = g.home_scorer||g.away_scorer||g.scorer||g.player||''; 
+    const assist = g.home_assist||g.away_assist||g.assist||''; 
+    const team = (g.away_scorer? ev.event_away_team : (g.home_scorer? ev.event_home_team : '')); 
+    const score = g.score||''; out.push({ minute, type:'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] }); 
+  });
+  const subs = ev.substitutes||ev.subs||ev.substitutions||[]; 
+  (subs||[]).forEach(s=>{ const minute = s.time||''; 
+    if(s.home_scorer && typeof s.home_scorer === 'object' && Object.keys(s.home_scorer).length>0){ 
+      out.push({ minute, type:'substitution', player_in: s.home_scorer.in, player_out: s.home_scorer.out, team: ev.event_home_team || 'home', description: `${minute} — ${s.home_scorer.in} ON for ${s.home_scorer.out} (${ev.event_home_team})`, tags: ['substitution'] }); 
+  } if(s.away_scorer && typeof s.away_scorer === 'object' && Object.keys(s.away_scorer).length>0){ 
+    out.push({ minute, type:'substitution', player_in: s.away_scorer.in, player_out: s.away_scorer.out, team: ev.event_away_team || 'away', description: `${minute} — ${s.away_scorer.in} ON for ${s.away_scorer.out} (${ev.event_away_team})`, tags: ['substitution'] }); 
+} });
+  const cards = ev.cards||[];
+   (cards||[]).forEach(c=>{ const minute = c.time||''; 
+    const player = c.home_fault||c.away_fault||''; 
+    const cardType = (c.card||'').toLowerCase(); 
+    const team = c.home_fault? ev.event_home_team : (c.away_fault? ev.event_away_team : ''); 
+    out.push({ minute, type:'card', player, card: cardType, team, description: `${minute} — ${cardType} for ${player} (${team})`, tags: [cardType] }); });
+  
+    function minuteSortKey(m){ 
+    if(!m) return 0; 
+    const plus = String(m).includes('+'); 
+    if(plus){ const parts = String(m).split('+'); return Number(parts[0]) + Number(parts[1]) / 100; } return Number(m)||0; 
+  }
   out.sort((a,b)=> minuteSortKey(a.minute) - minuteSortKey(b.minute)); return out;
 }
 
 function synthesizeTimelineFromEvent(ev){
-  try{ const out=[]; const scorers = ev.scorers||ev.goals||ev.goal_scorers||ev.scorers_list||ev.goals_list||[]; if(Array.isArray(scorers)&&scorers.length>0){ scorers.forEach(s=>{ const minute = s.minute||s.time||s.minute_display||s.m||s.match_minute||''; const name = s.name||s.player||s.scorer||s.player_name||s.player_fullname||''; const team = s.team||s.side||s.club||''; const desc = s.description||s.text||(name?`Goal by ${name}`:'Goal'); const tags = s.tags||s.predicted_tags||s.predictedTags||s.labels|| (s.type?[s.type]:[]); out.push({ minute, description: desc, player: name, team, type: s.type||'goal', predicted_tags: tags, raw: s }); }); }
-    const comments = ev.comments||ev.comments_list||ev.match_comments||ev.play_by_play||ev.commentary||[]; if(Array.isArray(comments)&&comments.length>0){ comments.slice(0,8).forEach(c=>{ const minute = c.time||c.minute||c.comments_time||c.match_minute||''; const desc = c.text||c.comment||c.comments_text||c.body||''; const tags = c.tags||c.predicted_tags||c.predictedTags||c.labels||[]; if(desc) out.push({ minute, description: desc, predicted_tags: tags, raw: c }); }); }
-    if(out.length===0){ const home = ev.event_home_team||ev.strHomeTeam||ev.home_team||ev.homeName||''; const away = ev.event_away_team||ev.strAwayTeam||ev.away_team||ev.awayName||''; const score = ev.event_final_result||ev.event_ft_result||(ev.home_score!=null&&ev.away_score!=null?`${ev.home_score} - ${ev.away_score}`:''); if(home||away||score) out.push({ minute:'', description: `${home} vs ${away} ${score}`, predicted_tags: [], raw: ev }); }
-    const enriched = out.map(entry=>{ const hasTags = entry.predicted_tags && Array.isArray(entry.predicted_tags) && entry.predicted_tags.length>0; if(!hasTags){ const inferred = detectTagsFromText(entry.description||''); entry.predicted_tags = inferred; } return entry; }); return enriched; }catch(e){ return []; }
+  try{ 
+    const out=[]; 
+    const scorers = ev.scorers||ev.goals||ev.goal_scorers||ev.scorers_list||ev.goals_list||[]; 
+    if(Array.isArray(scorers)&&scorers.length>0){ 
+      scorers.forEach(s=>{ const minute = s.minute||s.time||s.minute_display||s.m||s.match_minute||''; 
+        const name = s.name||s.player||s.scorer||s.player_name||s.player_fullname||''; 
+        const team = s.team||s.side||s.club||''; const desc = s.description||s.text||(name?`Goal by ${name}`:'Goal'); 
+        const tags = s.tags||s.predicted_tags||s.predictedTags||s.labels|| (s.type?[s.type]:[]); out.push({ minute, description: desc, player: name, team, type: s.type||'goal', predicted_tags: tags, raw: s }); 
+      }); }
+    const comments = ev.comments||ev.comments_list||ev.match_comments||ev.play_by_play||ev.commentary||[]; 
+    if(Array.isArray(comments)&&comments.length>0){ comments.slice(0,8).forEach(c=>{ const minute = c.time||c.minute||c.comments_time||c.match_minute||''; 
+      const desc = c.text||c.comment||c.comments_text||c.body||''; 
+      const tags = c.tags||c.predicted_tags||c.predictedTags||c.labels||[]; 
+      if(desc) out.push({ minute, description: desc, predicted_tags: tags, raw: c }); 
+    }); }
+    if(out.length===0){ const home = ev.event_home_team||ev.strHomeTeam||ev.home_team||ev.homeName||''; 
+      const away = ev.event_away_team||ev.strAwayTeam||ev.away_team||ev.awayName||''; 
+      const score = ev.event_final_result||ev.event_ft_result||(ev.home_score!=null&&ev.away_score!=null?`${ev.home_score} - ${ev.away_score}`:''); 
+      if(home||away||score) out.push({ minute:'', description: `${home} vs ${away} ${score}`, predicted_tags: [], raw: ev }); 
+    }
+    const enriched = out.map(entry=>{ const hasTags = entry.predicted_tags && Array.isArray(entry.predicted_tags) && entry.predicted_tags.length>0; 
+      if(!hasTags){ const inferred = detectTagsFromText(entry.description||''); 
+        entry.predicted_tags = inferred; 
+      } return entry; 
+    }); 
+    return enriched; 
+  }catch(e){ 
+    return []; 
+  }
 }
 
 function buildMergedTimeline(ev){
@@ -255,6 +398,62 @@ function buildMergedTimeline(ev){
   const minuteSortKey = (m)=>{ if(!m) return 0; const s=String(m); if(s.includes('+')){ const parts=s.split('+'); return Number(parts[0]) + Number(parts[1]||0)/100; } return Number(m)||0; };
   merged.sort((a,b)=> minuteSortKey(a.minute||a.time) - minuteSortKey(b.minute||b.time));
   return merged;
+}
+
+// --- Horizontal helpers ---
+// Converts strings like "90+3" → 93.
+function toMinuteNumber(m){
+  if(m===undefined||m===null) return NaN;
+  const s = String(m).trim();
+  if(!s) return NaN;
+  if(s.includes('+')){ const [a,b] = s.split('+'); const na = Number(a)||0; const nb = Number(b)||0; return na + nb; }
+  const n = Number(s.replace(/[^0-9]/g,''));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function buildTooltipContent(event, matchCtx, opts){
+  const _esc = (typeof window !== 'undefined' && typeof window.escapeHtml === 'function') ? window.escapeHtml : (s)=> String(s).replace(/[&<>"'`=\/]/g, (ch)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'}[ch]));
+  const minute = event.minute || event.time || (opts && opts.minute) || '';
+  const description = event.description || event.text || (opts && opts.description) || '';
+  const normTags = normalizeEventTags(event);
+  const simpleTags = Array.isArray(normTags)? normTags : [];
+  const etype = deriveEventType(description, simpleTags.map(t=>t.text), event);
+  const icon = getEventIcon(description, simpleTags.map(t=>t.text));
+  
+  let headerHtml = '';
+  if(etype === 'substitution'){
+    const { inName, outName } = parseSubstitutionPlayers(event);
+    const inImg = inName ? resolvePlayerImageByName(inName, matchCtx) : '';
+    const outImg = outName ? resolvePlayerImageByName(outName, matchCtx) : '';
+    const imgBox = (src)=> src ? `<div style="width:40px;height:40px;overflow:hidden;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1)"><img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()"/></div>` : `<div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);color:#6b7280;border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1);font-size:18px;">👤</div>`;
+    headerHtml = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">${imgBox(inImg)}<div style="display:flex;flex-direction:column;"><div style="font-weight:700;color:#10b981;font-size:14px;">${_esc(inName||'Player In')}</div><div style="font-size:11px;color:#6b7280;margin-top:2px;">Substitute In</div></div><div style="display:flex;align-items:center;margin:0 8px;"><span style="color:#9ca3af;font-size:20px;">→</span></div>${imgBox(outImg)}<div style="display:flex;flex-direction:column;"><div style="font-weight:700;color:#ef4444;font-size:14px;">${_esc(outName||'Player Out')}</div><div style="font-size:11px;color:#6b7280;margin-top:2px;">Substitute Out</div></div></div>`;
+  } else {
+    const { playerImg, teamLogo, playerName } = resolvePlayerAndImages(event, matchCtx);
+    const imgSrc = playerImg || teamLogo || '';
+    const imgBox = imgSrc ? `<div style="width:40px;height:40px;overflow:hidden;border-radius:10px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1)"><img src="${imgSrc}" style="width:100%;height:100%;object-fit:${playerImg?'cover':'contain'};display:block" onerror="this.remove()"/></div>` : `<div style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);color:#6b7280;border:2px solid white;box-shadow:0 4px 8px rgba(0,0,0,0.1);font-size:18px;">⚽</div>`;
+    headerHtml = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">${imgBox}<div style="display:flex;flex-direction:column;"><div style="font-weight:700;color:#111827;font-size:14px;">${_esc(playerName||'Player Event')}</div><div style="font-size:11px;color:#6b7280;margin-top:2px;text-transform:capitalize;">${etype.replace('_', ' ')}</div></div></div>`;
+  }
+  
+  const tagsHtml = simpleTags.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid #f3f4f6;">${simpleTags.map(t=>{
+    const color = t.isModel? '#6d28d9' : getTagColor(t.text||'');
+    const conf = (t.confidence!==undefined && t.confidence!==null) ? ` <small style=\"opacity:.8\">${Number(t.confidence).toFixed(2)}</small>` : '';
+    return `<span style=\"background:${color};color:white;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:600;box-shadow:0 2px 4px rgba(0,0,0,0.1);\">${_esc(t.text||'')}${conf}</span>`;
+  }).join('')}</div>` : '';
+  
+  const brief = opts && opts.brief ? `<div style="margin-top:8px;color:#4b5563;background:#f9fafb;padding:8px 10px;border-radius:8px;border-left:3px solid #3b82f6;">${_esc(opts.brief)}</div>` : '';
+  
+  return `
+    <div style="position:relative;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:12px;background:linear-gradient(135deg,#fef3c7,#fde68a);padding:8px 12px;border-radius:10px;border:1px solid #f59e0b;">
+        <div style="display:flex;align-items:center;gap:8px;font-size:16px;">${icon}</div>
+        <div style="display:flex;align-items:center;gap:6px;color:#92400e;font-weight:800;font-size:14px;"><span>${_esc(minute? minute+"'" : 'Live')}</span></div>
+      </div>
+      ${headerHtml}
+      ${description ? `<div style=\"color:#374151;line-height:1.6;margin-bottom:8px;background:#f8fafc;padding:8px 10px;border-radius:8px;border-left:3px solid #10b981;\">${_esc(description)}</div>` : ''}
+      ${brief}
+      ${tagsHtml}
+    </div>
+  `;
 }
 
 // --- Rendering ---
@@ -362,9 +561,26 @@ function createTimelineEvent(event, isLast, matchCtx){
   eventDiv.appendChild(timeline); eventDiv.appendChild(content); return eventDiv;
 }
 
-function deriveEventType(description, tags, ev){ const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase()); const d = String(description||'').toLowerCase(); if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) return 'goal'; if(t.includes('red')) return 'red card'; if(t.includes('yellow')) return 'yellow card'; if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) return 'substitution'; return null; }
+function deriveEventType(description, tags, ev){ 
+  const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase()); 
+  const d = String(description||'').toLowerCase(); 
+  if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) 
+    return 'goal'; 
+  if(t.includes('red')) 
+    return 'red card'; 
+  if(t.includes('yellow')) 
+    return 'yellow card'; 
+  if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) 
+    return 'substitution'; 
+  return null; 
+}
 
-function _briefKey(etype, payload){ const p = payload||{}; return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::'); }
+// Caching brief results to avoid repeated calls for same event
+function _briefKey(etype, payload){ 
+  const p = payload||{}; 
+  return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::'); 
+}
+
 async function getEventBrief(etype, payload, matchCtx){
   const key = _briefKey(etype, payload);
   if(_eventBriefCache.has(key)) return _eventBriefCache.get(key);
@@ -386,12 +602,461 @@ async function getEventBrief(etype, payload, matchCtx){
 }
 
 function renderMatchTimeline(ev, container){
-  let timeline = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || ev.event_entries || [];
-  if(timeline && !Array.isArray(timeline) && typeof timeline === 'object'){ const vals = Object.values(timeline).filter(Boolean); const arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []); if(arr.length>0) timeline = arr; }
-  if(!Array.isArray(timeline) || timeline.length===0) timeline = synthesizeTimelineFromEvent(ev);
-  if(!Array.isArray(timeline) || timeline.length===0) return;
-  const timelineCard = document.createElement('div'); timelineCard.style.cssText='background:white;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08)'; const title = document.createElement('h3'); title.style.cssText='margin:0 0 20px 0;color:#1f2937;font-size:20px'; title.innerHTML='⚽ Match Timeline'; timelineCard.appendChild(title);
-  const timelineContainer = document.createElement('div'); timelineContainer.style.cssText='position:relative;';
-  timeline.forEach((event, index)=>{ timelineContainer.appendChild(createTimelineEvent(event, index===timeline.length-1, ev)); });
-  timelineCard.appendChild(timelineContainer); container.appendChild(timelineCard);
+  // Collect events
+  let events = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || ev.event_entries || [];
+  if(events && !Array.isArray(events) && typeof events === 'object'){
+    const vals = Object.values(events).filter(Boolean);
+    const arr = vals.reduce((acc, cur)=> acc.concat(Array.isArray(cur)?cur:[]), []);
+    if(arr.length>0) events = arr;
+  }
+  if(!Array.isArray(events) || events.length===0) events = synthesizeTimelineFromEvent(ev);
+  if(!Array.isArray(events) || events.length===0) return;
+
+  // Filter to special events only (goals, yellow/red cards, substitutions)
+  const specialEvents = (events||[]).filter(e=>{
+    const t = normalizeEventTags(e); const tagTxt = Array.isArray(t)? t.map(tt=>tt.text) : [];
+    const etype = deriveEventType(e.description||e.text||'', tagTxt, e);
+    const mn = toMinuteNumber(e.minute||e.time);
+    return !!etype && Number.isFinite(mn);
+  });
+
+  // Card shell
+  const timelineCard = document.createElement('div');
+  // Standard card width inside container; scrolling is confined to the timeline scroller only
+  timelineCard.style.cssText='background:white;border-radius:16px;padding:20px 16px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08);width:100%;max-width:100%;overflow:hidden;';
+  const title = document.createElement('h3');
+  title.style.cssText = 'margin:0 0 14px 0;color:#1f2937;font-size:20px';
+  title.innerHTML = '⚽ Match Timeline';
+  timelineCard.appendChild(title);
+
+  // Domain and scale (compressed gaps + scroller)
+  const minutes = events.map(e=> toMinuteNumber(e.minute||e.time)).filter(n=>Number.isFinite(n));
+  const maxMinute = minutes.length ? Math.max(90, Math.max(...minutes)) : 90;
+  const minMinute = 0;
+
+  // Track baseline inside a horizontal scroller
+  const scroller = document.createElement('div');
+  // Allow vertical scroll on the page while enabling horizontal scroll inside the timeline only when applicable
+  scroller.style.cssText = 'position:relative;overflow-x:auto;overflow-y:hidden;padding:0 8px 6px 8px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;width:100%;max-width:100%;box-sizing:border-box;';
+  // Convert vertical wheel to horizontal scroll when hovering timeline; prevents vertical page scroll here
+  try {
+    scroller.addEventListener('wheel', (e) => {
+      // If the user scrolls vertically more than horizontally, translate to horizontal when possible
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        const before = scroller.scrollLeft;
+        scroller.scrollLeft += e.deltaY;
+        const after = scroller.scrollLeft;
+        const canScrollX = scroller.scrollWidth > scroller.clientWidth;
+        const atEdge = (!canScrollX) ||
+          (e.deltaY < 0 && after === 0) ||
+          (e.deltaY > 0 && Math.ceil(after + scroller.clientWidth) >= scroller.scrollWidth);
+        // Only prevent default if we actually scrolled horizontally and are not at an edge
+        if (canScrollX && after !== before && !atEdge) {
+          e.preventDefault();
+        }
+      }
+    }, { passive: false });
+  } catch(_e) {}
+  const track = document.createElement('div');
+  track.style.cssText = 'position:relative;height:104px;min-width:100%;overflow:hidden;';
+  
+  // Store baseline container for later
+  track.baselineContainer = document.createElement('div');
+  // Slight offset upward (-1px) to visually center the thicker 3px line relative to icons
+  track.baselineContainer.style.cssText = 'position:absolute;left:0;right:0;top:50%;height:3px;transform:translateY(calc(-50% - 1px));';
+  track.appendChild(track.baselineContainer);
+
+  // Minute ticks (sparse)
+  const pendingTicks = [0,45,90]; if(maxMinute>90) pendingTicks.push(maxMinute);
+  const tickPositions = [];
+
+  // Compute stoppage time badges for 45+ and 90+
+  let stoppage45 = 0, stoppage90 = 0;
+  try{
+    for(const e of (events||[])){
+      const raw = String(e.minute||e.time||'').trim();
+      let m;
+      if((m = raw.match(/^45\+(\d+)/))) stoppage45 = Math.max(stoppage45, Number(m[1])||0);
+      if((m = raw.match(/^90\+(\d+)/))) stoppage90 = Math.max(stoppage90, Number(m[1])||0);
+    }
+  }catch(_e){}
+
+  //Cluster events by minute with stoppage-time compression (45+ and 90+)
+  const clustersMap = new Map();
+  const getClusterKey = (e)=>{
+    const raw = (e.minute||e.time||'').toString().trim();
+    if(raw.includes('+')){
+      const parts = raw.split('+');
+      const base = parseInt(parts[0],10) || 0;
+      const extra = parseInt((parts[1]||'').toString().replace(/[^0-9]/g,''),10) || 0;
+      // For 90+N, treat as separate minutes (e.g., 95) so they appear in extra time segment
+      if(base >= 90){
+        return String(base + extra);
+      }
+      // For 45+N, keep them clustered at 45'
+      return `${base}+`;
+    }
+    const n = toMinuteNumber(raw);
+    return Number.isFinite(n) ? String(n) : 'unknown';
+  };
+  const getClusterPosMinute = (key)=>{
+    if(key.endsWith('+')){
+      const base = parseInt(key,10) || 0; return base; // place 45+ at 45, 90+ at 90
+    }
+    const n = Number(key); return Number.isFinite(n) ? n : null;
+  };
+  // Build clusters from special events only
+  for(const e of specialEvents){
+    const key = getClusterKey(e);
+    if(!clustersMap.has(key)) clustersMap.set(key, { key, minuteNumber: getClusterPosMinute(key), events: [] });
+    clustersMap.get(key).events.push(e);
+  }
+  const clusters = Array.from(clustersMap.values()).sort((a,b)=>{
+    const am = Number.isFinite(a.minuteNumber) ? a.minuteNumber : Infinity;
+    const bm = Number.isFinite(b.minuteNumber) ? b.minuteNumber : Infinity;
+    return am - bm;
+  });
+
+  // Layout tuning: extra breathing room at edges and around HT
+  const cfg = { pxPerMinute: 9, maxGapPx: 110, minGapPx: 20, leftPad: 36, rightPad: 44, htGapBefore: 44, htGapAfter: 56 };
+  const xPos = []; // pixel x for each cluster
+  let curX = cfg.leftPad;
+  // Lead-in spacing from 0' to first cluster so Start stays at 0
+  if(clusters.length>0){
+    const firstMin = clusters[0].minuteNumber;
+    if(Number.isFinite(firstMin) && firstMin>0){
+      // lead-in scaled to minute with smaller clamps so there isn't too much empty space
+      const scaled = firstMin * (cfg.pxPerMinute * 0.6);
+      const leadGap = Math.min(72, Math.max(18, scaled));
+      curX = cfg.leftPad + leadGap;
+    }
+  }
+  for(let i=0;i<clusters.length;i++){
+    if(i===0){ xPos[i] = curX; continue; }
+    const prev = clusters[i-1]; const cur = clusters[i];
+    let dMin = (Number.isFinite(prev.minuteNumber) && Number.isFinite(cur.minuteNumber)) ? (cur.minuteNumber - prev.minuteNumber) : 0;
+    // if same minute (e.g., 45 and 45+) enforce minimum spacing
+    if(dMin<=0) dMin = 0.1;
+    let gap = Math.min(cfg.maxGapPx, Math.max(cfg.minGapPx, dMin * cfg.pxPerMinute));
+    // Inject additional visual breathing room before and after HT (45') separately
+    if(Number.isFinite(prev.minuteNumber) && Number.isFinite(cur.minuteNumber)){
+      if(prev.minuteNumber < 45 && cur.minuteNumber >= 45){
+        // space leading into HT
+        gap += cfg.htGapBefore;
+      }
+      if(prev.minuteNumber <= 45 && cur.minuteNumber > 45){
+        // space coming out of HT
+        gap += cfg.htGapAfter;
+      }
+    }
+    curX += gap; xPos[i] = curX;
+  }
+  let totalWidth = (xPos.length ? xPos[xPos.length-1] : cfg.leftPad) + cfg.rightPad;
+  // Stretch to fill container width (use full screen size) to avoid overly tight layout
+  const viewport = Math.max(scroller?.clientWidth || 0, window.innerWidth || 0) - 48; // padding allowance
+  if(viewport > 0 && totalWidth < viewport){
+    const lastX = xPos[xPos.length-1] || cfg.leftPad;
+    const available = Math.max(1, viewport - cfg.leftPad - cfg.rightPad);
+    const base = Math.max(1, lastX - cfg.leftPad);
+    const scale = available / base;
+    for(let i=0;i<xPos.length;i++){
+      xPos[i] = cfg.leftPad + (xPos[i] - cfg.leftPad) * scale;
+    }
+    totalWidth = viewport;
+  }
+  // If no clusters (no special events), ensure track fills container for tick rendering
+  if(clusters.length===0){
+    totalWidth = Math.max(totalWidth, viewport>0? viewport : 600);
+  }
+  track.style.width = `${Math.max(totalWidth, 600)}px`;
+
+  // Helper to position ticks between clusters in compressed space
+  const getTickX = (m)=>{
+    if(!Number.isFinite(m)) return null;
+    if(clusters.length===0){
+      // Linear mapping across the whole domain when no clusters
+      const domain = Math.max(1, (maxMinute - minMinute));
+      const span = Math.max(1, (Math.max(totalWidth, 600) - cfg.leftPad - cfg.rightPad));
+      const ratio = Math.max(0, Math.min(1, (m - minMinute) / domain));
+      return cfg.leftPad + ratio * span;
+    }
+    // before first cluster
+    if(Number.isFinite(clusters[0].minuteNumber) && m <= clusters[0].minuteNumber){
+      const d = clusters[0].minuteNumber - m; const add = Math.min(cfg.maxGapPx, Math.max(0, d*cfg.pxPerMinute));
+      // Clamp ticks before first cluster to start at leftPad so Start aligns with baseline
+      return Math.max(cfg.leftPad - add, cfg.leftPad);
+    }
+    // between clusters
+    for(let i=1;i<clusters.length;i++){
+      const mA = clusters[i-1].minuteNumber; const mB = clusters[i].minuteNumber;
+      if(!Number.isFinite(mA) || !Number.isFinite(mB)) continue;
+      if(m >= mA && m <= mB){
+        const gapMin = Math.max(0.0001, mB - mA);
+        const gapPx = xPos[i] - xPos[i-1];
+        const ratio = (m - mA) / gapMin;
+        return xPos[i-1] + ratio * gapPx;
+      }
+    }
+    // after last cluster
+    const lastIdx = clusters.length-1; const mL = clusters[lastIdx].minuteNumber;
+    if(Number.isFinite(mL)){
+      const d = m - mL; const add = Math.min(cfg.maxGapPx, Math.max(0, d*cfg.pxPerMinute));
+      return xPos[lastIdx] + add;
+    }
+    return totalWidth - cfg.rightPad;
+  };
+
+  // Add sparse ticks using compressed mapping
+  const addTick = (min, label, plusN)=>{
+    const x = getTickX(min);
+    if(x===null) return;
+    const tick = document.createElement('div');
+    tick.style.cssText = `position:absolute;left:${x}px;top:50%;width:2px;height:8px;background:#d1d5db;transform:translate(-50%,-50%);`;
+    const lab = document.createElement('div');
+    lab.textContent = label;
+    // Bold tick labels (Start, HT, FT, etc.) per request
+  // Place tick labels a bit lower to avoid colliding with event minute labels
+  lab.style.cssText = 'position:absolute;top:64%;transform:translate(-50%,0);font-size:12px;color:#111827;font-weight:700;white-space:nowrap;';
+  const xLabel = (min===0) ? cfg.leftPad : x;
+    lab.style.left = `${xLabel}px`;
+    track.appendChild(tick); track.appendChild(lab);
+    // Keep for collision checks with nearby event labels
+    tickPositions.push({ min, x });
+    if(plusN && plusN>0){
+      const badge = document.createElement('div');
+      badge.textContent = `+${plusN}`;
+      badge.style.cssText = `position:absolute;left:${x+14}px;top:42%;transform:translate(-50%,-50%);background:#f59e0b;color:white;font-size:10px;line-height:1;padding:3px 6px;border-radius:9999px;border:1px solid #fff;box-shadow:0 1px 2px rgba(0,0,0,0.1)`;
+      track.appendChild(badge);
+    }
+  };
+  pendingTicks.forEach(t=>{
+    const plus = t===45 ? stoppage45 : (t===90 ? stoppage90 : 0);
+    const label = t===0 ? 'Start' : (t===45 ? 'HT' : (t===90 ? 'FT' : `${t}'`));
+    addTick(t, label, plus);
+  });
+  // Expose FT tick x for baseline rendering
+  try {
+    const ft = tickPositions.find(tp => tp.min === 90);
+    if (ft && typeof ft.x === 'number') {
+      track.ftX = ft.x;
+    }
+  } catch(_e) {}
+
+  // Render one marker per cluster at computed x
+  clusters.forEach((cluster, idx)=>{
+    const x = xPos[idx];
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:absolute;left:${x}px;top:50%;transform:translate(-50%,-28px);display:flex;flex-direction:column;align-items:center;gap:6px;`;
+    wrap.setAttribute('data-minute', cluster.minuteNumber || 0); // Add data attribute for baseline positioning
+
+    // Professional icon display instead of dot + icons
+    const mainIcon = document.createElement('div');
+    mainIcon.style.cssText = 'position:relative;display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.95);box-shadow:0 2px 8px rgba(0,0,0,0.1);border:1px solid rgba(0,0,0,0.08);cursor:pointer;transition:all 0.2s ease;';
+    
+    // Use first event for primary icon
+    const first = cluster.events[0];
+    const fTags = normalizeEventTags(first); const fTxt = Array.isArray(fTags)?fTags.map(t=>t.text):[];
+    const primaryIcon = getEventIcon(first.description||first.text||'', fTxt);
+    
+    const iconSpan = document.createElement('span');
+    iconSpan.textContent = primaryIcon;
+    iconSpan.style.cssText = 'font-size:18px;line-height:1;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.1));';
+    mainIcon.appendChild(iconSpan);
+    
+    // Add hover effect
+    mainIcon.addEventListener('mouseenter', () => {
+      mainIcon.style.transform = 'scale(1.1)';
+      mainIcon.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    });
+    mainIcon.addEventListener('mouseleave', () => {
+      mainIcon.style.transform = 'scale(1)';
+      mainIcon.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+    });
+    
+    // If multiple events, add a small indicator
+    if(cluster.events.length > 1){
+      const indicator = document.createElement('div');
+      indicator.style.cssText = `position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:#3b82f6;color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.2);`;
+      indicator.textContent = cluster.events.length;
+      mainIcon.appendChild(indicator);
+    }
+    
+    wrap.appendChild(mainIcon);
+
+    // Hover: combined tooltip for cluster
+    const onEnter = async ()=>{
+      const parts = [];
+      for(const evItem of cluster.events){
+        const normT = normalizeEventTags(evItem); const tagTxt = Array.isArray(normT)?normT.map(t=>t.text):[];
+        let brief='';
+        try{
+          const etype = deriveEventType(evItem.description||evItem.text||'', tagTxt, evItem);
+          const minuteLabel = evItem.minute || evItem.time || '';
+          brief = await getEventBrief(etype||'event', { minute: minuteLabel, description: evItem.description||evItem.text||'', event: evItem, tags: tagTxt }, ev);
+        }catch(_e){}
+        parts.push(buildTooltipContent(evItem, ev, { minute: evItem.minute||evItem.time||'', description: evItem.description||evItem.text||'', brief }));
+      }
+      const html = parts.join('<hr style="border:none;border-top:1px solid #e5e7eb;margin:10px 0;"/>');
+      showEventTooltip(mainIcon, html);
+    };
+    const onMove = ()=> positionEventTooltip(mainIcon);
+    const onLeave = ()=>{ if(_tooltipHideTimer){ clearTimeout(_tooltipHideTimer); } _tooltipHideTimer=setTimeout(()=>{ hideEventTooltip(); _tooltipHideTimer=null; }, 120); };
+    mainIcon.addEventListener('mouseenter', onEnter);
+    mainIcon.addEventListener('mousemove', onMove);
+    mainIcon.addEventListener('mouseleave', onLeave);
+
+    wrap.appendChild(mainIcon);
+
+    // Minute label under each marker, bold like Start/HT/FT
+    try{
+      const firstEvt = cluster.events[0] || {};
+      const rawMin = String(firstEvt.minute || firstEvt.time || '').trim();
+      const minuteNum = Number.isFinite(cluster.minuteNumber) ? cluster.minuteNumber : toMinuteNumber(rawMin);
+      let labelText = '';
+      if(rawMin && rawMin.includes('+')){
+        // If it's 90+N, show the summed minute (e.g., 97)
+        const m = rawMin.match(/^(\d+)\s*\+\s*(\d+)$/);
+        if(m){
+          const base = parseInt(m[1], 10) || 0;
+          const extra = parseInt(m[2], 10) || 0;
+          if(base >= 90){
+            labelText = String(base + extra);
+          } else if(base === 45){
+            // Keep first-half stoppage as 45+'
+            labelText = '45+';
+          } else {
+            // Fallback: use summed minute if > 90, else raw compact
+            labelText = Number.isFinite(minuteNum) && minuteNum > 90 ? String(minuteNum) : rawMin.replace(/\s+/g,'');
+          }
+        } else {
+          // Unknown shape, fallback to computed minute or raw
+          labelText = Number.isFinite(minuteNum) && minuteNum > 90 ? String(minuteNum) : rawMin.replace(/\s+/g,'');
+        }
+      } else if(cluster.key && /\+$/.test(String(cluster.key))){
+        // Clustered stoppage at 45+
+        const base = parseInt(String(cluster.key), 10) || 45;
+        labelText = `${base}+`;
+      } else if(Number.isFinite(minuteNum)){
+        labelText = `${minuteNum}`;
+      } else if(rawMin){
+        labelText = rawMin.replace(/\s+/g,'');
+      }
+      // Avoid redundancy and overlap near Start/HT/FT and end ticks
+      const suppressNearTicks = tickPositions.some(tp => {
+        const isEdge = (tp.min===0 || tp.min===90 || tp.min===maxMinute);
+        return isEdge && Math.abs(tp.x - x) < 40; // larger radius near Start/HT/FT/end
+      });
+      // Additional suppression near HT tick specifically
+      const htTick = tickPositions.find(tp => tp.min === 45);
+      const nearHTTick = htTick ? (Math.abs(htTick.x - x) < 36) : false;
+      // Additional suppression very close to container edges
+      const nearLeftEdge = Math.abs(x - cfg.leftPad) < 40;
+      const nearRightEdge = Math.abs(x - (totalWidth - cfg.rightPad)) < 40;
+      const isExactHTNoPlus = (minuteNum===45) && !(rawMin.includes('+'));
+      if(labelText && !suppressNearTicks && !isExactHTNoPlus && !nearLeftEdge && !nearRightEdge && !nearHTTick){
+        const minEl = document.createElement('div');
+        minEl.textContent = `${labelText}'`;
+        minEl.style.cssText = 'margin-top:4px;font-size:12px;font-weight:700;color:#111827;';
+        wrap.appendChild(minEl);
+      }
+    }catch(_e){}
+    track.appendChild(wrap);
+  });
+
+  // Add colored baseline after all events are placed
+  renderColoredBaseline(track, cfg.leftPad, cfg.rightPad, totalWidth);
+
+  scroller.appendChild(track);
+  timelineCard.appendChild(scroller);
+  container.appendChild(timelineCard);
+
+  // 10) Auto-scroll near first meaningful cluster (skip minute 0 if empty)
+  try{
+    const firstIdx = clusters.findIndex(c=> Number.isFinite(c.minuteNumber) && c.minuteNumber>0);
+    const anchorX = firstIdx>=0 ? xPos[firstIdx] : (xPos[0]||cfg.leftPad);
+    if(scroller && typeof anchorX==='number'){
+      const target = Math.max(0, anchorX - scroller.clientWidth*0.3);
+      scroller.scrollLeft = target;
+    }
+  }catch(_e){}
+
+}
+
+function renderColoredBaseline(track, leftPad, rightPad, totalWidth) {
+  if (!track.baselineContainer) return;
+  
+  // Find actual positions of key minutes based on rendered elements
+  const findElementX = (targetMinute) => {
+    const elements = track.querySelectorAll('[data-minute]');
+    for (const el of elements) {
+      const minute = parseInt(el.getAttribute('data-minute'));
+      if (minute === targetMinute) {
+        return el.offsetLeft + (el.offsetWidth / 2); // center of element
+      }
+    }
+    return null;
+  };
+
+  // Try to find 90' position, fallback to calculated position
+  // Prefer exact FT tick if available
+  let ftX = (typeof track.ftX === 'number' ? track.ftX : null);
+  if (!ftX) ftX = findElementX(90);
+  if (!ftX) {
+    // Fallback calculation - estimate 90' position
+    ftX = totalWidth * 0.8; // rough estimate that 90' is about 80% across
+  }
+
+  const startX = leftPad;
+  const endX = totalWidth - rightPad;
+
+  // Green segment from start to FT (90')
+  const greenSegment = document.createElement('div');
+  greenSegment.style.cssText = `position:absolute;left:${startX}px;width:${ftX - startX}px;height:3px;background:linear-gradient(90deg,#10b981,#059669);box-shadow:0 0 6px rgba(16,185,129,0.35);border-radius:2px;`;
+
+  // Red segment from FT to end (extra time)
+  const redSegment = document.createElement('div');
+  redSegment.style.cssText = `position:absolute;left:${ftX}px;width:${endX - ftX}px;height:3px;background:linear-gradient(90deg,#ef4444,#dc2626);box-shadow:0 0 6px rgba(239,68,68,0.35);border-radius:2px;`;
+
+  track.baselineContainer.appendChild(greenSegment);
+  track.baselineContainer.appendChild(redSegment);
+
+}
+
+function renderColoredBaseline(track, leftPad, rightPad, totalWidth) {
+  if (!track.baselineContainer) return;
+  
+  // Find actual positions of key minutes based on rendered elements
+  const findElementX = (targetMinute) => {
+    const elements = track.querySelectorAll('[data-minute]');
+    for (const el of elements) {
+      const minute = parseInt(el.getAttribute('data-minute'));
+      if (minute === targetMinute) {
+        return el.offsetLeft + (el.offsetWidth / 2); // center of element
+      }
+    }
+    return null;
+  };
+
+  // Try to find 90' position, fallback to calculated position
+  // Prefer exact FT tick if available
+  let ftX = (typeof track.ftX === 'number' ? track.ftX : null);
+  if (!ftX) ftX = findElementX(90);
+  if (!ftX) {
+    // Fallback calculation - estimate 90' position
+    ftX = totalWidth * 0.8; // rough estimate that 90' is about 80% across
+  }
+
+  const startX = leftPad;
+  const endX = totalWidth - rightPad;
+
+  // Green segment from start to FT (90')
+  const greenSegment = document.createElement('div');
+  greenSegment.style.cssText = `position:absolute;left:${startX}px;width:${ftX - startX}px;height:3px;background:linear-gradient(90deg,#10b981,#059669);box-shadow:0 0 6px rgba(16,185,129,0.35);border-radius:2px;`;
+
+  // Red segment from FT to end (extra time)
+  const redSegment = document.createElement('div');
+  redSegment.style.cssText = `position:absolute;left:${ftX}px;width:${endX - ftX}px;height:3px;background:linear-gradient(90deg,#ef4444,#dc2626);box-shadow:0 0 6px rgba(239,68,68,0.35);border-radius:2px;`;
+
+  track.baselineContainer.appendChild(greenSegment);
+  track.baselineContainer.appendChild(redSegment);
 }
