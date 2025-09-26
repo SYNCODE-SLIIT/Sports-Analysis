@@ -40,7 +40,7 @@ export function Navbar() {
             alt="ATHLETE Logo"
             width={40}
             height={40}
-            className="w-10 h-10 block dark:hidden"
+            className="h-10 w-auto block dark:hidden"
             priority
           />
           {/* Dark mode logo */}
@@ -49,7 +49,7 @@ export function Navbar() {
             alt="ATHLETE Logo"
             width={40}
             height={40}
-            className="w-10 h-10 hidden dark:block"
+            className="h-10 w-auto hidden dark:block"
             priority
           />
           <span className="text-xl font-bold text-gradient">ATHLETE</span>

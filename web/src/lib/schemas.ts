@@ -53,6 +53,7 @@ export const zFixture = z.object({
   time: z.string().optional(),
   league: z.string().optional(),
   status: z.string().optional(),
+  venue: z.string().optional(),
 });
 
 // Types derived from schemas
@@ -101,6 +102,7 @@ export function parseFixtures(data: unknown): Fixture[] {
     const time = pick(item, ['time', 'event_time', 'strTime']);
     const league = pick(item, ['league', 'league_name', 'strLeague']);
     const status = pick(item, ['status', 'event_status']);
+    const venue = pick(item, ['venue', 'stadium', 'event_venue', 'strVenue', 'location']);
     return {
       id: id ?? '',
       home_team: home ?? '',
@@ -109,6 +111,7 @@ export function parseFixtures(data: unknown): Fixture[] {
       time,
       league,
       status,
+      venue,
     };
   };
   return data

@@ -7,7 +7,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HighlightsCarousel } from "@/components/HighlightsCarousel";
-import { getEventResults, getHighlights, DataObject, searchEventHighlight, getOdds, getComments, getLeagueTable } from "@/lib/collect";
+import Timeline from "@/components/match/Timeline";
+import BestPlayerCard from "@/components/match/BestPlayerCard";
+import LeadersCard from "@/components/match/LeadersCard";
+import MatchSummaryCard from "@/components/match/MatchSummaryCard";
+import MatchExtrasTabs, { type MatchExtrasTabsProps } from "@/components/match/MatchExtrasTabs";
+import { buildTimeline, computeLeaders, computeBestPlayer } from "@/lib/match-mappers";
+import type { TLItem } from "@/lib/match-mappers";
+import {
+  getEventResults,
+  getHighlights,
+  DataObject,
+  searchEventHighlight,
+  getComments,
+  getLeagueTable,
+  postCollect,
+  getTeam,
+  listTeamPlayers,
+  listSeasons,
+  getForm,
+  getH2HByTeams,
+} from "@/lib/collect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -79,6 +99,19 @@ export default function MatchPage() {
   const [ehsResults, setEhsResults] = useState<ScrapedLink[]>([]);
   const [comments, setComments] = useState<Array<{ time?: string; text?: string; author?: string }>>([]);
   const [table, setTable] = useState<Array<{ position?: number; team?: string; played?: number; points?: number }>>([]);
+  const [eventRaw, setEventRaw] = useState<DataObject | null>(null);
+  const [timeline, setTimeline] = useState<TLItem[]>([]);
+  const [leaders, setLeaders] = useState<ReturnType<typeof computeLeaders> | null>(null);
+  const [best, setBest] = useState<{ name: string; score?: number } | null>(null);
+  const [winProbDisplay, setWinProbDisplay] = useState<{ home: number; draw: number; away: number }>({ home: 0, draw: 0, away: 0 });
+  const [teamsExtra, setTeamsExtra] = useState<{ home: DataObject | null; away: DataObject | null }>({ home: null, away: null });
+  const [playersExtra, setPlayersExtra] = useState<{ home: DataObject[]; away: DataObject[] }>({ home: [], away: [] });
+  const [oddsExtra, setOddsExtra] = useState<{ listed: DataObject[]; live: DataObject[] }>({ listed: [], live: [] });
+  const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] });
+  const [seasonsExtra, setSeasonsExtra] = useState<DataObject[]>([]);
+  const [h2hExtra, setH2hExtra] = useState<{ matches: DataObject[] } | null>(null);
+  const [extrasErrors, setExtrasErrors] = useState<NonNullable<MatchExtrasTabsProps["errors"]>>({});
+  const [extrasLoading, setExtrasLoading] = useState(false);
 
   // Seed from sessionStorage for fast paint like legacy
   useEffect(() => {
@@ -118,23 +151,25 @@ export default function MatchPage() {
     getEventResults(String(eventId)).then(env => {
       if (!active) return;
       const d = env.data as { event?: DataObject } | DataObject;
-      const core: DataObject | undefined = (d && typeof d === 'object' && 'event' in d) ? (d as { event?: DataObject }).event : (d as DataObject);
+      const core = (d && typeof d === 'object' && 'event' in d) ? (d as { event?: DataObject }).event : (d as DataObject);
       if (!core) return;
+      const coreObj = core as DataObject;
       const normalized: RenderEvent = {
-        eventId: getString(core, ['eventId', 'id', 'event_id'], String(eventId))!,
-        homeTeam: getString(core, ['homeTeam', 'home_team', 'home'], 'Home')!,
-        awayTeam: getString(core, ['awayTeam', 'away_team', 'away'], 'Away')!,
-        homeScore: getNumber(core, ['homeScore', 'home_score', 'score.home'], 0) || 0,
-        awayScore: getNumber(core, ['awayScore', 'away_score', 'score.away'], 0) || 0,
-        status: getString(core, ['status'], '') || '',
-        league: getString(core, ['league', 'competition']) || undefined,
-        venue: getString(core, ['venue', 'stadium']) || undefined,
-        date: getString(core, ['date', 'datetime', 'kickoff'], new Date().toISOString())!,
-        attendance: getNumber(core, ['attendance']) || undefined,
-        winProbabilities: (core['winProbabilities'] || core['winprob']) as RenderEvent['winProbabilities'],
-        stats: (core['stats'] as MatchStats) || undefined,
-        events: Array.isArray(core['events']) ? (core['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
+        eventId: getString(coreObj, ['eventId', 'id', 'event_id'], String(eventId))!,
+        homeTeam: getString(coreObj, ['homeTeam', 'home_team', 'home'], 'Home')!,
+        awayTeam: getString(coreObj, ['awayTeam', 'away_team', 'away'], 'Away')!,
+        homeScore: getNumber(coreObj, ['homeScore', 'home_score', 'score.home'], 0) || 0,
+        awayScore: getNumber(coreObj, ['awayScore', 'away_score', 'score.away'], 0) || 0,
+        status: getString(coreObj, ['status'], '') || '',
+        league: getString(coreObj, ['league', 'competition']) || undefined,
+        venue: getString(coreObj, ['venue', 'stadium']) || undefined,
+        date: getString(coreObj, ['date', 'datetime', 'kickoff'], new Date().toISOString())!,
+        attendance: getNumber(coreObj, ['attendance']) || undefined,
+        winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
+        stats: (coreObj['stats'] as MatchStats) || undefined,
+        events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
       };
+      setEventRaw(coreObj);
       setEvent(normalized);
     }).catch(() => {});
     getHighlights(String(eventId)).then(env => {
@@ -164,35 +199,192 @@ export default function MatchPage() {
       setComments(mapped);
     }).catch(() => setComments([]));
 
-    // Compute win probabilities from odds if missing
-    getOdds(String(eventId)).then(env => {
-      if (!active) return;
-      const d = env.data as { odds?: Array<DataObject> } | undefined;
-      const odds = (d && Array.isArray(d.odds)) ? d.odds : [];
-      if (!odds.length) return;
-      const pickNum = (o: DataObject, keys: string[]) => {
-        for (const k of keys) {
-          const v = (o as Record<string, unknown>)[k];
-          if (typeof v === 'number') return v;
-          if (typeof v === 'string' && v.trim() && !Number.isNaN(Number(v))) return Number(v);
-        }
-        return undefined;
-      };
-      // Try to find a 1X2 market
-      const o = odds[0] as Record<string, unknown>;
-      const h = pickNum(o as DataObject, ['home','home_odds','H','one','1']);
-      const dDraw = pickNum(o as DataObject, ['draw','draw_odds','X']);
-      const a = pickNum(o as DataObject, ['away','away_odds','A','two','2']);
-      if (h && dDraw && a) {
-        const pH = 1 / h; const pD = 1 / dDraw; const pA = 1 / a;
-        const sum = pH + pD + pA;
-        const wp = { home: pH / sum, draw: pD / sum, away: pA / sum } as RenderEvent['winProbabilities'];
-        setEvent(prev => prev ? { ...prev, winProbabilities: prev.winProbabilities ?? wp } : prev);
-      }
-    }).catch(() => {});
-
     return () => { active = false; };
   }, [eventId]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    let active = true;
+    postCollect("analysis.match_insights", { eventId: String(eventId) })
+      .then(env => {
+        if (!active) return;
+        const data = (env?.data ?? {}) as Record<string, unknown>;
+        const insightsRaw = data.insights;
+        const insights = insightsRaw && typeof insightsRaw === "object" ? (insightsRaw as Record<string, unknown>) : undefined;
+        const winprobContainer = insights ?? data;
+        const winprobRaw = winprobContainer.winprob;
+        const winprob = winprobRaw && typeof winprobRaw === "object"
+          ? (winprobRaw as Record<string, unknown>)
+          : undefined;
+
+        const norm = (val?: unknown) => {
+          if (typeof val !== "number") return 0;
+          if (Number.isNaN(val)) return 0;
+          return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
+        };
+
+        const homePct = norm(winprob?.home);
+        const drawPct = norm(winprob?.draw);
+        const awayPct = norm(winprob?.away);
+
+        setWinProbDisplay({ home: homePct, draw: drawPct, away: awayPct });
+        setEvent(prev => prev ? {
+          ...prev,
+          winProbabilities: {
+            home: homePct / 100,
+            draw: drawPct / 100,
+            away: awayPct / 100,
+          },
+        } : prev);
+      })
+      .catch(() => {
+        if (!active) return;
+        setWinProbDisplay({ home: 0, draw: 0, away: 0 });
+      });
+    return () => { active = false; };
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!eventRaw) {
+      setTimeline([]);
+      setLeaders(null);
+      setBest(null);
+      return;
+    }
+    setTimeline(buildTimeline(eventRaw));
+    setLeaders(computeLeaders(eventRaw));
+    const rawBest = (eventRaw as Record<string, unknown>)?.best_player ?? (eventRaw as Record<string, unknown>)?.bestPlayer;
+    if (rawBest && typeof rawBest === "object") {
+      const candidate = rawBest as { name?: string; score?: number };
+      if (candidate.name) {
+        setBest({ name: candidate.name, score: typeof candidate.score === "number" ? candidate.score : undefined });
+        return;
+      }
+    } else if (typeof rawBest === "string" && rawBest.trim()) {
+      setBest({ name: rawBest });
+      return;
+    }
+    setBest(computeBestPlayer(eventRaw));
+  }, [eventRaw]);
+
+  useEffect(() => {
+    if (!event?.league) {
+      setTable([]);
+      return;
+    }
+    let active = true;
+    getLeagueTable(event.league)
+      .then(env => {
+        if (!active) return;
+        const d = env.data as { table?: Array<DataObject> } | undefined;
+        const arr = (d && Array.isArray(d.table)) ? d.table : [];
+        const mapped = arr.slice(0, 12).map((r, index) => {
+          const rec = r as Record<string, unknown>;
+          const pos = typeof rec.position === "number" ? rec.position : parseNumber(rec.rank) ?? index + 1;
+          const teamName = pickString(rec, ["team", "team_name", "name"]);
+          const played = parseNumber(rec.played);
+          const points = parseNumber(rec.points);
+          return { position: pos ?? index + 1, team: teamName, played, points };
+        });
+        setTable(mapped);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTable([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [event?.league]);
+
+  useEffect(() => {
+    if (!event) {
+      setTeamsExtra({ home: null, away: null });
+      setPlayersExtra({ home: [], away: [] });
+      setOddsExtra({ listed: [], live: [] });
+      setFormExtra({ home: [], away: [] });
+      setSeasonsExtra([]);
+      setH2hExtra(null);
+      setExtrasErrors({});
+      setExtrasLoading(false);
+      return;
+    }
+
+    let active = true;
+    setExtrasLoading(true);
+    const nextErrors: NonNullable<MatchExtrasTabsProps["errors"]> = {};
+    const seasonArgs = extractLeagueIdentifiers(event, eventRaw);
+
+    const requests = [
+      event.homeTeam ? getTeam(event.homeTeam) : Promise.resolve(null),
+      event.awayTeam ? getTeam(event.awayTeam) : Promise.resolve(null),
+      event.homeTeam ? listTeamPlayers(event.homeTeam) : Promise.resolve(null),
+      event.awayTeam ? listTeamPlayers(event.awayTeam) : Promise.resolve(null),
+      event.eventId ? postCollect("odds.list", { eventId: event.eventId }) : Promise.resolve(null),
+      event.eventId ? postCollect("odds.live", { eventId: event.eventId }) : Promise.resolve(null),
+      seasonArgs ? listSeasons(seasonArgs) : Promise.resolve(null),
+      event.eventId ? getForm(event.eventId) : Promise.resolve(null),
+      event.homeTeam && event.awayTeam ? getH2HByTeams(event.homeTeam, event.awayTeam) : Promise.resolve(null),
+    ] as const;
+
+    Promise.allSettled(requests)
+      .then(results => {
+        if (!active) return;
+        const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, seasonsRes, formRes, h2hRes] = results;
+
+        const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value) : null;
+        const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value) : null;
+        if (!homeTeamData && !awayTeamData && (homeTeamRes.status === "rejected" || awayTeamRes.status === "rejected")) {
+          nextErrors.teams = "Unable to load team profiles.";
+        }
+        setTeamsExtra({ home: homeTeamData, away: awayTeamData });
+
+        const homePlayers = isFulfilled(homePlayersRes) ? parsePlayersResponse(homePlayersRes.value) : [];
+        const awayPlayers = isFulfilled(awayPlayersRes) ? parsePlayersResponse(awayPlayersRes.value) : [];
+        if (!homePlayers.length && !awayPlayers.length && (homePlayersRes.status === "rejected" || awayPlayersRes.status === "rejected")) {
+          nextErrors.players = "Unable to load squad information.";
+        }
+        setPlayersExtra({ home: homePlayers, away: awayPlayers });
+
+        const listedOdds = isFulfilled(oddsListRes) ? parseOddsResponse(oddsListRes.value) : [];
+        const liveOdds = isFulfilled(oddsLiveRes) ? parseOddsResponse(oddsLiveRes.value) : [];
+        if (!listedOdds.length && !liveOdds.length && (oddsListRes.status === "rejected" || oddsLiveRes.status === "rejected")) {
+          nextErrors.odds = "Odds data unavailable.";
+        }
+        setOddsExtra({ listed: listedOdds, live: liveOdds });
+
+        const seasonsData = isFulfilled(seasonsRes) ? parseSeasonsResponse(seasonsRes.value) : [];
+        if (!seasonsData.length && seasonsRes.status === "rejected") {
+          nextErrors.seasons = "Unable to load seasons.";
+        }
+        setSeasonsExtra(seasonsData);
+
+        const formData = isFulfilled(formRes) ? parseFormResponse(formRes.value) : { home: [], away: [] };
+        if (!formData.home.length && !formData.away.length && formRes.status === "rejected") {
+          nextErrors.form = "Recent form unavailable.";
+        }
+        setFormExtra(formData);
+
+        const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value) : null;
+        if (!h2hData && h2hRes.status === "rejected") {
+          nextErrors.h2h = "Unable to load head-to-head results.";
+        }
+        setH2hExtra(h2hData);
+      })
+      .catch(error => {
+        if (!active) return;
+        nextErrors.general = error instanceof Error ? error.message : String(error);
+      })
+      .finally(() => {
+        if (!active) return;
+        setExtrasErrors(nextErrors);
+        setExtrasLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [event, eventRaw]);
 
   const match = event;
 
@@ -287,19 +479,19 @@ export default function MatchPage() {
             <div className="grid grid-cols-3 gap-4 text-center">
               <div className="space-y-2">
                 <div className="text-2xl font-bold text-green-600">
-                  {(((match.winProbabilities?.home ?? 0) * 100).toFixed(0))}%
+                  {winProbDisplay.home.toFixed(0)}%
                 </div>
                 <div className="text-sm text-muted-foreground">{match.homeTeam} Win</div>
               </div>
               <div className="space-y-2">
                 <div className="text-2xl font-bold text-yellow-600">
-                  {(((match.winProbabilities?.draw ?? 0) * 100).toFixed(0))}%
+                  {winProbDisplay.draw.toFixed(0)}%
                 </div>
                 <div className="text-sm text-muted-foreground">Draw</div>
               </div>
               <div className="space-y-2">
                 <div className="text-2xl font-bold text-blue-600">
-                  {(((match.winProbabilities?.away ?? 0) * 100).toFixed(0))}%
+                  {winProbDisplay.away.toFixed(0)}%
                 </div>
                 <div className="text-sm text-muted-foreground">{match.awayTeam} Win</div>
               </div>
@@ -404,75 +596,47 @@ export default function MatchPage() {
           </TabsContent>
 
           <TabsContent value="events" className="space-y-4">
-            {match.events?.map((event: { time?: number; type?: string; team?: string; player?: string }, index: number) => (
-              <Card key={index}>
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                      <span className="font-semibold text-primary">{event.time}&apos;</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-2">
-                        {event.type === "goal" && <div className="w-2 h-2 rounded-full bg-green-500"></div>}
-                        {event.type === "yellow" && <div className="w-2 h-2 rounded-full bg-yellow-500"></div>}
-                        {event.type === "red" && <div className="w-2 h-2 rounded-full bg-red-500"></div>}
-                        <span className="font-medium capitalize">{event.type}</span>
-                        <span className="text-muted-foreground">•</span>
-                        <span>{event.player}</span>
-                        <span className="text-muted-foreground">
-                          ({event.team === "home" ? match.homeTeam : match.awayTeam})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            <Card>
+              <CardContent className="p-4">
+                <Timeline items={timeline} />
+              </CardContent>
+            </Card>
+            <BestPlayerCard best={best} />
+            <LeadersCard leaders={leaders} />
           </TabsContent>
 
           <TabsContent value="analysis" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Match Analysis</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground leading-relaxed">
-                  This was an exciting London derby with Arsenal taking control early through goals from Gabriel Jesus and Martin Ødegaard. 
-                  Chelsea fought back with a goal from Raheem Sterling but couldn&apos;t find the equalizer despite late pressure.
-                </p>
-              </CardContent>
-            </Card>
+            <MatchSummaryCard
+              event={{
+                eventId: match.eventId,
+                homeTeam: match.homeTeam,
+                awayTeam: match.awayTeam,
+                homeScore: match.homeScore,
+                awayScore: match.awayScore,
+                status: match.status,
+                venue: match.venue,
+                date: match.date,
+              }}
+              rawEvent={eventRaw}
+            />
+
             <HighlightsCarousel highlights={highlights} isLoading={false} />
 
-            {/* Standings */}
-            {match.league && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>{match.league} Standings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <LeagueTable leagueName={match.league} onLoaded={setTable} rows={table} />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Comments */}
-            {comments.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Match Comments</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {comments.map((c, i)=> (
-                    <div key={i} className="text-sm text-muted-foreground">
-                      {c.time && <span className="font-mono mr-2">{c.time}</span>}
-                      <span>{c.text}</span>
-                      {c.author && <span className="ml-2">— {c.author}</span>}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
+            <MatchExtrasTabs
+              loading={extrasLoading}
+              homeTeam={match.homeTeam}
+              awayTeam={match.awayTeam}
+              teams={teamsExtra}
+              players={playersExtra}
+              leagueTable={table}
+              odds={oddsExtra}
+              probabilities={winProbDisplay}
+              form={formExtra}
+              comments={comments}
+              seasons={seasonsExtra}
+              h2h={h2hExtra}
+              errors={extrasErrors}
+            />
 
             {/* Event Highlight Search (legacy-inspired) */}
             <Card>
@@ -548,48 +712,130 @@ export default function MatchPage() {
   );
 }
 
-// Inline component to fetch and show league table while keeping page layout minimal
-function LeagueTable({ leagueName, onLoaded, rows }: { leagueName: string; onLoaded: (r: Array<{ position?: number; team?: string; played?: number; points?: number }>) => void; rows: Array<{ position?: number; team?: string; played?: number; points?: number }>; }) {
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    getLeagueTable(leagueName).then(env => {
-      if (!active) return;
-      const d = env.data as { table?: Array<DataObject> } | undefined;
-      const arr = (d && Array.isArray(d.table)) ? d.table : [];
-      const mapped = arr.slice(0,10).map((r) => {
-        const rec = r as unknown as Record<string, unknown>;
-        const rankVal = rec.rank;
-        const teamName = typeof rec.team_name === 'string' ? rec.team_name : undefined;
-        return {
-          position: typeof rec.position === 'number' ? rec.position : (typeof rankVal === 'string' && rankVal.trim() ? Number(rankVal) : undefined),
-          team: typeof rec.team === 'string' ? rec.team : teamName,
-          played: typeof rec.played === 'number' ? rec.played : undefined,
-          points: typeof rec.points === 'number' ? rec.points : undefined,
-        };
-      });
-      onLoaded(mapped);
-    }).catch(()=> onLoaded([])).finally(()=> setLoading(false));
-    return () => { active = false; };
-  }, [leagueName, onLoaded]);
-  if (loading && rows.length === 0) return <div className="text-sm text-muted-foreground">Loading standings…</div>;
-  if (rows.length === 0) return <div className="text-sm text-muted-foreground">Standings unavailable</div>;
-  return (
-    <div className="text-sm">
-      <div className="grid grid-cols-4 gap-2 font-medium text-muted-foreground mb-2">
-        <div>#</div><div>Team</div><div>P</div><div>Pts</div>
-      </div>
-      <div className="space-y-1">
-        {rows.map((r, i)=> (
-          <div key={i} className="grid grid-cols-4 gap-2">
-            <div>{r.position ?? i+1}</div>
-            <div className="truncate">{r.team}</div>
-            <div>{r.played ?? '-'}</div>
-            <div>{r.points ?? '-'}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function isFulfilled<T>(result: PromiseSettledResult<T>): result is PromiseFulfilledResult<T> {
+  return result.status === "fulfilled";
+}
+
+function toDataObjectArray(value: unknown): DataObject[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(item => item && typeof item === "object") as DataObject[];
+}
+
+function parseTeamResponse(res: Awaited<ReturnType<typeof getTeam>> | null): DataObject | null {
+  if (!res) return null;
+  const candidates = [res.data, (res as unknown as Record<string, unknown>).teams, res];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (Array.isArray(candidate) && candidate.length) return candidate[0] as DataObject;
+    if (typeof candidate === "object") {
+      const record = candidate as Record<string, unknown>;
+      if (Array.isArray(record.teams) && record.teams.length) return record.teams[0] as DataObject;
+      if (Array.isArray(record.team) && record.team.length) return record.team[0] as DataObject;
+      return candidate as DataObject;
+    }
+  }
+  return null;
+}
+
+function parsePlayersResponse(res: Awaited<ReturnType<typeof listTeamPlayers>> | null): DataObject[] {
+  if (!res) return [];
+  const record = res as Record<string, unknown>;
+  const sources = [
+    record.data,
+    record.result,
+    record.results,
+    record.players,
+    res,
+  ];
+  for (const source of sources) {
+    if (!source) continue;
+    if (Array.isArray(source) && source.length) return toDataObjectArray(source);
+    if (typeof source === "object") {
+      const inner = source as Record<string, unknown>;
+      if (Array.isArray(inner.players) && inner.players.length) return toDataObjectArray(inner.players);
+      if (Array.isArray(inner.result) && inner.result.length) return toDataObjectArray(inner.result);
+      if (Array.isArray(inner.results) && inner.results.length) return toDataObjectArray(inner.results);
+    }
+  }
+  return [];
+}
+
+function parseOddsResponse(res: { data?: unknown } | null): DataObject[] {
+  if (!res) return [];
+  const data = res.data;
+  if (!data) return [];
+  if (Array.isArray(data)) return toDataObjectArray(data);
+  if (typeof data === "object") {
+    const record = data as Record<string, unknown>;
+    if (Array.isArray(record.odds)) return toDataObjectArray(record.odds);
+    if (Array.isArray(record.result)) return toDataObjectArray(record.result);
+    if (Array.isArray(record.results)) return toDataObjectArray(record.results);
+  }
+  return [];
+}
+
+function parseSeasonsResponse(res: Awaited<ReturnType<typeof listSeasons>> | null): DataObject[] {
+  if (!res) return [];
+  const record = res as Record<string, unknown>;
+  const candidates = [record.data, record.result, record.seasons, res];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length) return toDataObjectArray(candidate);
+  }
+  return [];
+}
+
+function parseFormResponse(res: unknown): { home: unknown[]; away: unknown[] } {
+  if (!res || typeof res !== "object") return { home: [], away: [] };
+  const record = res as Record<string, unknown>;
+  const data = record.data && typeof record.data === "object" ? (record.data as Record<string, unknown>) : record;
+  const homeMetrics = data.home_metrics as Record<string, unknown> | undefined;
+  const awayMetrics = data.away_metrics as Record<string, unknown> | undefined;
+  const homeTeam = data.home_team as Record<string, unknown> | undefined;
+  const awayTeam = data.away_team as Record<string, unknown> | undefined;
+  const home = Array.isArray(homeMetrics?.last_results)
+    ? (homeMetrics!.last_results as unknown[])
+    : Array.isArray(homeTeam?.recent)
+      ? (homeTeam!.recent as unknown[])
+      : [];
+  const away = Array.isArray(awayMetrics?.last_results)
+    ? (awayMetrics!.last_results as unknown[])
+    : Array.isArray(awayTeam?.recent)
+      ? (awayTeam!.recent as unknown[])
+      : [];
+  return { home, away };
+}
+
+function parseH2HResponse(res: unknown): { matches: DataObject[] } | null {
+  if (!res || typeof res !== "object") return null;
+  const record = res as Record<string, unknown>;
+  const data = record.data && typeof record.data === "object" ? (record.data as Record<string, unknown>) : record;
+  const matches = toDataObjectArray(data.matches ?? data.results ?? data.games ?? []);
+  if (!matches.length) return null;
+  return { matches };
+}
+
+function extractLeagueIdentifiers(event: RenderEvent, rawEvent: DataObject | null): { leagueId?: string; leagueName?: string } | null {
+  const record = rawEvent as Record<string, unknown> | null;
+  const leagueId = record ? pickString(record, ["league_id", "league_key", "idLeague", "leagueid"]) : "";
+  const leagueName = event.league || (record ? pickString(record, ["league", "league_name", "competition"]) : "");
+  if (leagueId) return { leagueId };
+  if (leagueName) return { leagueName };
+  return null;
+}
+
+function parseNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function pickString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
 }

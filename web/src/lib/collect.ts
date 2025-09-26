@@ -96,6 +96,26 @@ export async function getHighlights(eventId: string) {
   return postCollect<{ videos?: DataObject[] }>("video.highlights", { eventId: String(eventId) });
 }
 
+export async function getTeam(teamName: string) {
+  const clean = sanitizeInput(teamName);
+  if (!clean) throw new Error("Team name is required");
+  return postCollect<{ team?: DataObject; teams?: DataObject[] }>("team.get", { teamName: clean });
+}
+
+export async function listTeamPlayers(teamName: string) {
+  const clean = sanitizeInput(teamName);
+  if (!clean) throw new Error("Team name is required");
+  return postCollect<{ players?: DataObject[] }>("players.list", { teamName: clean });
+}
+
+export async function listSeasons(args: { leagueId?: string; leagueName?: string }) {
+  const payload: Record<string, Json> = {};
+  if (args.leagueId) payload.leagueId = sanitizeInput(String(args.leagueId));
+  else if (args.leagueName) payload.leagueName = sanitizeInput(args.leagueName);
+  if (!Object.keys(payload).length) throw new Error("leagueId or leagueName required");
+  return postCollect<{ seasons?: DataObject[] }>("seasons.list", payload);
+}
+
 // ---- Extra helpers to mirror legacy match.js ----
 export async function getH2HByTeams(teamA: string, teamB: string, lookback = 10) {
   const u = new URL("/api/analysis/h2h", window.location.origin);

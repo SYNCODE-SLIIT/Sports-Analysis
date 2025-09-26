@@ -33,7 +33,8 @@ export default function LivePage() {
     return liveMatches.filter(m =>
       m.home_team.toLowerCase().includes(q) ||
       m.away_team.toLowerCase().includes(q) ||
-      (m.league?.toLowerCase().includes(q) ?? false)
+      (m.league?.toLowerCase().includes(q) ?? false) ||
+      (m.venue?.toLowerCase().includes(q) ?? false)
     );
   }, [debounced, liveMatches]);
 
