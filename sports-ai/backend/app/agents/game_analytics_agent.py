@@ -1,0 +1,602 @@
+"""
+AllSports RAW agent — zero normalization, zero filtering.
+
+This module exposes a tiny pass-through client and an agent that mirrors a broad
+set of AllSportsAPI Football endpoints. It ALWAYS returns the provider's raw
+JSON object under "data" (including keys like "success", "result", "error", etc.).
+No schema shaping, no field picking, no client-side filtering.
+
+Supported intents (pass-through):
+  - countries.list           -> met=Countries
+  - leagues.list             -> met=Leagues (optional: countryId)
+  - fixtures.list            -> met=Fixtures (supports provider params as-is)
+  - events.list              -> alias to fixtures.list
+  - events.live              -> met=Livescore
+  - livescore.list           -> alias to events.live
+  - event.get                -> met=Fixtures (matchId=eventId)
+  - teams.list               -> met=Teams
+  - team.get                 -> met=Teams (same as list; no picking)
+  - players.list             -> met=Players
+  - player.get               -> met=Players (same as list; no picking)
+  - league.table             -> met=Standings
+  - video.highlights         -> met=Videos
+  - odds.list                -> met=Odds
+  - odds.live                -> met=OddsLive
+  - probabilities.list       -> met=Probabilities
+  - comments.list            -> met=Comments
+  - seasons.list             -> met=Leagues (raw; caller may filter by leagueId/Name if desired)
+  - h2h                      -> met=H2H
+  - Name-based args supported: countryName -> countryId, leagueName -> leagueId, teamName (native), playerName (native).
+
+Design notes:
+  • Absolutely no normalization. We just add `APIkey` and forward `args` as query params.
+  • We return *everything the provider returns* under response["data"].
+  • Minimal tracing is included for debugging (last request meta).
+"""
+
+from __future__ import annotations
+
+import os
+import time
+from typing import Any, Dict, Optional
+
+import requests
+import joblib
+
+
+# -----------------------
+# Config
+# -----------------------
+
+ALLSPORTS_API_KEY = os.environ.get("ALLSPORTS_API_KEY")
+ALLSPORTS_BASE_URL = (os.environ.get("ALLSPORTS_BASE_URL") or "https://apiv2.allsportsapi.com/football/").rstrip("/")
+
+
+# -----------------------
+# Errors
+# -----------------------
+
+class CollectorError(Exception):
+    def __init__(self, code: str, message: str, details: Dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+
+# -----------------------
+# Raw HTTP helper
+# -----------------------
+
+def _raw_get(params: Dict[str, Any], timeout: int = 30) -> Dict[str, Any]:
+    """Perform a GET to AllSports with the given params (plus APIkey + cache-buster).
+    Returns: a dict with keys {ok, status, data, text_head} where `data` is the parsed JSON or None.
+    """
+    q = dict(params or {})
+    q["APIkey"] = ALLSPORTS_API_KEY or ""  # allow empty for clearer errors
+    q["_ts"] = str(time.time())
+    try:
+        r = requests.get(ALLSPORTS_BASE_URL, params=q, timeout=timeout)
+        head = (r.text or "")[:200]
+        try:
+            data = r.json()
+        except Exception:
+            data = None
+        return {"ok": r.status_code == 200, "status": r.status_code, "data": data, "text_head": head, "sent": q}
+    except Exception as e:
+        return {"ok": False, "status": 0, "data": None, "text_head": f"exc: {e}", "sent": q}
+
+
+# -----------------------
+# Agent (pass-through)
+# -----------------------
+
+class AllSportsRawAgent:
+    """JSON-only, pass-through agent for AllSportsAPI football endpoints."""
+
+    def handle(self, request, params=None) -> Dict[str, Any]:
+        """
+        Handles both router-style: handle({"intent": ..., "args": {...}})
+        and legacy style: handle(intent, args)
+        """
+        trace: list[Dict[str, Any]] = []
+        try:
+            # Detect call style
+            if isinstance(request, dict):
+                intent = request.get("intent")
+                raw_args = request.get("args") or {}
+            else:
+                # Legacy: request is intent string, params is args dict
+                intent = request
+                raw_args = params or {}
+            # Best-effort: augment args with IDs when only names were provided
+            args = self._ensure_ids_from_names(raw_args, trace)
+            if not intent or not isinstance(intent, str):
+                raise CollectorError("BAD_REQUEST", "Missing 'intent' (string)")
+            if not isinstance(args, dict):
+                raise CollectorError("BAD_REQUEST", "'args' must be an object")
+            if not ALLSPORTS_API_KEY:
+                raise CollectorError("NO_API_KEY", "ALLSPORTS_API_KEY is not configured")
+
+            # Route → provider method + passthrough args
+            if intent == "countries.list":
+                meta, data = self._call("Countries", args, trace)
+
+            elif intent == "leagues.list":
+                # Optional passthrough: countryId
+                meta, data = self._call("Leagues", args, trace)
+
+            elif intent in ("fixtures.list", "events.list"):
+                # Provider params we simply pass through if present:
+                # from, to, date, timezone, countryId, leagueId, matchId, teamId, leagueGroup, withPlayerStats
+                meta, data = self._call("Fixtures", args, trace)
+
+            elif intent in ("events.live", "livescore.list"):
+                # Optional: timezone, countryId, leagueId, matchId, withPlayerStats
+                meta, data = self._call("Livescore", args, trace)
+
+            elif intent == "event.get":
+                # Expect eventId -> matchId
+                a = dict(args)
+                if a.get("eventId") and not a.get("matchId"):
+                    a["matchId"] = a["eventId"]
+                meta, data = self._call("Fixtures", a, trace)
+                # If caller requested augmentation, synthesize a timeline when missing
+                try:
+                    if a.get('augment_tags') and data:
+                        # extract the event dict from various possible shapes
+                        ev = None
+                        if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                            ev = data['result'][0]
+                        elif isinstance(data, dict) and data.get('event') and isinstance(data.get('event'), dict):
+                            ev = data.get('event')
+                        elif isinstance(data, dict) and (data.get('events') or data.get('fixtures')):
+                            # pick first
+                            col = data.get('events') or data.get('fixtures')
+                            if isinstance(col, list) and col:
+                                ev = col[0]
+                        elif isinstance(data, dict) and data:
+                            # provider sometimes returns the event object directly
+                            # pick first dict-like nested value
+                            for v in data.values():
+                                if isinstance(v, dict) and v.get('event_key'):
+                                    ev = v
+                                    break
+
+                        if ev is not None:
+                            # ensure timeline key exists
+                            tl_keys = ('timeline','timeline_items','events','event_timeline')
+                            existing = None
+                            for k in tl_keys:
+                                if isinstance(ev.get(k), list):
+                                    existing = ev.get(k)
+                                    break
+                            if not existing or len(existing) == 0:
+                                synthesized = _synthesize_timeline_from_event(ev)
+                                if synthesized:
+                                    # attach under 'timeline' for consistency
+                                    ev['timeline'] = synthesized
+                                    # if data.result exists, replace the first element
+                                    if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                                        data['result'][0] = ev
+                            # run tag augmentation in-place (use provided model_path if supplied)
+                            if isinstance(ev.get('timeline'), list):
+                                model_obj = None
+                                model_path = a.get('model_path') or a.get('model')
+                                if model_path:
+                                    try:
+                                        model_obj = _load_model_cached(model_path)
+                                    except Exception:
+                                        model_obj = None
+                                _augment_timeline_with_tags(ev['timeline'], model=model_obj)
+                                # ensure returned data reflects changes
+                                if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                                    data['result'][0] = ev
+                except Exception:
+                    # never fail the intent due to augmentation/synthesis problems
+                    pass
+
+            elif intent == "teams.list":
+                # Accept leagueId, teamId, teamName
+                meta, data = self._call("Teams", args, trace)
+
+            elif intent == "team.get":
+                # Same as list, no picking — caller decides
+                meta, data = self._call("Teams", args, trace)
+
+            elif intent == "players.list":
+                # Accept playerId, playerName, leagueId, teamId
+                meta, data = self._call("Players", args, trace)
+
+            elif intent == "player.get":
+                # Same as list
+                meta, data = self._call("Players", args, trace)
+
+            elif intent == "league.table":
+                # Accept leagueId (+ optional league_season/season)
+                # If 'season' was provided, map to provider's 'league_season' transparently.
+                a = dict(args)
+                if a.get("season") and not a.get("league_season"):
+                    a["league_season"] = a["season"]
+                meta, data = self._call("Standings", a, trace)
+
+            elif intent == "video.highlights":
+                # Requires eventId
+                a = dict(args)
+                if a.get("eventId"):
+                    a.setdefault("matchId", a["eventId"])  # provider sometimes accepts either
+                meta, data = self._call("Videos", a, trace)
+
+            elif intent == "odds.list":
+                # from, to, countryId, leagueId, matchId
+                meta, data = self._call("Odds", args, trace)
+
+            elif intent == "odds.live":
+                meta, data = self._call("OddsLive", args, trace)
+
+            elif intent == "probabilities.list":
+                meta, data = self._call("Probabilities", args, trace)
+
+            elif intent == "comments.list":
+                # from, to, live, countryId, leagueId, matchId, timezone
+                meta, data = self._call("Comments", args, trace)
+
+            elif intent == "h2h":
+                # Head-to-head: provider expects param "h2h" as "firstTeamId-secondTeamId".
+                # Accept flexible args and compose when missing.
+                a = dict(args or {})
+                if not a.get("h2h"):
+                    fa = a.get("firstTeamId") or a.get("teamA") or a.get("team_a")
+                    fb = a.get("secondTeamId") or a.get("teamB") or a.get("team_b")
+                    if fa and fb:
+                        a["h2h"] = f"{fa}-{fb}"
+                meta, data = self._call("H2H", a, trace)
+
+            elif intent == "seasons.list":
+                # No dedicated endpoint; return raw Leagues so caller can inspect seasons.
+                meta, data = self._call("Leagues", args, trace)
+
+            else:
+                raise CollectorError("UNKNOWN_INTENT", f"Unsupported intent '{intent}'")
+
+            return {
+                "ok": True,
+                "intent": intent,
+                "args_resolved": args,
+                "data": data,                 # RAW provider body
+                "meta": {"trace": trace, "base_url": ALLSPORTS_BASE_URL},
+            }
+
+        except CollectorError as e:
+            return {
+                "ok": False,
+                "error": {"code": e.code, "message": e.message, "details": e.details},
+                "meta": {"trace": trace, "base_url": ALLSPORTS_BASE_URL},
+            }
+        except Exception as e:
+            return {
+                "ok": False,
+                "error": {"code": "INTERNAL", "message": str(e)},
+                "meta": {"trace": trace, "base_url": ALLSPORTS_BASE_URL},
+            }
+
+    # ------------- internals -------------
+
+    def _call(self, met: str, args: Dict[str, Any], trace: list[Dict[str, Any]]):
+        params = dict(args or {})
+        params["met"] = met
+        res = _raw_get(params)
+        trace.append({
+            "step": "allsports_call",
+            "met": met,
+            "status": res.get("status"),
+            "sent": {k: v for k, v in (res.get("sent") or {}).items() if k != "APIkey"},
+            "ok": res.get("ok"),
+        })
+        # Return the provider body exactly under "data"
+        return {"met": met, "status": res.get("status")}, (res.get("data") if res else None)
+
+    # -----------------------
+    # Name resolvers (zero normalization — just ID lookup)
+    # -----------------------
+    def _resolve_country_id(self, country_name: str, trace: list[dict]) -> str | None:
+        if not country_name:
+            return None
+        meta, data = self._call("Countries", {}, trace)
+        countries = (data or {}).get("result") or []
+        name_l = country_name.strip().lower()
+        # prefer exact match, fallback to contains
+        exact = [c for c in countries if (c.get("country_name") or "").strip().lower() == name_l]
+        cand = exact or [c for c in countries if name_l in (c.get("country_name") or "").strip().lower()]
+        return (cand[0].get("country_key") if cand and cand[0].get("country_key") else None)
+
+    def _resolve_league_id(self, league_name: str, trace: list[dict], *, countryId: str | None = None) -> str | None:
+        if not league_name:
+            return None
+        args = {}
+        if countryId:
+            args["countryId"] = countryId
+        meta, data = self._call("Leagues", args, trace)
+        leagues = (data or {}).get("result") or []
+        name_l = league_name.strip().lower()
+        exact = [l for l in leagues if (l.get("league_name") or "").strip().lower() == name_l]
+        cand = exact or [l for l in leagues if name_l in (l.get("league_name") or "").strip().lower()]
+        return (cand[0].get("league_key") if cand and cand[0].get("league_key") else None)
+
+    def _ensure_ids_from_names(self, args: Dict[str, Any], trace: list[dict]) -> Dict[str, Any]:
+        """
+        Best-effort: if caller provided *Name fields, resolve to corresponding IDs for AllSports.
+        Does not remove the name fields; just augments with IDs so provider can filter.
+        Supported:
+          - countryName -> countryId
+          - leagueName  -> leagueId   (optionally uses countryId if available)
+          - teamName    -> teamId     (native endpoint supports it; we leave it as-is but also try resolving to a specific teamId when useful)
+          - playerName  -> playerId   (left as-is; endpoint supports it)
+          - eventId is also mirrored into matchId where appropriate elsewhere.
+        """
+        a = dict(args or {})
+
+        # countryName → countryId
+        if a.get("countryName") and not a.get("countryId"):
+            cid = self._resolve_country_id(a["countryName"], trace)
+            if cid:
+                a["countryId"] = cid
+
+        # leagueName → leagueId (optionally scoped by countryId if we have it)
+        if a.get("leagueName") and not a.get("leagueId"):
+            lid = self._resolve_league_id(a["leagueName"], trace, countryId=str(a.get("countryId")) if a.get("countryId") else None)
+            if lid:
+                a["leagueId"] = lid
+
+        # teamName: AllSports Teams/Players endpoints already accept teamName,
+        # but for Fixtures/Livescore it requires teamId. We'll try to resolve to teamId using Teams.
+        if a.get("teamName") and not a.get("teamId"):
+            # Try Teams with teamName (+ optional leagueId) to find a precise id
+            q = {"teamName": a["teamName"]}
+            if a.get("leagueId"):
+                q["leagueId"] = a["leagueId"]
+            meta, data = self._call("Teams", q, trace)
+            teams = (data or {}).get("result") or []
+            name_l = a["teamName"].strip().lower()
+            exact = [t for t in teams if (t.get("team_name") or "").strip().lower() == name_l]
+            pick = (exact[0] if exact else (teams[0] if teams else None))
+            if pick and pick.get("team_key"):
+                a["teamId"] = pick["team_key"]
+
+        # Trace when teamName could not be resolved to an id (helps router fallback decisions)
+        if a.get("teamName") and not a.get("teamId"):
+            trace.append({
+                "step": "asapi_team_resolve_failed",
+                "teamName": a.get("teamName"),
+                "leagueId": a.get("leagueId")
+            })
+
+        # playerName: native support exists — we leave it in place.
+        return a
+
+
+def _synthesize_timeline_from_event(ev: Dict[str, Any]) -> list:
+    """Create a lightweight timeline from available event data when provider doesn't supply one.
+    This inspects common fields like scorers/players/goals and comments and synthesizes simple
+    minute/description entries. Returns a list of timeline items or empty list.
+    """
+    out = []
+    try:
+        # 1) Scorers (common shapes)
+        if isinstance(ev.get('scorers'), list) and ev.get('scorers'):
+            for s in ev.get('scorers'):
+                minute = s.get('minute') or s.get('time') or s.get('comments_time') or s.get('minute_played')
+                player = s.get('name') or s.get('player') or s.get('player_name')
+                desc = s.get('text') or s.get('description') or (f"Goal by {player}" if player else 'Goal')
+                out.append({'minute': minute or '', 'description': desc})
+
+        # 2) AllSports often has home/away scorers lists
+        if not out:
+            for key in ('scorers_home','home_scorers','goals_home'):
+                arr = ev.get(key)
+                if isinstance(arr, list) and arr:
+                    for s in arr:
+                        minute = s.get('minute') if isinstance(s, dict) else None
+                        player = (s.get('name') if isinstance(s, dict) else s) or ''
+                        desc = f"Goal by {player}" if player else 'Goal'
+                        out.append({'minute': minute or '', 'description': desc})
+
+        # 2b) Substitutions: providers may include structured objects or simple strings
+        # Try to capture player_in / player_out when possible to make UI richer.
+        subs_keys = ('substitutes', 'substitutions', 'substitute', 'subs')
+        for sk in subs_keys:
+            arr = ev.get(sk)
+            if isinstance(arr, list) and arr:
+                for s in arr:
+                    try:
+                        minute = None
+                        player_in = None
+                        player_out = None
+                        desc = ''
+                        if isinstance(s, dict):
+                            minute = s.get('minute') or s.get('time') or ''
+                            # common shapes: player_in/player_out or player_on/player_off
+                            player_in = s.get('player_in') or s.get('player_on') or s.get('on') or s.get('in')
+                            player_out = s.get('player_out') or s.get('player_off') or s.get('off') or s.get('out')
+                            desc = s.get('description') or s.get('text') or ''
+                        else:
+                            # sometimes it's a plain string like "Player A ON for Player B"
+                            txt = str(s)
+                            desc = txt
+                            # try to extract "X on for Y" or "Substitution: X on, Y off"
+                            import re
+                            m = re.search(r"(?P<in>[^,]+?)\s+on\s+for\s+(?P<out>.+)", txt, flags=re.I)
+                            if not m:
+                                m = re.search(r"(?P<out>[^,]+?)\s+off\s+for\s+(?P<in>.+)", txt, flags=re.I)
+                            if m:
+                                player_in = (m.group('in') or '').strip()
+                                player_out = (m.group('out') or '').strip()
+
+                        item = {'minute': minute or '', 'description': desc or 'Substitution'}
+                        if player_in:
+                            item['player_in'] = player_in
+                        if player_out:
+                            item['player_out'] = player_out
+                        out.append(item)
+                    except Exception:
+                        # ignore malformed substitution entries
+                        pass
+
+        if not out:
+            # 3) Try a generic 'goals' or 'scorers' mapping where keys map to minutes
+            for k in ('goals','scorers_map'):
+                g = ev.get(k)
+                if isinstance(g, dict):
+                    for player, m in g.items():
+                        out.append({'minute': m or '', 'description': f"Goal by {player}"})
+
+        # 4) Fallback: if we have final scores, synthesize a summary event
+        if not out and (ev.get('home_score') is not None or ev.get('away_score') is not None):
+            h = ev.get('event_home_team') or ev.get('strHomeTeam') or 'Home'
+            a = ev.get('event_away_team') or ev.get('strAwayTeam') or 'Away'
+            score = f"{ev.get('home_score','-')} - {ev.get('away_score','-')}"
+            out.append({'minute': 'FT', 'description': f'Full time: {h} {score} {a}'})
+    except Exception:
+        return []
+
+    return out
+
+
+# Simple model cache to avoid repeated disk loads
+_MODEL_CACHE: Dict[str, Any] = {}
+
+def _load_model_cached(path: str):
+    """Load a joblib model from path and cache it by path+mtime.
+    Returns the loaded model or raises if not loadable.
+    """
+    if not path:
+        raise FileNotFoundError('empty model path')
+    p = os.path.abspath(path)
+    if not os.path.exists(p):
+        raise FileNotFoundError(p)
+    mtime = os.path.getmtime(p)
+    key = f"{p}:{mtime}"
+    cached = _MODEL_CACHE.get(key)
+    if cached:
+        return cached
+    model = joblib.load(p)
+    # keep only the latest entry to avoid memory growth
+    _MODEL_CACHE.clear()
+    _MODEL_CACHE[key] = model
+    return model
+
+
+# Backwards-compat export names (if other modules import these)
+AllSportsClient = None            # not needed in RAW version
+allsports_client = None           # no global client in RAW version
+AllSportsCollectorAgent = AllSportsRawAgent
+
+
+# -----------------------
+# Minimal analytics helpers (used by unit tests)
+# These are intentionally small, dependency-free implementations that
+# provide predictable behavior for tests and demo usage. They can be
+# replaced with richer ML or rule-based logic later.
+# -----------------------
+
+def _compute_player_hot_streak(events: list, recent_games: int = 5) -> dict:
+    """Compute a tiny hot-streak signal from a list of event dicts.
+    Expects events as a list of dicts with a numeric 'player_goals' field when available.
+    Returns a dict with keys: label, recent_goals, z_score, recent_games_used.
+    """
+    if not events:
+        return {"label": "NO_DATA", "recent_goals": 0, "z_score": 0.0, "recent_games_used": 0}
+
+    # collect goal counts
+    goals = [int(e.get("player_goals") or 0) for e in events]
+    n = len(goals)
+    mean = sum(goals) / n if n > 0 else 0.0
+    # overall population std (population, not sample)
+    var = sum((g - mean) ** 2 for g in goals) / n if n > 0 else 0.0
+    std = var ** 0.5
+
+    used = min(recent_games, n)
+    recent_slice = goals[-used:]
+    recent_goals = sum(recent_slice)
+    recent_avg = (recent_goals / used) if used > 0 else 0.0
+
+    # simple z-like score for tests (safe when std==0)
+    z = (recent_avg - mean) / std if std > 0 else 0.0
+
+    # heuristic labeling
+    if recent_avg >= max(1.5, mean * 1.5):
+        label = "HOT_STREAK"
+    else:
+        label = "NORMAL"
+
+    return {
+        "label": label,
+        "recent_goals": recent_goals,
+        "z_score": float(z),
+        "recent_games_used": used,
+    }
+
+
+def _augment_timeline_with_tags(timeline: list, model=None) -> None:
+    """Rule-based augmentation: add `predicted_tags` list to each timeline entry.
+    This is intentionally lightweight for tests and demo purposes.
+    Operates in-place and returns None.
+    """
+    if not isinstance(timeline, list):
+        return
+    for item in timeline:
+        txt = (item.get("event") or item.get("description") or "")
+        t = str(txt).lower()
+        tags = []
+        if "goal" in t:
+            tags.append("GOAL")
+        if "header" in t or "headed" in t:
+            tags.append("HEADER")
+        if "penalty" in t:
+            tags.append("PENALTY")
+        if "yellow" in t:
+            tags.append("YELLOW_CARD")
+        if "red" in t:
+            tags.append("RED_CARD")
+        if "substit" in t:
+            tags.append("SUBSTITUTION")
+
+        # Model-based prediction: if a sklearn-like pipeline is provided, call predict
+        try:
+            if model is not None:
+                if hasattr(model, 'predict'):
+                    pred = model.predict([str(txt)])
+                    if isinstance(pred, (list, tuple)) and len(pred) > 0:
+                        lab = pred[0]
+                        if lab:
+                            tags.append(str(lab).upper())
+                elif callable(model):
+                    lab = model(str(txt))
+                    if lab:
+                        tags.append(str(lab).upper())
+        except Exception:
+            # Do not let model errors break augmentation; fallback to rule-based tags
+            pass
+
+        # ensure unique and upper-cased
+        item["predicted_tags"] = list(dict.fromkeys([str(x).upper() for x in tags]))
+
+
+def _extract_multimodal_highlights(youtube_url: str, clip_duration: int = 30, **kwargs) -> dict:
+    """Wrapper that delegates to a pluggable extractor (youtube_highlight_shorts_extractor).
+    The extractor should expose `extract_youtube_shorts(youtube_url, output_dir, clip_duration, **kw)`
+    and return a list of file paths. This wrapper returns a dict with `count` and `clips`.
+    """
+    try:
+        # dynamic import so tests can inject a stub into sys.modules
+        from backend.app.models import youtube_highlight_shorts_extractor as extractor
+        clips = extractor.extract_youtube_shorts(youtube_url, clip_duration=clip_duration)
+    except Exception:
+        # fallback: return empty
+        clips = []
+
+    out_clips = []
+    for p in clips:
+        out_clips.append({"path": p, "scores": {"combined": 1.0}})
+
+    return {"count": len(out_clips), "clips": out_clips}

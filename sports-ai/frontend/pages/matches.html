@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Matches Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="../styles/matches.css" />
+</head>
+<body>
+  <header>
+    <h1>Live & Finished Matches</h1>
+    <nav class="nav">
+      <a href="./matches.html" class="active">Live</a>
+      <a href="./history_matches.html">History</a>
+    </nav>
+    <div class="controls">
+      <label>Date: <input type="date" id="datePicker" /></label>
+      <button id="refreshBtn">Refresh</button>
+      <span id="status" class="status"></span>
+    </div>
+  </header>
+  <main>
+    <section id="liveSection">
+      <h2>Live Matches <span id="liveCount" class="badge">0</span></h2>
+      <div id="liveList" class="match-grid empty">No live matches.</div>
+    </section>
+    <section id="finishedSection">
+      <h2>Finished Matches <span id="finishedCount" class="badge">0</span></h2>
+      <div id="finishedList" class="match-grid empty">No finished matches.</div>
+    </section>
+  </main>
+
+  <div id="matchModal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <button class="close" id="closeModal" aria-label="Close">&times;</button>
+  <div id="modalBody">Loading...</div>
+    </div>
+  </div>
+
+  <template id="cardTemplate">
+    <div class="match-card">
+      <div class="top-row">
+        <div class="league"></div>
+        <div class="status"></div>
+      </div>
+      <div class="teams">
+        <div class="team home">
+          <img class="logo homeLogo" alt="Home Logo" />
+          <span class="name homeName"></span>
+        </div>
+        <div class="score">
+          <span class="homeScore">-</span>
+          <span class="sep">:</span>
+          <span class="awayScore">-</span>
+        </div>
+        <div class="team away">
+          <img class="logo awayLogo" alt="Away Logo" />
+          <span class="name awayName"></span>
+        </div>
+      </div>
+      <div class="meta-row">
+        <span class="time"></span>
+        <button class="detailsBtn" type="button">Details</button>
+      </div>
+    </div>
+  </template>
+
+  <script src="../scripts/matches.js"></script>
+</body>
+</html>
