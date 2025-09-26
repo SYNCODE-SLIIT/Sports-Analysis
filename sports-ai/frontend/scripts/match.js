@@ -617,25 +617,7 @@
   }
   function createProgressBar(hv, av, pct){ const c=document.createElement('div'); c.style.cssText='height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;display:flex;'; const hn=parseFloat(hv)||0; const an=parseFloat(av)||0; const tot=hn+an; if(tot>0){ const hp=pct?hn:(hn/tot*100); const ap=pct?an:(an/tot*100); const hb=document.createElement('div'); hb.style.cssText=`width:${hp}%;background:linear-gradient(90deg,#3b82f6,#1d4ed8)`; const ab=document.createElement('div'); ab.style.cssText=`width:${ap}%;background:linear-gradient(90deg,#ef4444,#dc2626)`; c.appendChild(hb); c.appendChild(ab);} return c; }
 
-  function renderMatchTimeline(ev, container){
-    let tl = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || [];
-    if(tl && !Array.isArray(tl) && typeof tl==='object') tl = Object.values(tl).flat();
-    if(!Array.isArray(tl) || tl.length===0) tl = synthesizeTimelineFromEvent(ev);
-    if(!Array.isArray(tl) || !tl.length) return;
-    const card = document.createElement('div'); card.className='timeline-card';
-    const h = document.createElement('h3'); h.textContent='Match Timeline'; card.appendChild(h);
-    tl.forEach(e => card.appendChild(createTimelineEvent(e)));
-    container.appendChild(card);
-  }
-  function synthesizeTimelineFromEvent(ev){
-    const out=[]; const scorers=ev.scorers||ev.goals||ev.goal_scorers||[]; if(Array.isArray(scorers)) scorers.forEach(s=> out.push({minute:s.minute||s.time||'', description: s.description || `Goal by ${s.name||s.player||s.player_name||''}`, player: s.name||s.player||s.player_name||'', team: s.team||''})); return out;
-  }
-  function createTimelineEvent(e){ const d=document.createElement('div'); d.className='timeline-event'; const m=document.createElement('div'); m.className='minute'; m.textContent = e.minute||e.time||''; const desc=document.createElement('div'); desc.className='desc'; desc.textContent = e.description || e.text || ''; d.appendChild(m); d.appendChild(desc); return d; }
-
-  function buildCleanTimeline(ev){
-    // Reuse timeline if present; otherwise synthesize from event
-    let tl = ev.timeline || ev.timeline_items || ev.event_timeline || ev.events; if(Array.isArray(tl)) return tl; return synthesizeTimelineFromEvent(ev) || [];
-  }
+  // Removed local timeline helper stubs so global implementations from timeline.js are used.
 
   // ---- Summary ----
   async function fetchMatchSummary(ev){
