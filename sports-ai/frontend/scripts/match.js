@@ -846,12 +846,32 @@
     if(h2hBody){
       try{
         if(home && away){
-          const j = await callIntent('h2h', { firstTeam: home, secondTeam: away });
+          // Resolve team identifiers similar to matches.js / history.js for backend compatibility
+          const firstTeamRaw = ev.home_team_key || ev.home_team_id || ev.homeId || ev.homeTeamId || ev.home_team || ev.strHomeTeam || home;
+          const secondTeamRaw = ev.away_team_key || ev.away_team_id || ev.awayId || ev.awayTeamId || ev.away_team || ev.strAwayTeam || away;
+          const args = {};
+          if(firstTeamRaw){
+            if(String(firstTeamRaw).match(/^\d+$/)) args.firstTeamId = String(firstTeamRaw); else args.firstTeamId = firstTeamRaw;
+          }
+            if(secondTeamRaw){
+            if(String(secondTeamRaw).match(/^\d+$/)) args.secondTeamId = String(secondTeamRaw); else args.secondTeamId = secondTeamRaw;
+          }
+          // Fallback safety: if ids somehow missing, attempt using names
+          if(!args.firstTeamId && home) args.firstTeamId = home;
+          if(!args.secondTeamId && away) args.secondTeamId = away;
+
+          const j = await callIntent('h2h', args);
           h2hBody.innerHTML = '';
-          const data = j && (j.data || j.result || j);
-          h2hBody.appendChild(createH2HCard(data || {}));
+          if(j && (j.ok !== false)){ // treat absence of ok as success for legacy
+            const root = j.data || j.result || j;
+            const res = root.result || root.data || root; // provider nesting
+            const card = createH2HCard(res || {});
+            if(card) h2hBody.appendChild(card); else h2hBody.textContent = 'No H2H data available';
+          } else {
+            h2hBody.textContent = 'No H2H: ' + (j && j.error && j.error.message ? j.error.message : 'no data');
+          }
         } else { h2hBody.textContent = 'No team names available.'; }
-      }catch(e){ h2hBody.textContent = 'H2H error: '+(e&&e.message?e.message:String(e)); }
+      }catch(e){ console.warn('[H2H] error', e); h2hBody.textContent = 'H2H error: '+(e&&e.message?e.message:String(e)); }
     }
   }
 
