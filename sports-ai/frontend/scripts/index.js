@@ -23,6 +23,12 @@
   const datePicker = document.getElementById('datePicker');
   const applyFilterBtn = document.getElementById('applyFilterBtn');
 
+  const nlSearchInput = document.getElementById('nlSearch');
+  const nlSearchBtn = document.getElementById('nlSearchBtn');
+  const nlStatus = document.getElementById('nlStatus');
+  const nlResults = document.getElementById('nlResults');
+  const nlCount = document.getElementById('nlCount');
+
   let allLeagues = [];
   let filteredLeagues = [];
   let selectedLeague = null; // { id, label }
@@ -307,6 +313,189 @@
     }catch(e){ console.error('navigateToDetails failed', e); }
   }
 
+  // ===== Natural language search =====
+  function describeSource(src){
+    if(!src || typeof src !== 'object') return '';
+    const primary = src.primary || '';
+    const fallback = src.fallback ? ` → ${src.fallback}` : '';
+    return (primary + fallback).trim();
+  }
+
+  function renderCandidateSummary(results){
+    if(!Array.isArray(results) || results.length === 0) return null;
+    const tried = results.map(r => {
+      const label = r.reason || r.intent || 'intent';
+      const status = r.ok ? '✓' : '×';
+      return `${status} ${label}`;
+    }).join(' · ');
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-top:12px;padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;color:#64748b;';
+    wrap.textContent = `Tried: ${tried}`;
+    return wrap;
+  }
+
+  function renderNlMatches(hit){
+    clear(nlResults);
+    if(!hit || !Array.isArray(hit.items) || hit.items.length === 0){
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No matches found for that query.';
+      nlResults.appendChild(empty);
+      return;
+    }
+    const maxItems = 10;
+    hit.items.slice(0, maxItems).forEach(ev => nlResults.appendChild(createMatchCard(ev)));
+    if(hit.items.length > maxItems){
+      const more = document.createElement('div');
+      more.style.cssText = 'margin-top:8px;font-size:12px;color:#64748b;';
+      more.textContent = `Showing ${maxItems} of ${hit.items.length} results.`;
+      nlResults.appendChild(more);
+    }
+  }
+
+  function renderHlResults(hit){
+    clear(nlResults);
+    if(!hit || !Array.isArray(hit.items) || hit.items.length === 0){
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No highlights found.';
+      nlResults.appendChild(empty);
+      return;
+    }
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
+    hit.items.slice(0, 8).forEach(v => {
+      const card = document.createElement('a');
+      card.style.cssText = 'display:flex;gap:12px;align-items:center;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#fff;text-decoration:none;color:#1f2937;box-shadow:0 1px 3px rgb(0 0 0 / 0.08);';
+      card.target = '_blank';
+      card.rel = 'noopener noreferrer';
+      const url = v.strVideo || v.url || v.link || v.video_url || v.strYoutube || v.source || '';
+      if(url) card.href = url;
+      const thumb = v.strThumb || v.thumbnail || v.thumb || v.cover || '';
+      if(thumb){
+        const img = document.createElement('img');
+        img.src = thumb;
+        img.alt = v.title || v.strTitle || 'highlight';
+        img.style.cssText = 'width:72px;height:48px;object-fit:cover;border-radius:8px;background:#e2e8f0;';
+        img.onerror = () => img.remove();
+        card.appendChild(img);
+      }
+      const meta = document.createElement('div');
+      meta.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:600;font-size:14px;';
+      title.textContent = v.title || v.strTitle || v.name || 'Highlight';
+      const desc = document.createElement('div');
+      desc.style.cssText = 'font-size:12px;color:#64748b;';
+      desc.textContent = v.description || v.strDescription || v.video_title || v.strCompetition || '';
+      meta.appendChild(title);
+      meta.appendChild(desc);
+      card.appendChild(meta);
+      list.appendChild(card);
+    });
+    nlResults.appendChild(list);
+  }
+
+  function renderGenericResult(hit){
+    clear(nlResults);
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'background:#0f172a;color:#e2e8f0;padding:12px;border-radius:10px;overflow:auto;font-size:12px;';
+    try{
+      pre.textContent = JSON.stringify(hit.items || hit.data || {}, null, 2);
+    }catch(e){
+      pre.textContent = 'Unsupported result format.';
+    }
+    nlResults.appendChild(pre);
+  }
+
+  function renderNlResults(resp){
+    if(!resp){
+      clear(nlResults);
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'Search failed.';
+      nlResults.appendChild(empty);
+      set(nlCount, '0');
+      return;
+    }
+    const hits = Array.isArray(resp.hits) ? resp.hits : [];
+    const primary = hits[0];
+    const statusNote = primary && (primary.reason || primary.intent);
+
+    if(primary && primary.ok){
+      set(nlCount, String(primary.count || 0));
+      const source = describeSource(primary.source);
+      set(nlStatus, `${statusNote || 'Results'}${source ? ' · ' + source : ''}`);
+      const intent = String(primary.intent || '');
+      if(/events|fixtures|h2h/.test(intent)){
+        renderNlMatches(primary);
+      }else if(intent === 'video.highlights'){
+        renderHlResults(primary);
+      }else{
+        renderGenericResult(primary);
+      }
+    } else {
+      set(nlCount, '0');
+      const msg = primary && primary.error ? (primary.error.message || primary.error.code || 'No results') : 'No results found';
+      set(nlStatus, msg);
+      clear(nlResults);
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = 'No results found. Try another query.';
+      nlResults.appendChild(empty);
+    }
+
+    const summary = renderCandidateSummary(resp.results);
+    if(summary){
+      nlResults.appendChild(summary);
+    }
+  }
+
+  async function performNlSearch(query){
+    if(!nlResults) return;
+    clear(nlResults);
+    nlResults.innerHTML = '<div class="status">Searching…</div>';
+    set(nlStatus, 'Searching…');
+    set(nlCount, '0');
+    try{
+      const resp = await fetch(apiBase + '/search/nl', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ query }),
+      });
+      if(!resp.ok){
+        throw new Error('HTTP ' + resp.status);
+      }
+      const data = await resp.json();
+      renderNlResults(data);
+    }catch(e){
+      set(nlStatus, e && e.message ? e.message : 'Search error');
+      clear(nlResults);
+      const err = document.createElement('div');
+      err.className = 'empty';
+      err.textContent = 'Unable to complete search. Please try again.';
+      nlResults.appendChild(err);
+    }
+  }
+
+  function handleNlSubmit(){
+    if(!nlSearchInput) return;
+    const query = nlSearchInput.value.trim();
+    if(!query){
+      set(nlStatus, 'Enter a query to search.');
+      set(nlCount, '0');
+      clear(nlResults);
+      const note = document.createElement('div');
+      note.className = 'empty';
+      note.textContent = 'Type a query and press Search.';
+      nlResults.appendChild(note);
+      nlSearchInput.focus();
+      return;
+    }
+    performNlSearch(query);
+  }
+
+
   // ===== Wire up =====
   // Do not auto-fetch; only fetch on explicit Refresh click.
   if(refreshTickerBtn) refreshTickerBtn.addEventListener('click', loadTicker);
@@ -319,6 +508,11 @@
       filteredLeagues = (allLeagues||[]).filter(L => getLeagueLabel(L).toLowerCase().includes(q));
     }
     renderLeagues();
+  });
+
+  if(nlSearchBtn) nlSearchBtn.addEventListener('click', handleNlSubmit);
+  if(nlSearchInput) nlSearchInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){ e.preventDefault(); handleNlSubmit(); }
   });
 
   applyFilterBtn.addEventListener('click', ()=> { if(selectedLeague) loadLeagueMatches(); });
