@@ -1,0 +1,60 @@
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import { Providers } from "@/components/providers";
+import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
+import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "ATHLETE — Live Football Insights & Analytics",
+  description: "Get real-time match probabilities, detailed analysis, and live updates from the world's biggest football leagues.",
+  keywords: ["football", "soccer", "analytics", "live scores", "match analysis", "predictions"],
+  authors: [{ name: "ATHLETE" }],
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  openGraph: {
+    title: "ATHLETE — Live Football Insights & Analytics",
+    description: "Advanced football analytics and live match insights.",
+    type: "website",
+    images: ["/banner.jpg"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ATHLETE — Live Football Insights & Analytics",
+    description: "Advanced football analytics and live match insights.",
+    images: ["/banner.jpg"],
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col`}
+      >
+        <Providers>
+          <Navbar />
+          <main className="flex-1">{children}</main>
+          <Footer />
+        </Providers>
+      </body>
+    </html>
+  );
+}

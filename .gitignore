@@ -22,3 +22,5 @@ __pycache__/
 .build/
 highlight_shorts/
 sports-ai/backend/app/cache/.DS_Store
+.DS_Store
+.DS_Store
