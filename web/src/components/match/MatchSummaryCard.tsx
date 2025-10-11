@@ -23,7 +23,7 @@ type SummaryResponse = {
   headline?: string;
   paragraph?: string;
   one_paragraph?: string;
-  bullets?: unknown[];
+  bullets?: Json[];
 };
 
 type SummaryContent = {
