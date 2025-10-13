@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { Calendar, MapPin, Users, Trophy, TrendingUp, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -115,6 +116,8 @@ export default function MatchPage() {
   const [extrasErrors, setExtrasErrors] = useState<NonNullable<MatchExtrasTabsProps["errors"]>>({});
   const [extrasLoading, setExtrasLoading] = useState(false);
   const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
+  const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   // Ensure an item exists for this match and log an interaction
   const ensureMatchItemAndSend = async (
@@ -143,6 +146,78 @@ export default function MatchPage() {
       // best-effort; ignore errors to avoid breaking UX
     }
   };
+
+  const toggleLike = async () => {
+    if (!user) return;
+    setLiked(prev => !prev);
+    try {
+      await ensureMatchItemAndSend(!liked ? 'like' : 'view');
+    } catch {}
+  };
+
+  const toggleSave = async () => {
+    if (!user || !event) return;
+    try {
+      // Ensure item exists and get the item id
+      const { data: itemId, error: rpcErr } = await supabase.rpc('ensure_match_item', {
+        p_event_id: String(event.eventId),
+        p_title: `${event.homeTeam} vs ${event.awayTeam}`,
+        p_teams: [event.homeTeam, event.awayTeam],
+        p_league: event.league ?? null,
+        p_popularity: 0,
+      });
+      if (rpcErr) throw rpcErr;
+      if (!itemId) return;
+      if (saved) {
+        // Unsave: delete existing save interaction(s)
+        try {
+          await supabase.from('user_interactions').delete().match({ user_id: user.id, item_id: itemId, event: 'save' });
+          setSaved(false);
+          toast.success('Removed saved match');
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      // Not saved yet: insert a save if none exists
+      const { data: existing } = await supabase.from('user_interactions').select('id').eq('user_id', user.id).eq('item_id', itemId).eq('event', 'save').maybeSingle();
+      if (existing) {
+        setSaved(true);
+        toast.info('Already saved');
+        return;
+      }
+      await supabase.from('user_interactions').insert({ user_id: user.id, item_id: itemId, event: 'save' });
+      setSaved(true);
+      toast.success('Saved');
+    } catch {
+      // ignore failures silently
+    }
+  };
+
+  // On load, mark saved=true if a prior 'save' exists for this match
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!user || !event) return;
+      try {
+        const { data: itemId } = await supabase.rpc('ensure_match_item', {
+          p_event_id: String(event.eventId),
+          p_title: `${event.homeTeam} vs ${event.awayTeam}`,
+          p_teams: [event.homeTeam, event.awayTeam],
+          p_league: event.league ?? null,
+          p_popularity: 0,
+        });
+        if (!itemId) return;
+        const { data: existing } = await supabase.from('user_interactions').select('id').eq('user_id', user.id).eq('item_id', itemId).eq('event', 'save').maybeSingle();
+        if (!active) return;
+        if (existing) setSaved(true);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { active = false; };
+  }, [user, supabase, event]);
 
   // Load user's favorite teams for UI state (disable + and show heart)
   useEffect(() => {
@@ -195,6 +270,36 @@ export default function MatchPage() {
       setFavoriteTeams(nextTeams);
       try { await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: teamName, p_logo: '', p_metadata: {} }); } catch {}
     } catch {}
+  };
+
+  const handleShare = async () => {
+    if (!match) return;
+    try {
+      const url = typeof window !== 'undefined'
+        ? `${window.location.origin}/match/${encodeURIComponent(match.eventId)}?sid=share`
+        : `/match/${encodeURIComponent(match.eventId)}?sid=share`;
+      const title = `${match.homeTeam} vs ${match.awayTeam}`;
+      const text = `Check out ${title} on Sports Analysis`;
+      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+        try {
+          await (navigator as any).share({ title, text, url });
+          toast.success('Shared');
+          await ensureMatchItemAndSend('share');
+          return;
+        } catch (err: any) {
+          // user cancelled share - do not show error
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+      // Fallback to copy link
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link copied to clipboard');
+        await ensureMatchItemAndSend('share');
+      }
+    } catch {
+      // ignore failures silently
+    }
   };
 
   // Seed from sessionStorage for fast paint like legacy
@@ -592,13 +697,13 @@ export default function MatchPage() {
 
               {/* Personalization actions */}
               <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => ensureMatchItemAndSend('like')}>
-                  <ThumbsUp className="w-4 h-4 mr-1"/> Like
+                <Button variant={liked ? "default" : "outline"} size="sm" title="Like" className="transition-transform active:scale-95" onClick={toggleLike}>
+                  <ThumbsUp className="w-4 h-4 mr-1"/>{liked ? 'Liked' : 'Like'}
                 </Button>
-                <Button variant="outline" size="sm" title="Save" className="transition-transform active:scale-95" onClick={() => ensureMatchItemAndSend('save')}>
-                  <Bookmark className="w-4 h-4 mr-1"/> Save
+                <Button variant={saved ? "default" : "outline"} size="sm" title="Save" className="transition-transform active:scale-95" onClick={toggleSave}>
+                  <Bookmark className="w-4 h-4 mr-1"/>{saved ? 'Saved' : 'Save'}
                 </Button>
-                <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={() => ensureMatchItemAndSend('share')}>
+                <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={handleShare}>
                   <Share2 className="w-4 h-4 mr-1"/> Share
                 </Button>
                 {/* Dismiss removed as per request */}

@@ -9,6 +9,9 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  // bump this to notify consumers that user preferences changed
+  bumpPreferences: () => void;
+  prefsVersion: number;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -17,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [prefsVersion, setPrefsVersion] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -47,6 +51,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     session,
     user: session?.user ?? null,
     loading,
+    bumpPreferences: () => setPrefsVersion(v => v + 1),
+    prefsVersion,
   }), [supabase, session, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
