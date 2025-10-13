@@ -5,12 +5,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Menu, User, LogIn } from "lucide-react";
+import { Menu, User, LogIn, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "./ThemeToggle";
 import { ASSETS } from "@/lib/assets";
 import { cn } from "@/lib/utils";
+import { useAuth } from "./AuthProvider";
+import { useRouter } from "next/navigation";
 
 const navItems = [
   { name: "Home", href: "/" },
@@ -23,6 +25,14 @@ const navItems = [
 export function Navbar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = React.useState(false);
+  const { user, supabase } = useAuth();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.refresh();
+    router.replace("/");
+  };
 
   return (
     <motion.header
@@ -84,28 +94,27 @@ export function Navbar() {
         <div className="flex items-center space-x-2">
           <ThemeToggle />
           
-          <Button
-            variant="ghost"
-            size="sm"
-            asChild
-            className="hidden md:flex"
-          >
-            <Link href="/profile">
-              <User className="h-4 w-4 mr-2" />
-              Profile
-            </Link>
-          </Button>
-
-          <Button
-            size="sm"
-            asChild
-            className="hidden md:flex"
-          >
-            <Link href="/auth/login">
-              <LogIn className="h-4 w-4 mr-2" />
-              Login
-            </Link>
-          </Button>
+          {user ? (
+            <>
+              <Button variant="ghost" size="sm" asChild className="hidden md:flex">
+                <Link href="/profile">
+                  <User className="h-4 w-4 mr-2" />
+                  Profile
+                </Link>
+              </Button>
+              <Button size="sm" className="hidden md:flex" onClick={handleSignOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" asChild className="hidden md:flex">
+              <Link href="/auth/login">
+                <LogIn className="h-4 w-4 mr-2" />
+                Login
+              </Link>
+            </Button>
+          )}
 
           {/* Mobile Menu */}
           <Sheet open={isOpen} onOpenChange={setIsOpen}>
@@ -134,19 +143,27 @@ export function Navbar() {
                 ))}
                 
                 <div className="border-t pt-6 space-y-4">
-                  <Button variant="outline" size="sm" asChild className="w-full justify-start">
-                    <Link href="/profile" onClick={() => setIsOpen(false)}>
-                      <User className="h-4 w-4 mr-2" />
-                      Profile
-                    </Link>
-                  </Button>
-                  
-                  <Button size="sm" asChild className="w-full">
-                    <Link href="/auth/login" onClick={() => setIsOpen(false)}>
-                      <LogIn className="h-4 w-4 mr-2" />
-                      Login
-                    </Link>
-                  </Button>
+                  {user ? (
+                    <>
+                      <Button variant="outline" size="sm" asChild className="w-full justify-start">
+                        <Link href="/profile" onClick={() => setIsOpen(false)}>
+                          <User className="h-4 w-4 mr-2" />
+                          Profile
+                        </Link>
+                      </Button>
+                      <Button size="sm" className="w-full" onClick={() => { handleSignOut(); setIsOpen(false); }}>
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Sign out
+                      </Button>
+                    </>
+                  ) : (
+                    <Button size="sm" asChild className="w-full">
+                      <Link href="/auth/login" onClick={() => setIsOpen(false)}>
+                        <LogIn className="h-4 w-4 mr-2" />
+                        Login
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </div>
             </SheetContent>

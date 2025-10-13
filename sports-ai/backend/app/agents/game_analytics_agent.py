@@ -196,6 +196,38 @@ class AllSportsRawAgent:
                     # never fail the intent due to augmentation/synthesis problems
                     pass
 
+                # If caller requested the lightweight best-player heuristic, compute and attach it.
+                try:
+                    if a.get('include_best_player') and data:
+                        ev = None
+                        if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                            ev = data['result'][0]
+                        elif isinstance(data, dict) and data.get('event') and isinstance(data.get('event'), dict):
+                            ev = data.get('event')
+                        elif isinstance(data, dict) and (data.get('events') or data.get('fixtures')):
+                            col = data.get('events') or data.get('fixtures')
+                            if isinstance(col, list) and col:
+                                ev = col[0]
+                        elif isinstance(data, dict) and data:
+                            for v in data.values():
+                                if isinstance(v, dict) and v.get('event_key'):
+                                    ev = v
+                                    break
+
+                        if ev is not None:
+                            try:
+                                bp = _compute_best_player_from_event(ev)
+                                if bp:
+                                    ev['best_player'] = bp
+                                    if isinstance(data, dict) and isinstance(data.get('result'), list) and data.get('result'):
+                                        data['result'][0] = ev
+                            except Exception:
+                                # non-fatal: best-player is a convenience field
+                                pass
+                except Exception:
+                    # swallow any unexpected errors here
+                    pass
+
             elif intent == "teams.list":
                 # Accept leagueId, teamId, teamName
                 meta, data = self._call("Teams", args, trace)
@@ -535,6 +567,120 @@ def _compute_player_hot_streak(events: list, recent_games: int = 5) -> dict:
         "z_score": float(z),
         "recent_games_used": used,
     }
+
+
+def _compute_best_player_from_event(ev: Dict[str, Any]) -> Dict[str, Any] | None:
+    """Compute a simple best-player heuristic from an event dict.
+
+    Heuristic: 3 points per goal, 1 point per assist.
+    Scans common provider fields (scorers/goals/goal lists and common keys)
+    and returns a dict: {name, score, reason} or None when no candidates.
+    """
+    if not isinstance(ev, dict):
+        return None
+
+    def _coalesce(*vals):
+        for v in vals:
+            if v is not None and v != "":
+                return v
+        return None
+
+    players: dict = {}
+
+    def add_goal(name: str | None):
+        if not name:
+            return
+        n = str(name).strip()
+        if not n:
+            return
+        st = players.setdefault(n, {"goals": 0, "assists": 0})
+        st["goals"] += 1
+
+    def add_assist(name: str | None):
+        if not name:
+            return
+        n = str(name).strip()
+        if not n:
+            return
+        st = players.setdefault(n, {"goals": 0, "assists": 0})
+        st["assists"] += 1
+
+    # Candidate lists/keys to examine 
+    list_keys = (
+        "scorers",
+        "scorers_home",
+        "scorers_away",
+        "home_scorers",
+        "away_scorers",
+        "goals",
+        "goalscorers",
+        "goal_scorers",
+        "scorers_map",
+    )
+
+    for k in list_keys:
+        arr = ev.get(k)
+        if isinstance(arr, list) and arr:
+            for entry in arr:
+                try:
+                    if isinstance(entry, dict):
+                        # common shapes
+                        hs = _coalesce(entry.get("home_scorer"), entry.get("scorer"), entry.get("player"), entry.get("name"))
+                        asst = _coalesce(entry.get("assist"), entry.get("home_assist"), entry.get("assist_name"), entry.get("assist_player"))
+                        # away variants
+                        away = _coalesce(entry.get("away_scorer"), entry.get("away_player"))
+                        away_assist = _coalesce(entry.get("away_assist"))
+                        # add whichever present
+                        if hs:
+                            add_goal(hs)
+                        if asst:
+                            add_assist(asst)
+                        if away:
+                            add_goal(away)
+                        if away_assist:
+                            add_assist(away_assist)
+                    else:
+                        # plain string entries like "Player Name"
+                        add_goal(str(entry))
+                except Exception:
+                    # skip malformed entries
+                    continue
+
+    # As a fallback, inspect timeline items for tagged goals (description contains 'goal')
+    tl = ev.get("timeline") or ev.get("timeline_items") or ev.get("events") or ev.get("event_timeline")
+    if isinstance(tl, list) and tl:
+        for item in tl:
+            try:
+                txt = (item.get("description") or item.get("event") or "") if isinstance(item, dict) else str(item)
+                if not txt:
+                    continue
+                low = str(txt).lower()
+                if "goal" in low:
+                    # try to extract a player name via common patterns "Goal by X" or "X scores"
+                    import re
+
+                    m = re.search(r"goal by\s+([A-Z][\w .'-]+)", txt, flags=re.I)
+                    if not m:
+                        m = re.search(r"([A-Z][\w .'-]+)\s+(?:scores|scored)", txt, flags=re.I)
+                    if m:
+                        add_goal(m.group(1).strip())
+            except Exception:
+                pass
+
+    # No players collected
+    if not players:
+        return None
+
+    # Score and pick best
+    best = None
+    best_score = -1
+    for name, st in players.items():
+        score = int(st.get("goals", 0)) * 3 + int(st.get("assists", 0)) * 1
+        if score > best_score:
+            best_score = score
+            best = {"name": name, "score": score, "reason": f"{st.get('goals',0)} goals, {st.get('assists',0)} assists"}
+
+    return best
 
 
 def _augment_timeline_with_tags(timeline: list, model=None) -> None:

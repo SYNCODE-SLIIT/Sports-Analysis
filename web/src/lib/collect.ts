@@ -102,6 +102,20 @@ export async function getTeam(teamName: string) {
   return postCollect<{ team?: DataObject; teams?: DataObject[] }>("team.get", { teamName: clean });
 }
 
+/** Search teams by name for autocomplete */
+export async function searchTeams(teamName: string) {
+  const clean = sanitizeInput(teamName);
+  if (!clean) return { data: { teams: [] } } as CollectEnvelope & { data: { teams?: DataObject[] } };
+  return postCollect<{ teams?: DataObject[] }>("teams.list", { teamName: clean });
+}
+
+/** Search leagues by name for autocomplete */
+export async function searchLeagues(leagueName: string) {
+  const clean = sanitizeInput(leagueName);
+  if (!clean) return { data: { leagues: [] } } as CollectEnvelope & { data: { leagues?: DataObject[] } };
+  return postCollect<{ leagues?: DataObject[] }>("leagues.list", { leagueName: clean });
+}
+
 export async function listTeamPlayers(teamName: string) {
   const clean = sanitizeInput(teamName);
   if (!clean) throw new Error("Team name is required");
