@@ -65,7 +65,7 @@ export function NlSearchBar({
       <Input
         value={value}
         onChange={(event) => setValue(event.target.value)}
-        placeholder="Search matches, teams, leagues…"
+        placeholder="Search matches"
         className={cn(
           "h-7 border-none bg-transparent px-0 text-sm focus-visible:ring-0",
           inputClassName,
