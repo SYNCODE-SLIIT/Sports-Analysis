@@ -179,7 +179,7 @@ const fetchLeagueNews = useCallback(async (leagueName: string) => {
   setNewsLoading(true);
   setNewsError(null);
   try {
-    const resp = await getLeagueNews(leagueName, 6);
+    const resp = await getLeagueNews(leagueName, 20);
     const articlesRaw = resp?.data?.articles || resp?.data?.result || resp?.data || [];
     const normalized = (Array.isArray(articlesRaw) ? articlesRaw : []).map((a: any, i: number) => ({
       id: a.id || a.articleId || a.url || `news-${i}`,

@@ -33,13 +33,14 @@ class LeagueNewsService:
         if not self.api_key:
             raise LeagueNewsError("NEWS_API_KEY is not configured")
 
-    def fetch(self, league_name: str, limit: int = 6) -> Dict[str, Any]:
+    def fetch(self, league_name: str, limit: int = 100) -> Dict[str, Any]:
         if not league_name:
             raise LeagueNewsError("league_name is required")
         params = {
             "q": f"{league_name} football",
             "language": "en",
-            "pageSize": max(1, min(limit, 10)),
+            # Increase pageSize cap to 100 (NewsAPI supports up to 100) so frontend can request more
+            "pageSize": min(limit or 100, 100),
             "sortBy": "publishedAt",
             "apiKey": self.api_key,
         }
