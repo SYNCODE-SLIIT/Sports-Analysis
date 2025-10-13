@@ -13,6 +13,7 @@ import { ASSETS } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 import { useRouter } from "next/navigation";
+import { NlSearchBar } from "@/components/search/NlSearchBar";
 
 const navItems = [
   { name: "Home", href: "/" },
@@ -92,6 +93,7 @@ export function Navbar() {
 
         {/* Right Actions */}
         <div className="flex items-center space-x-2">
+          <NlSearchBar className="hidden md:flex w-72 bg-background/80" />
           <ThemeToggle />
           
           {user ? (
@@ -126,6 +128,7 @@ export function Navbar() {
             </SheetTrigger>
             <SheetContent side="right" className="w-80">
               <div className="flex flex-col space-y-6 mt-8">
+                <NlSearchBar className="w-full" onSubmit={() => setIsOpen(false)} />
                 {navItems.map((item) => (
                   <Link
                     key={item.name}
