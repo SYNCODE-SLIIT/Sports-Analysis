@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import React, { Fragment } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -10,6 +10,16 @@ import { MatchCard } from "@/components/MatchCard";
 import type { Highlight } from "@/lib/schemas";
 import type { NlSearchResultBundle, NlHitInterpretation } from "@/lib/search";
 import { ExternalLink } from "lucide-react";
+
+function formatError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
+}
 
 interface NlSearchResultsProps {
   query: string;
@@ -179,19 +189,22 @@ export function NlSearchResults({ query, data, isLoading, error }: NlSearchResul
               <CardTitle className="text-base">What we tried</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {tried.map((item, idx) => (
-                <div key={`${item.intent}-${idx}`} className="flex flex-col gap-1 rounded-lg border border-border/60 p-3 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge variant={item.ok ? "default" : "secondary"} className="uppercase tracking-wider text-xs">
-                      {item.intent}
-                    </Badge>
-                    {item.reason && <span className="text-muted-foreground">{item.reason}</span>}
+              {tried.map((item, idx) => {
+                const errorMessage = item.error ? formatError(item.error) : null;
+                return (
+                  <div key={`${item.intent}-${idx}`} className="flex flex-col gap-1 rounded-lg border border-border/60 p-3 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={item.ok ? "default" : "secondary"} className="uppercase tracking-wider text-xs">
+                        {item.intent}
+                      </Badge>
+                      {item.reason && <span className="text-muted-foreground">{item.reason}</span>}
+                    </div>
+                    {errorMessage && (
+                      <span className="text-xs text-destructive">Error: {errorMessage}</span>
+                    )}
                   </div>
-                  {item.error && (
-                    <span className="text-xs text-destructive">Error: {JSON.stringify(item.error)}</span>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         )}
@@ -201,7 +214,7 @@ export function NlSearchResults({ query, data, isLoading, error }: NlSearchResul
 
   return (
     <div className="space-y-8">
-      {Object.keys(parsedEntities).length > 0 && (
+      {/* {Object.keys(parsedEntities).length > 0 && (
         <Card className="border-muted/50 bg-muted/40">
           <CardHeader>
             <CardTitle className="text-sm font-semibold">Parsed intent</CardTitle>
@@ -215,7 +228,7 @@ export function NlSearchResults({ query, data, isLoading, error }: NlSearchResul
             ))}
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {hits.map((hit, idx) => (
         <Fragment key={`${hit.raw.intent}-${idx}`}>{renderHit(hit, idx)}</Fragment>
