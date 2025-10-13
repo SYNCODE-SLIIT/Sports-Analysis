@@ -228,3 +228,61 @@ begin
     metadata = public.cached_leagues.metadata || excluded.metadata,
     last_updated = now();
 end;$$;
+
+-- RPC: ensure an item exists for a specific match/event (by provider event_id in data)
+create or replace function public.ensure_match_item(
+  p_event_id text,
+  p_title text,
+  p_teams text[] default '{}',
+  p_league text default null,
+  p_popularity numeric default 0
+)
+returns uuid
+language plpgsql
+security definer
+as $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from public.items where kind = 'match' and (data->>'event_id') = p_event_id limit 1;
+  if v_id is null then
+    insert into public.items(kind, title, data, teams, leagues, popularity)
+    values('match', coalesce(p_title, 'Match'), jsonb_build_object('event_id', p_event_id), coalesce(p_teams, '{}'), case when p_league is not null then array[p_league] else '{}'::text[] end, coalesce(p_popularity,0))
+    returning id into v_id;
+  else
+    update public.items
+      set title = coalesce(p_title, title),
+          teams = coalesce(p_teams, teams),
+          leagues = case when p_league is not null then array[p_league] else leagues end,
+          popularity = greatest(coalesce(popularity,0), coalesce(p_popularity,0))
+      where id = v_id;
+  end if;
+  return v_id;
+end;$$;
+
+-- RPC: ensure an item exists for a league (by name)
+create or replace function public.ensure_league_item(
+  p_league_name text,
+  p_logo text default null,
+  p_popularity numeric default 0
+)
+returns uuid
+language plpgsql
+security definer
+as $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from public.items where kind = 'league' and title = p_league_name limit 1;
+  if v_id is null then
+    insert into public.items(kind, title, data, leagues, popularity)
+    values('league', p_league_name, jsonb_build_object('logo', p_logo), array[p_league_name], coalesce(p_popularity,0))
+    returning id into v_id;
+  else
+    update public.items
+      set data = coalesce(data, '{}'::jsonb) || jsonb_build_object('logo', p_logo),
+          popularity = greatest(coalesce(popularity,0), coalesce(p_popularity,0))
+      where id = v_id;
+  end if;
+  return v_id;
+end;$$;

@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight, Search, ThumbsUp, Bookmark, Share2, Eye, MousePointerClick, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchCard } from "@/components/MatchCard";
 import { Input } from "@/components/ui/input";
 import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect, getLeagueNews } from "@/lib/collect";
 import { parseFixtures, type Fixture } from "@/lib/schemas";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/AuthProvider";
 
 type LeagueLite = {
   id: string;
@@ -98,6 +100,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
+  const { user, supabase } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
@@ -173,6 +176,24 @@ export default function LeaguesPage() {
       active = false;
     };
   }, []);
+
+  // Ensure a league item exists and log interaction
+  const ensureLeagueItemAndSend = useCallback(async (
+    leagueName: string,
+    evt: "view" | "click" | "like" | "save" | "share" | "dismiss"
+  ) => {
+    if (!user || !leagueName) return;
+    try {
+      const league = allLeagues.find(l => l.league_name === leagueName);
+      const { data: item_id } = await supabase.rpc("ensure_league_item", {
+        p_league_name: leagueName,
+        p_logo: league?.logo ?? null,
+        p_popularity: 0,
+      });
+      if (!item_id) return;
+      await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: evt });
+    } catch {}
+  }, [user, supabase, allLeagues]);
 
 const fetchLeagueNews = useCallback(async (leagueName: string) => {
   if (!leagueName) return;
@@ -382,13 +403,14 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                 <Card
                   key={`${league.id}-${league.league_name}`}
                   className={`cursor-pointer border transition hover:shadow-md focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${isSelected ? 'border-primary shadow-lg' : ''}`}
-                  onClick={() => setSelectedLeague(league.league_name)}
+                  onClick={() => { setSelectedLeague(league.league_name); ensureLeagueItemAndSend(league.league_name, 'view'); }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(evt) => {
                     if (evt.key === 'Enter' || evt.key === ' ') {
                       evt.preventDefault();
                       setSelectedLeague(league.league_name);
+                      ensureLeagueItemAndSend(league.league_name, 'view');
                     }
                   }}
                 >
@@ -439,6 +461,18 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                   {dateLoading ? 'Loading…' : 'Apply'}
                 </button>
               </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => ensureLeagueItemAndSend(selectedLeague, 'like')}>
+                <ThumbsUp className="w-4 h-4 mr-1"/> Like
+              </Button>
+              <Button variant="outline" size="sm" title="Save" className="transition-transform active:scale-95" onClick={() => ensureLeagueItemAndSend(selectedLeague, 'save')}>
+                <Bookmark className="w-4 h-4 mr-1"/> Save
+              </Button>
+              <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={() => ensureLeagueItemAndSend(selectedLeague, 'share')}>
+                <Share2 className="w-4 h-4 mr-1"/> Share
+              </Button>
+              {/* Dismiss removed as per request */}
             </div>
           </Card>
         )}
