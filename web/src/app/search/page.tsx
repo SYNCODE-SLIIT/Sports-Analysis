@@ -29,9 +29,8 @@ export default function SearchPage() {
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Search</h1>
           <p className="max-w-2xl text-muted-foreground">
-            Ask natural-language questions about matches, teams, leagues, highlights, or odds. Try queries such as
-            &nbsp;<span className="font-medium">“Premier League matches yesterday”</span> or
-            &nbsp;<span className="font-medium">“highlights for Barcelona”</span>.
+            Search for matches using natural language queries. Try
+            &nbsp;<span className="font-medium">“Premier League matches yesterday”</span>
           </p>
         </div>
         <NlSearchBar className="max-w-xl" />
