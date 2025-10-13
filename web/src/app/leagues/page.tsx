@@ -6,7 +6,7 @@ import { ChevronRight, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchCard } from "@/components/MatchCard";
 import { Input } from "@/components/ui/input";
-import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect } from "@/lib/collect";
+import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect, getLeagueNews } from "@/lib/collect";
 import { parseFixtures, type Fixture } from "@/lib/schemas";
 
 type LeagueLite = {
@@ -113,6 +113,10 @@ export default function LeaguesPage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayISO);
   const [dateMatches, setDateMatches] = useState<Fixture[]>([]);
   const [dateLoading, setDateLoading] = useState(false);
+  const [news, setNews] = useState<Array<{ id?: string; title?: string; url?: string; summary?: string; imageUrl?: string; source?: string; publishedAt?: string }>>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+
 
   const qSan = useMemo(() => sanitizeInput(search), [search]);
 
@@ -170,6 +174,38 @@ export default function LeaguesPage() {
     };
   }, []);
 
+const fetchLeagueNews = useCallback(async (leagueName: string) => {
+  if (!leagueName) return;
+  setNewsLoading(true);
+  setNewsError(null);
+  try {
+    const resp = await getLeagueNews(leagueName, 6);
+    const articlesRaw = resp?.data?.articles || resp?.data?.result || resp?.data || [];
+    const normalized = (Array.isArray(articlesRaw) ? articlesRaw : []).map((a: any, i: number) => ({
+      id: a.id || a.articleId || a.url || `news-${i}`,
+      title: a.title || a.headline || a.name || "",
+      url: a.url || a.link || a.article_url || "",
+      summary: a.summary || a.description || a.excerpt || "",
+      // try many common keys providers use for an image
+      imageUrl:
+        a.image ||
+        a.imageUrl ||
+        a.urlToImage ||
+        a.thumbnail ||
+        a.image_url ||
+        (a.media && a.media[0] && (a.media[0].url || a.media[0].src)) ||
+        undefined,
+      source: a.source || a.publisher || "",
+      publishedAt: a.publishedAt || a.pubDate || a.published || "",
+    }));
+    setNews(normalized);
+  } catch (err: any) {
+    setNewsError(String(err?.message || err));
+  } finally {
+    setNewsLoading(false);
+  }
+}, []);
+
 const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) => {
     setDateLoading(true);
     try {
@@ -225,6 +261,8 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
     setLiveInLeague([]);
     setUpcoming([]);
     setRecent([]);
+    setNews([]);
+    fetchLeagueNews(selectedLeague);
 
     const extractEvents = (payload: unknown): unknown[] => {
       if (!payload || typeof payload !== "object") return [];
@@ -500,6 +538,60 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {recent.map((f)=> (
                         <MatchCard key={f.id} fixture={f} />
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+            <div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Latest News</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {newsLoading ? (
+                    <div className="text-sm text-muted-foreground">Loading news…</div>
+                  ) : newsError ? (
+                    <div className="text-sm text-destructive">{newsError}</div>
+                  ) : news.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No recent headlines available right now.</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {news.map((article) => (
+                        <a
+                          key={article.id}
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block rounded-lg border border-border p-4 transition hover:border-primary hover:shadow"
+                        >
+                          <div className="flex items-start gap-3">
+                            {article.imageUrl ? (
+                              <img
+                                src={article.imageUrl}
+                                alt={article.title || 'news image'}
+                                className="h-20 w-28 flex-shrink-0 rounded-md object-cover"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            ) : null}
+
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-foreground truncate">{article.title}</div>
+                              {article.summary && (
+                                <div className="text-sm text-muted-foreground line-clamp-3">{article.summary}</div>
+                              )}
+                              <div className="text-xs text-muted-foreground flex items-center gap-2 mt-2">
+                                {article.source && <span className="truncate">{article.source}</span>}
+                                {article.publishedAt && (
+                                  <time dateTime={article.publishedAt} className="truncate">
+                                    {new Date(article.publishedAt).toLocaleString()}
+                                  </time>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </a>
                       ))}
                     </div>
                   )}

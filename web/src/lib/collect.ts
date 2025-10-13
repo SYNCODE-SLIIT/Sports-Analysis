@@ -167,3 +167,16 @@ export async function getOdds(eventId: string) {
 export async function getComments(eventId: string) {
   return postCollect<{ comments?: DataObject[] }>("comments.list", { eventId: String(eventId) });
 }
+
+export async function getLeagueNews(leagueName: string, limit = 6) {
+  const clean = sanitizeInput(leagueName);
+  if (!clean) {
+    return { data: { articles: [], count: 0 } } as CollectEnvelope & {
+      data: { articles: Array<Record<string, Json>>; count: number };
+    };
+  }
+  return postCollect<{ articles?: DataObject[]; count?: number }>("league.news", {
+    leagueName: clean,
+    limit,
+  });
+}
