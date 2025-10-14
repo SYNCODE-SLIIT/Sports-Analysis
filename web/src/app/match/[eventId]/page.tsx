@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HighlightsCarousel } from "@/components/HighlightsCarousel";
-import Timeline from "@/components/match/Timeline";
+import RichTimeline from "@/components/match/RichTimeline";
 import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
 import MatchSummaryCard from "@/components/match/MatchSummaryCard";
@@ -845,7 +845,9 @@ export default function MatchPage() {
           <TabsContent value="events" className="space-y-4">
             <Card>
               <CardContent className="p-4">
-                <Timeline items={timeline} />
+                {/* Rich horizontal timeline */}
+                <RichTimeline items={timeline} homeTeam={match.homeTeam} awayTeam={match.awayTeam}
+                  matchRaw={eventRaw} players={playersExtra} teams={teamsExtra} />
               </CardContent>
             </Card>
             <BestPlayerCard best={best} />

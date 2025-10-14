@@ -17,15 +17,15 @@ type ItemRow = {
 };
 
 export function useRecommendations() {
-  const { supabase, user } = useAuth();
-  return useQuery<{ items: RecItem[] }>({
-    queryKey: ["recommendations", user?.id],
+  const { supabase, user, prefsVersion } = useAuth();
+  return useQuery<{ items: RecItem[] }>( {
+    queryKey: ["recommendations", user?.id, prefsVersion],
     enabled: !!user,
     queryFn: async () => {
       // Prefer server-side scoring via RPC
       try {
-        const { data: rpcData, error: rpcError } = await supabase.rpc("get_personalized_recommendations", {
-          uid: user!.id,
+        // use the server-side wrapper which uses auth.uid() to ensure recs are computed for the logged in user
+        const { data: rpcData, error: rpcError } = await supabase.rpc("get_my_personalized_recommendations", {
           limit_count: 20,
         });
         if (!rpcError && Array.isArray(rpcData) && rpcData.length) {

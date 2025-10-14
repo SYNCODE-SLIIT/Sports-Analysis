@@ -159,6 +159,16 @@ order by score desc
 limit coalesce(limit_count, 20);
 $$;
 
+-- Wrapper RPC that uses the current authenticated user's uid (auth.uid()) so clients don't need to supply the uid
+create or replace function public.get_my_personalized_recommendations(limit_count int default 20)
+returns table (item_id uuid, score numeric, reason text, item jsonb)
+language sql
+security definer
+stable
+as $$
+  select * from public.get_personalized_recommendations(auth.uid(), limit_count);
+$$;
+
 -- RPC: list popular teams for suggestions
 create or replace function public.list_popular_teams(limit_count int default 25)
 returns table(team text, popularity numeric)
