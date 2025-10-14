@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { User, Settings, Trophy, Clock, Heart, ThumbsUp, Bookmark, Share2 } from "lucide-react";
+import { User, Settings, Trophy, Clock, Heart, ThumbsUp, Bookmark, Share2, RefreshCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,7 @@ export default function ProfilePage() {
   const [sendingFeedbackId, setSendingFeedbackId] = useState<string | null>(null);
   const [localLiked, setLocalLiked] = useState<Record<string, boolean>>({});
   const [localSaved, setLocalSaved] = useState<Record<string, boolean>>({});
+  const hasPrefs = (preferences?.favorite_teams?.length || preferences?.favorite_leagues?.length) ? true : false;
 
   useEffect(() => {
     if (!user) return;
@@ -42,6 +43,19 @@ export default function ProfilePage() {
       } catch (e) {
         if (mounted) setSavedMatchesCount(0);
       }
+      // initialize local liked/saved states for recommendations
+      try {
+        const { data: interactions } = await supabase.from('user_interactions').select('item_id, event').eq('user_id', user.id);
+        if (!mounted) return;
+        const likedMap: Record<string, boolean> = {};
+        const savedMap: Record<string, boolean> = {};
+        (interactions ?? []).forEach((r: any) => {
+          if (r.event === 'like') likedMap[String(r.item_id)] = true;
+          if (r.event === 'save') savedMap[String(r.item_id)] = true;
+        });
+        setLocalLiked(likedMap);
+        setLocalSaved(savedMap);
+      } catch {}
     })();
     return () => { mounted = false; };
   }, [user, supabase, prefsVersion]);
@@ -75,9 +89,10 @@ export default function ProfilePage() {
     setSendingFeedbackId(itemId);
     try {
       await supabase.from("user_interactions").insert({ user_id: user.id, item_id: itemId, event });
-      if (event === "dismiss") {
-        // Optimistically remove from local list by refetching
-        await recs.refetch();
+      // Refresh recommendations after impactful feedback
+      if (event === "dismiss" || event === "like" || event === "save") {
+        // slight debounce to let server compute scores
+        setTimeout(() => { void recs.refetch?.(); }, 200);
       }
     } finally {
       setSendingFeedbackId(null);
@@ -240,8 +255,16 @@ export default function ProfilePage() {
 
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.6 }}>
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2"><Trophy className="w-5 h-5" /><span>Recommended for you</span></CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center space-x-2">
+              <Trophy className="w-5 h-5" />
+              <span>{hasPrefs ? 'Recommended for you' : 'Popular right now'}</span>
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" className="transition-transform active:scale-95" onClick={() => recs.refetch?.()} disabled={!!recs.isLoading}>
+                <RefreshCcw className="w-4 h-4 mr-2" /> Refresh
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {recs.isLoading ? (

@@ -101,8 +101,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
-  const { user, supabase } = useAuth();
-  const { bumpPreferences } = useAuth();
+  const { user, supabase, bumpPreferences, bumpInteractions } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
@@ -557,13 +556,13 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => ensureLeagueItemAndSend(selectedLeague, 'like')}>
+              <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => { ensureLeagueItemAndSend(selectedLeague, 'like'); try { bumpInteractions(); } catch {} }}>
                 <ThumbsUp className="w-4 h-4 mr-1"/> Like
               </Button>
               <Button variant="outline" size="sm" title="Save" className="transition-transform active:scale-95" onClick={handleSaveLeague}>
                 <Bookmark className="w-4 h-4 mr-1"/> Save
               </Button>
-              <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={handleLeagueShare}>
+              <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={() => { handleLeagueShare(); try { bumpInteractions(); } catch {} }}>
                 <Share2 className="w-4 h-4 mr-1"/> Share
               </Button>
               {/* Dismiss removed as per request */}

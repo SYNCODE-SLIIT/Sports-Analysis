@@ -17,9 +17,9 @@ type ItemRow = {
 };
 
 export function useRecommendations() {
-  const { supabase, user, prefsVersion } = useAuth();
+  const { supabase, user, prefsVersion, interactionsVersion } = useAuth();
   return useQuery<{ items: RecItem[] }>( {
-    queryKey: ["recommendations", user?.id, prefsVersion],
+    queryKey: ["recommendations", user?.id, prefsVersion, interactionsVersion],
     enabled: !!user,
     queryFn: async () => {
       // Prefer server-side scoring via RPC
@@ -41,14 +41,20 @@ export function useRecommendations() {
         // fall through to simple fallback
       }
 
-      // Fallback using preferences
+      // Fallback using preferences (and popularity for cold start)
       const { data: prefs } = await supabase
         .from("user_preferences")
         .select("favorite_teams, favorite_leagues")
         .eq("user_id", user!.id)
         .single();
 
-      let query = supabase.from("items").select("*").order("popularity", { ascending: false }).limit(20);
+      // Start from popular items, break ties by most recent
+      let query = supabase
+        .from("items")
+        .select("*")
+        .order("popularity", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(20);
       if (prefs?.favorite_teams?.length) {
         query = query.contains("teams", prefs.favorite_teams);
       }

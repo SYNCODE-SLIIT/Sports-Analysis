@@ -19,7 +19,7 @@ interface MatchCardProps {
 
 export function MatchCard({ fixture, insights, className }: MatchCardProps) {
   const router = useRouter();
-  const { user, supabase } = useAuth();
+  const { user, supabase, bumpInteractions } = useAuth();
   const winprob = insights?.winprob;
   
   const formatTime = (dateTime: string) => {
@@ -141,6 +141,7 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
                         });
                         if (item_id) {
                           await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: "click" });
+                          try { bumpInteractions(); } catch {}
                         }
                       } catch {}
                     })();

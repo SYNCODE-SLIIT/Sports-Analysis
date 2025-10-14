@@ -89,7 +89,7 @@ const getNumber = (o: DataObject, keys: string[], fallback?: number) => {
 };
 
 export default function MatchPage() {
-  const { user, supabase } = useAuth();
+  const { user, supabase, bumpInteractions } = useAuth();
   const { eventId } = useParams<{ eventId: string }>();
   const searchParams = useSearchParams();
   const sid = searchParams?.get("sid") ?? "card";
@@ -142,6 +142,7 @@ export default function MatchPage() {
         item_id,
         event: evt,
       });
+      try { bumpInteractions(); } catch {}
     } catch {
       // best-effort; ignore errors to avoid breaking UX
     }
@@ -152,6 +153,7 @@ export default function MatchPage() {
     setLiked(prev => !prev);
     try {
       await ensureMatchItemAndSend(!liked ? 'like' : 'view');
+      try { bumpInteractions(); } catch {}
     } catch {}
   };
 
@@ -190,6 +192,7 @@ export default function MatchPage() {
       await supabase.from('user_interactions').insert({ user_id: user.id, item_id: itemId, event: 'save' });
       setSaved(true);
       toast.success('Saved');
+      try { bumpInteractions(); } catch {}
     } catch {
       // ignore failures silently
     }
@@ -285,6 +288,7 @@ export default function MatchPage() {
           await (navigator as any).share({ title, text, url });
           toast.success('Shared');
           await ensureMatchItemAndSend('share');
+          try { bumpInteractions(); } catch {}
           return;
         } catch (err: any) {
           // user cancelled share - do not show error
@@ -296,6 +300,7 @@ export default function MatchPage() {
         await navigator.clipboard.writeText(url);
         toast.success('Link copied to clipboard');
         await ensureMatchItemAndSend('share');
+        try { bumpInteractions(); } catch {}
       }
     } catch {
       // ignore failures silently
