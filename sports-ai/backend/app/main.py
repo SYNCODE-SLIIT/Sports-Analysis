@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .routers.router_collector import RouterCollector
+from .routers.chatbot import router as chatbot_router
 from .services.highlight_search import search_event_highlights
 from .services.nl_search import parse_nl_query
 from .agents.analysis_agent import AnalysisAgent
@@ -37,6 +38,8 @@ app.add_middleware(
 router = RouterCollector()                        # unified router over TSDB + AllSports
 allsports = AllSportsRawAgent()
 analysis_agent = AnalysisAgent(allsports)
+
+app.include_router(chatbot_router)
 
 
 # # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
