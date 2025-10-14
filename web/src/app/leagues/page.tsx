@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight, Search, ThumbsUp, Bookmark, Share2, Eye, MousePointerClick, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchCard } from "@/components/MatchCard";
 import { Input } from "@/components/ui/input";
-import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect } from "@/lib/collect";
+import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect, getLeagueNews } from "@/lib/collect";
 import { parseFixtures, type Fixture } from "@/lib/schemas";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { useAuth } from "@/components/AuthProvider";
 
 type LeagueLite = {
   id: string;
@@ -98,6 +101,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
+  const { user, supabase, bumpPreferences, bumpInteractions } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
@@ -113,6 +117,12 @@ export default function LeaguesPage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayISO);
   const [dateMatches, setDateMatches] = useState<Fixture[]>([]);
   const [dateLoading, setDateLoading] = useState(false);
+  const [news, setNews] = useState<Array<{ id?: string; title?: string; url?: string; summary?: string; imageUrl?: string; source?: string; publishedAt?: string }>>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const [favTeams, setFavTeams] = useState<string[]>([]);
+  const [favLeagues, setFavLeagues] = useState<string[]>([]);
+
 
   const qSan = useMemo(() => sanitizeInput(search), [search]);
 
@@ -170,6 +180,134 @@ export default function LeaguesPage() {
     };
   }, []);
 
+  // Load user preferences for boosting
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!user) { setFavTeams([]); setFavLeagues([]); return; }
+      try {
+        const { data } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
+        if (!active) return;
+        setFavTeams((data?.favorite_teams ?? []) as string[]);
+        setFavLeagues((data?.favorite_leagues ?? []) as string[]);
+      } catch {
+        if (!active) return;
+        setFavTeams([]); setFavLeagues([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [user, supabase]);
+
+  // Ensure a league item exists and log interaction
+  const ensureLeagueItemAndSend = useCallback(async (
+    leagueName: string,
+    evt: "view" | "click" | "like" | "save" | "share" | "dismiss"
+  ) => {
+    if (!user || !leagueName) return;
+    try {
+      const league = allLeagues.find(l => l.league_name === leagueName);
+      const { data: item_id } = await supabase.rpc("ensure_league_item", {
+        p_league_name: leagueName,
+        p_logo: league?.logo ?? null,
+        p_popularity: 0,
+      });
+      if (!item_id) return;
+      await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: evt });
+    } catch {}
+  }, [user, supabase, allLeagues]);
+
+  // Save league to user preferences (favorite_leagues) and log interaction
+  const handleSaveLeague = useCallback(async () => {
+    if (!user || !selectedLeague) return;
+    try {
+      // ensure league item & send save interaction
+      await ensureLeagueItemAndSend(selectedLeague, 'save');
+
+      // fetch existing preferences
+      const { data: prefs } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
+      const existingLeagues: string[] = (prefs?.favorite_leagues ?? []) as string[];
+      const existingTeams: string[] = (prefs?.favorite_teams ?? []) as string[];
+      if (existingLeagues.includes(selectedLeague)) {
+        toast.success('League already in your favorites');
+        // still update local state to reflect db
+        setFavLeagues(existingLeagues);
+        return;
+      }
+      const newLeagues = [...existingLeagues, selectedLeague];
+      // upsert preferences
+  await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
+  // update local state so UI updates immediately
+  setFavLeagues(newLeagues);
+  // notify other components (Profile) to refresh preferences
+  try { bumpPreferences(); } catch {}
+  toast.success('League saved to your favorites');
+    } catch (err) {
+      console.error('save league', err);
+      toast.error('Failed to save league');
+    }
+  }, [user, selectedLeague, supabase, ensureLeagueItemAndSend]);
+
+  const handleLeagueShare = useCallback(async () => {
+    if (!selectedLeague) return;
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/leagues?league=${encodeURIComponent(selectedLeague)}`
+      : `/leagues?league=${encodeURIComponent(selectedLeague)}`;
+    const title = `${selectedLeague}`;
+    const text = `Check out ${selectedLeague} on Sports Analysis`;
+    try {
+      const nav: any = typeof navigator !== 'undefined' ? navigator : undefined;
+      if (nav?.share) {
+        try {
+          await nav.share({ title, text, url });
+          toast.success('Shared');
+          await ensureLeagueItemAndSend(selectedLeague, 'share');
+          return;
+        } catch (err: any) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link copied to clipboard');
+        await ensureLeagueItemAndSend(selectedLeague, 'share');
+      }
+    } catch {
+      // Ignore share failures
+    }
+  }, [selectedLeague, ensureLeagueItemAndSend]);
+
+const fetchLeagueNews = useCallback(async (leagueName: string) => {
+  if (!leagueName) return;
+  setNewsLoading(true);
+  setNewsError(null);
+  try {
+    const resp = await getLeagueNews(leagueName, 20);
+    const articlesRaw = resp?.data?.articles || resp?.data?.result || resp?.data || [];
+    const normalized = (Array.isArray(articlesRaw) ? articlesRaw : []).map((a: any, i: number) => ({
+      id: a.id || a.articleId || a.url || `news-${i}`,
+      title: a.title || a.headline || a.name || "",
+      url: a.url || a.link || a.article_url || "",
+      summary: a.summary || a.description || a.excerpt || "",
+      // try many common keys providers use for an image
+      imageUrl:
+        a.image ||
+        a.imageUrl ||
+        a.urlToImage ||
+        a.thumbnail ||
+        a.image_url ||
+        (a.media && a.media[0] && (a.media[0].url || a.media[0].src)) ||
+        undefined,
+      source: a.source || a.publisher || "",
+      publishedAt: a.publishedAt || a.pubDate || a.published || "",
+    }));
+    setNews(normalized);
+  } catch (err: any) {
+    setNewsError(String(err?.message || err));
+  } finally {
+    setNewsLoading(false);
+  }
+}, []);
+
 const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) => {
     setDateLoading(true);
     try {
@@ -192,7 +330,7 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
       const rawEvents: unknown[] = Array.isArray(data)
         ? data
         : extract(data) || [];
-      setDateMatches(parseFixtures(rawEvents));
+  setDateMatches(boostFixtures(parseFixtures(rawEvents)));
     } catch (error) {
       console.debug("[leagues] date fixtures", error);
       setDateMatches([]);
@@ -225,6 +363,8 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
     setLiveInLeague([]);
     setUpcoming([]);
     setRecent([]);
+    setNews([]);
+    fetchLeagueNews(selectedLeague);
 
     const extractEvents = (payload: unknown): unknown[] => {
       if (!payload || typeof payload !== "object") return [];
@@ -268,21 +408,21 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
           raw = getField("events") ?? getField("result") ?? getField("results") ?? getField("items") ?? [];
         }
         const fixtures = parseFixtures(Array.isArray(raw) ? raw : []);
-        setLiveInLeague(fixtures);
+  setLiveInLeague(boostFixtures(fixtures));
       } else {
         setLiveInLeague([]);
       }
 
       if (upcomingRes.status === "fulfilled") {
         const events = extractEvents(upcomingRes.value.data);
-        setUpcoming(parseFixtures(events));
+  setUpcoming(boostFixtures(parseFixtures(events)));
       } else {
         setUpcoming([]);
       }
 
       if (recentRes.status === "fulfilled") {
         const events = extractEvents(recentRes.value.data);
-        setRecent(parseFixtures(events));
+  setRecent(boostFixtures(parseFixtures(events)));
       } else {
         setRecent([]);
       }
@@ -307,6 +447,18 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
 
     return () => { active = false; };
   }, [selectedLeague, fetchMatchesByDate, todayISO]);
+
+  const boostFixtures = useCallback((arr: Fixture[]) => {
+    if (favTeams.length === 0 && favLeagues.length === 0) return arr;
+    return [...arr]
+      .map((m, idx) => {
+        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+        const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
+        return { m, idx, score: teamBoost + leagueBoost };
+      })
+      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+      .map(x => x.m);
+  }, [favTeams, favLeagues]);
   return (
     <div className="container py-8 space-y-12">
       {/* Header */}
@@ -343,14 +495,15 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
               return (
                 <Card
                   key={`${league.id}-${league.league_name}`}
-                  className={`cursor-pointer border transition hover:shadow-md focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 ${isSelected ? 'border-primary shadow-lg' : ''}`}
-                  onClick={() => setSelectedLeague(league.league_name)}
+                  className={`cursor-pointer border hover:shadow-md focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 transition-transform active:scale-95 ${isSelected ? 'border-primary shadow-lg' : ''}`}
+                  onClick={() => { setSelectedLeague(league.league_name); ensureLeagueItemAndSend(league.league_name, 'view'); }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(evt) => {
                     if (evt.key === 'Enter' || evt.key === ' ') {
                       evt.preventDefault();
                       setSelectedLeague(league.league_name);
+                      ensureLeagueItemAndSend(league.league_name, 'view');
                     }
                   }}
                 >
@@ -394,13 +547,25 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                 </label>
                 <button
                   type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary/90"
+                  className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-transform active:scale-95"
                   onClick={applyDateFilter}
                   disabled={dateLoading}
                 >
                   {dateLoading ? 'Loading…' : 'Apply'}
                 </button>
               </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => { ensureLeagueItemAndSend(selectedLeague, 'like'); try { bumpInteractions(); } catch {} }}>
+                <ThumbsUp className="w-4 h-4 mr-1"/> Like
+              </Button>
+              <Button variant="outline" size="sm" title="Save" className="transition-transform active:scale-95" onClick={handleSaveLeague}>
+                <Bookmark className="w-4 h-4 mr-1"/> Save
+              </Button>
+              <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={() => { handleLeagueShare(); try { bumpInteractions(); } catch {} }}>
+                <Share2 className="w-4 h-4 mr-1"/> Share
+              </Button>
+              {/* Dismiss removed as per request */}
             </div>
           </Card>
         )}
@@ -500,6 +665,60 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {recent.map((f)=> (
                         <MatchCard key={f.id} fixture={f} />
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+            <div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Latest News</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {newsLoading ? (
+                    <div className="text-sm text-muted-foreground">Loading news…</div>
+                  ) : newsError ? (
+                    <div className="text-sm text-destructive">{newsError}</div>
+                  ) : news.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">No recent headlines available right now.</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {news.map((article) => (
+                        <a
+                          key={article.id}
+                          href={article.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block rounded-lg border border-border p-4 transition hover:border-primary hover:shadow"
+                        >
+                          <div className="flex items-start gap-3">
+                            {article.imageUrl ? (
+                              <img
+                                src={article.imageUrl}
+                                alt={article.title || 'news image'}
+                                className="h-20 w-28 flex-shrink-0 rounded-md object-cover"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            ) : null}
+
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-semibold text-foreground truncate">{article.title}</div>
+                              {article.summary && (
+                                <div className="text-sm text-muted-foreground line-clamp-3">{article.summary}</div>
+                              )}
+                              <div className="text-xs text-muted-foreground flex items-center gap-2 mt-2">
+                                {article.source && <span className="truncate">{article.source}</span>}
+                                {article.publishedAt && (
+                                  <time dateTime={article.publishedAt} className="truncate">
+                                    {new Date(article.publishedAt).toLocaleString()}
+                                  </time>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </a>
                       ))}
                     </div>
                   )}

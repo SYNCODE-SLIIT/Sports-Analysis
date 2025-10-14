@@ -5,7 +5,9 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from .routers.router_collector import RouterCollector
+from .routers.chatbot import router as chatbot_router
 from .services.highlight_search import search_event_highlights
+from .services.nl_search import parse_nl_query
 from .agents.analysis_agent import AnalysisAgent
 from .agents.game_analytics_agent import AllSportsRawAgent
 
@@ -36,6 +38,8 @@ app.add_middleware(
 router = RouterCollector()                        # unified router over TSDB + AllSports
 allsports = AllSportsRawAgent()
 analysis_agent = AnalysisAgent(allsports)
+
+app.include_router(chatbot_router)
 
 
 # # --- Debug: list routes at startup (helps diagnose 404 during dev) ---
@@ -290,3 +294,94 @@ def highlight_event(home: str, away: str, minute: int | None = None, player: str
         'date': date,
     }
     return search_event_highlights(args)
+
+
+def _extract_items(intent: str, data: dict) -> list:
+    """Best-effort list extraction from router responses."""
+    if not isinstance(data, dict):
+        return []
+
+    # Events / fixtures style payloads
+    keys = ('events', 'result', 'results', 'matches')
+    for key in keys:
+        val = data.get(key)
+        if isinstance(val, list):
+            return val
+        if isinstance(val, dict) and intent == 'h2h':
+            merged = []
+            for arr in val.values():
+                if isinstance(arr, list):
+                    merged.extend(arr)
+            if merged:
+                return merged
+
+    return []
+
+
+@app.post('/search/nl')
+def nl_search(payload: dict = Body(...)):
+    """Lightweight natural-language search entrypoint for the dashboard."""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Request body must be a JSON object.")
+
+    query_raw = payload.get('query')
+    if not query_raw:
+        query_raw = payload.get('q')
+    query = str(query_raw or '').strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Provide 'query' or 'q'.")
+
+    limit_raw = payload.get('limit')
+    try:
+        limit = int(limit_raw) if limit_raw is not None else 3
+    except (TypeError, ValueError):
+        limit = 3
+    limit = max(1, min(limit, 5))
+
+    parsed = parse_nl_query(query)
+    parsed_dict = parsed.to_dict()
+
+    evaluated = []
+    hits = []
+
+    for cand in parsed.candidates:
+        intent = cand.get('intent')
+        args = cand.get('args') or {}
+        if not isinstance(intent, str):
+            continue
+
+        resp = router.handle({"intent": intent, "args": args})
+        data = resp.get('data') if isinstance(resp, dict) else None
+        items = _extract_items(intent, data or {})
+        empty = router._is_empty(data) if hasattr(router, '_is_empty') else not items
+        ok = bool(resp.get('ok')) and not empty
+
+        record = {
+            'intent': intent,
+            'reason': cand.get('reason'),
+            'args': args,
+            'ok': ok,
+            'empty': empty,
+            'count': len(items) if isinstance(items, list) else 0,
+            'items': items,
+            'data': data,
+            'source': (resp.get('meta') or {}).get('source') if isinstance(resp, dict) else None,
+            'meta': resp.get('meta') if isinstance(resp, dict) else None,
+            'error': resp.get('error') if isinstance(resp, dict) else None,
+        }
+
+        evaluated.append(record)
+        if ok:
+            hits.append(record)
+            if len(hits) >= limit:
+                break
+
+    return {
+        'ok': bool(hits),
+        'query': query,
+        'parsed': parsed_dict,
+        'results': evaluated,
+        'hits': hits,
+        'limit': limit,
+        'meta': {'hit_count': len(hits)}
+    }

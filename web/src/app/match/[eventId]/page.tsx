@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { Calendar, MapPin, Users, Trophy, TrendingUp } from "lucide-react";
+import { Calendar, MapPin, Users, Trophy, TrendingUp, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { HighlightsCarousel } from "@/components/HighlightsCarousel";
-import Timeline from "@/components/match/Timeline";
+import RichTimeline from "@/components/match/RichTimeline";
 import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
 import MatchSummaryCard from "@/components/match/MatchSummaryCard";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/collect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/AuthProvider";
 
 type TeamSideValue = { home?: number; away?: number };
 type MatchStats = {
@@ -87,6 +89,7 @@ const getNumber = (o: DataObject, keys: string[], fallback?: number) => {
 };
 
 export default function MatchPage() {
+  const { user, supabase, bumpInteractions } = useAuth();
   const { eventId } = useParams<{ eventId: string }>();
   const searchParams = useSearchParams();
   const sid = searchParams?.get("sid") ?? "card";
@@ -112,6 +115,197 @@ export default function MatchPage() {
   const [h2hExtra, setH2hExtra] = useState<{ matches: DataObject[] } | null>(null);
   const [extrasErrors, setExtrasErrors] = useState<NonNullable<MatchExtrasTabsProps["errors"]>>({});
   const [extrasLoading, setExtrasLoading] = useState(false);
+  const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
+  const [liked, setLiked] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Ensure an item exists for this match and log an interaction
+  const ensureMatchItemAndSend = async (
+    evt: "view" | "click" | "like" | "save" | "share" | "dismiss"
+  ) => {
+    if (!user) return;
+    try {
+      const title = event ? `${event.homeTeam} vs ${event.awayTeam}` : `Match ${eventId}`;
+      const teams = event ? [event.homeTeam, event.awayTeam].filter(Boolean) : [];
+      const league = event?.league ?? null;
+      const { data: item_id, error: rpcErr } = await supabase.rpc("ensure_match_item", {
+        p_event_id: String(eventId),
+        p_title: title,
+        p_teams: teams,
+        p_league: league,
+        p_popularity: 0,
+      });
+      if (rpcErr) throw rpcErr;
+      if (!item_id) return;
+      await supabase.from("user_interactions").insert({
+        user_id: user.id,
+        item_id,
+        event: evt,
+      });
+      try { bumpInteractions(); } catch {}
+    } catch {
+      // best-effort; ignore errors to avoid breaking UX
+    }
+  };
+
+  const toggleLike = async () => {
+    if (!user) return;
+    setLiked(prev => !prev);
+    try {
+      await ensureMatchItemAndSend(!liked ? 'like' : 'view');
+      try { bumpInteractions(); } catch {}
+    } catch {}
+  };
+
+  const toggleSave = async () => {
+    if (!user || !event) return;
+    try {
+      // Ensure item exists and get the item id
+      const { data: itemId, error: rpcErr } = await supabase.rpc('ensure_match_item', {
+        p_event_id: String(event.eventId),
+        p_title: `${event.homeTeam} vs ${event.awayTeam}`,
+        p_teams: [event.homeTeam, event.awayTeam],
+        p_league: event.league ?? null,
+        p_popularity: 0,
+      });
+      if (rpcErr) throw rpcErr;
+      if (!itemId) return;
+      if (saved) {
+        // Unsave: delete existing save interaction(s)
+        try {
+          await supabase.from('user_interactions').delete().match({ user_id: user.id, item_id: itemId, event: 'save' });
+          setSaved(false);
+          toast.success('Removed saved match');
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      // Not saved yet: insert a save if none exists
+      const { data: existing } = await supabase.from('user_interactions').select('id').eq('user_id', user.id).eq('item_id', itemId).eq('event', 'save').maybeSingle();
+      if (existing) {
+        setSaved(true);
+        toast.info('Already saved');
+        return;
+      }
+      await supabase.from('user_interactions').insert({ user_id: user.id, item_id: itemId, event: 'save' });
+      setSaved(true);
+      toast.success('Saved');
+      try { bumpInteractions(); } catch {}
+    } catch {
+      // ignore failures silently
+    }
+  };
+
+  // On load, mark saved=true if a prior 'save' exists for this match
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!user || !event) return;
+      try {
+        const { data: itemId } = await supabase.rpc('ensure_match_item', {
+          p_event_id: String(event.eventId),
+          p_title: `${event.homeTeam} vs ${event.awayTeam}`,
+          p_teams: [event.homeTeam, event.awayTeam],
+          p_league: event.league ?? null,
+          p_popularity: 0,
+        });
+        if (!itemId) return;
+        const { data: existing } = await supabase.from('user_interactions').select('id').eq('user_id', user.id).eq('item_id', itemId).eq('event', 'save').maybeSingle();
+        if (!active) return;
+        if (existing) setSaved(true);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => { active = false; };
+  }, [user, supabase, event]);
+
+  // Load user's favorite teams for UI state (disable + and show heart)
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!user) return;
+      try {
+        const { data } = await supabase
+          .from('user_preferences')
+          .select('favorite_teams')
+          .eq('user_id', user.id)
+          .single();
+        if (!active) return;
+        setFavoriteTeams((data?.favorite_teams ?? []) as string[]);
+      } catch {
+        if (!active) return;
+        setFavoriteTeams([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [user, supabase]);
+
+  // Log a 'view' interaction automatically with a short debounce to avoid double logs
+  const viewLogged = useRef(false);
+  useEffect(() => {
+    if (!user || !event || viewLogged.current) return;
+    const t = setTimeout(() => {
+      if (!viewLogged.current) {
+        viewLogged.current = true;
+        void ensureMatchItemAndSend("view");
+      }
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, event?.eventId]);
+
+  const addFavoriteTeam = async (teamName: string) => {
+    if (!user || !teamName) return;
+    if (favoriteTeams.includes(teamName)) return;
+    try {
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('favorite_teams, favorite_leagues')
+        .eq('user_id', user.id)
+        .single();
+      const prevTeams = (data?.favorite_teams ?? []) as string[];
+      const prevLeagues = (data?.favorite_leagues ?? []) as string[];
+      const nextTeams = Array.from(new Set([...prevTeams, teamName]));
+      await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: nextTeams, favorite_leagues: prevLeagues });
+      setFavoriteTeams(nextTeams);
+      try { await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: teamName, p_logo: '', p_metadata: {} }); } catch {}
+    } catch {}
+  };
+
+  const handleShare = async () => {
+    if (!match) return;
+    try {
+      const url = typeof window !== 'undefined'
+        ? `${window.location.origin}/match/${encodeURIComponent(match.eventId)}?sid=share`
+        : `/match/${encodeURIComponent(match.eventId)}?sid=share`;
+      const title = `${match.homeTeam} vs ${match.awayTeam}`;
+      const text = `Check out ${title} on Sports Analysis`;
+      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+        try {
+          await (navigator as any).share({ title, text, url });
+          toast.success('Shared');
+          await ensureMatchItemAndSend('share');
+          try { bumpInteractions(); } catch {}
+          return;
+        } catch (err: any) {
+          // user cancelled share - do not show error
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+      // Fallback to copy link
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link copied to clipboard');
+        await ensureMatchItemAndSend('share');
+        try { bumpInteractions(); } catch {}
+      }
+    } catch {
+      // ignore failures silently
+    }
+  };
 
   // Seed from sessionStorage for fast paint like legacy
   useEffect(() => {
@@ -396,6 +590,8 @@ export default function MatchPage() {
   const isLive = match.status === "LIVE";
   const isFinished = match.status === "FT";
 
+  
+
   return (
     <div className="container py-8 space-y-8">
       {/* Match Header */}
@@ -414,7 +610,7 @@ export default function MatchPage() {
                 </Badge>
               </div>
 
-              {/* Teams and Score */}
+              {/* Teams and Score with Save (+) */}
               <div className="flex items-center justify-center space-x-8">
                 <div className="text-center space-y-2">
                   <div className="w-16 h-16 mx-auto rounded-full bg-red-100 flex items-center justify-center">
@@ -422,7 +618,28 @@ export default function MatchPage() {
                       {match.homeTeam.substring(0, 2).toUpperCase()}
                     </span>
                   </div>
-                  <h3 className="font-semibold text-lg">{match.homeTeam}</h3>
+                  <div className="flex items-center justify-center gap-2">
+                    <h3 className="font-semibold text-lg flex items-center gap-1">
+                      {match.homeTeam}
+                      {favoriteTeams.includes(match.homeTeam) && (
+                        <Heart className="w-4 h-4 text-red-500" fill="currentColor" />
+                      )}
+                    </h3>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      title={favoriteTeams.includes(match.homeTeam) ? "Saved" : "Save team"}
+                      className="transition-transform active:scale-95"
+                      disabled={favoriteTeams.includes(match.homeTeam)}
+                      onClick={() => addFavoriteTeam(match.homeTeam)}
+                    >
+                      {favoriteTeams.includes(match.homeTeam) ? (
+                        <Check className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Plus className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="text-center space-y-2">
@@ -442,7 +659,28 @@ export default function MatchPage() {
                       {match.awayTeam.substring(0, 2).toUpperCase()}
                     </span>
                   </div>
-                  <h3 className="font-semibold text-lg">{match.awayTeam}</h3>
+                  <div className="flex items-center justify-center gap-2">
+                    <h3 className="font-semibold text-lg flex items-center gap-1">
+                      {match.awayTeam}
+                      {favoriteTeams.includes(match.awayTeam) && (
+                        <Heart className="w-4 h-4 text-red-500" fill="currentColor" />
+                      )}
+                    </h3>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      title={favoriteTeams.includes(match.awayTeam) ? "Saved" : "Save team"}
+                      className="transition-transform active:scale-95"
+                      disabled={favoriteTeams.includes(match.awayTeam)}
+                      onClick={() => addFavoriteTeam(match.awayTeam)}
+                    >
+                      {favoriteTeams.includes(match.awayTeam) ? (
+                        <Check className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Plus className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -460,6 +698,20 @@ export default function MatchPage() {
                   <Users className="w-4 h-4" />
                   <span>{match.attendance?.toLocaleString()} attendance</span>
                 </div>
+              </div>
+
+              {/* Personalization actions */}
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button variant={liked ? "default" : "outline"} size="sm" title="Like" className="transition-transform active:scale-95" onClick={toggleLike}>
+                  <ThumbsUp className="w-4 h-4 mr-1"/>{liked ? 'Liked' : 'Like'}
+                </Button>
+                <Button variant={saved ? "default" : "outline"} size="sm" title="Save" className="transition-transform active:scale-95" onClick={toggleSave}>
+                  <Bookmark className="w-4 h-4 mr-1"/>{saved ? 'Saved' : 'Save'}
+                </Button>
+                <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={handleShare}>
+                  <Share2 className="w-4 h-4 mr-1"/> Share
+                </Button>
+                {/* Dismiss removed as per request */}
               </div>
             </div>
           </CardContent>
@@ -598,7 +850,9 @@ export default function MatchPage() {
           <TabsContent value="events" className="space-y-4">
             <Card>
               <CardContent className="p-4">
-                <Timeline items={timeline} />
+                {/* Rich horizontal timeline */}
+                <RichTimeline items={timeline} homeTeam={match.homeTeam} awayTeam={match.awayTeam}
+                  matchRaw={eventRaw} players={playersExtra} teams={teamsExtra} />
               </CardContent>
             </Card>
             <BestPlayerCard best={best} />

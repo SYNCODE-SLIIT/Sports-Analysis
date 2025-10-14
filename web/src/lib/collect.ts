@@ -102,6 +102,20 @@ export async function getTeam(teamName: string) {
   return postCollect<{ team?: DataObject; teams?: DataObject[] }>("team.get", { teamName: clean });
 }
 
+/** Search teams by name for autocomplete */
+export async function searchTeams(teamName: string) {
+  const clean = sanitizeInput(teamName);
+  if (!clean) return { data: { teams: [] } } as CollectEnvelope & { data: { teams?: DataObject[] } };
+  return postCollect<{ teams?: DataObject[] }>("teams.list", { teamName: clean });
+}
+
+/** Search leagues by name for autocomplete */
+export async function searchLeagues(leagueName: string) {
+  const clean = sanitizeInput(leagueName);
+  if (!clean) return { data: { leagues: [] } } as CollectEnvelope & { data: { leagues?: DataObject[] } };
+  return postCollect<{ leagues?: DataObject[] }>("leagues.list", { leagueName: clean });
+}
+
 export async function listTeamPlayers(teamName: string) {
   const clean = sanitizeInput(teamName);
   if (!clean) throw new Error("Team name is required");
@@ -152,4 +166,17 @@ export async function getOdds(eventId: string) {
 
 export async function getComments(eventId: string) {
   return postCollect<{ comments?: DataObject[] }>("comments.list", { eventId: String(eventId) });
+}
+
+export async function getLeagueNews(leagueName: string, limit = 20) {
+  const clean = sanitizeInput(leagueName);
+  if (!clean) {
+    return { data: { articles: [], count: 0 } } as CollectEnvelope & {
+      data: { articles: Array<Record<string, Json>>; count: number };
+    };
+  }
+  return postCollect<{ articles?: DataObject[]; count?: number }>("league.news", {
+    leagueName: clean,
+    limit,
+  });
 }

@@ -10,9 +10,6 @@ function ensureTooltip(){
   if(_evtTooltip) return _evtTooltip;
   const d = document.createElement('div');
   // Make tooltip vertically scrollable when content exceeds max-height.
-  // We keep a fairly generous max-height to avoid covering the entire screen.
-  // Horizontal overflow is hidden to prevent layout jitter; vertical wheel events
-  // are captured so the page doesn't scroll while the user scrolls inside the tooltip.
   d.style.cssText = 'position:fixed;z-index:9999;max-width:420px;max-height:360px;background:linear-gradient(145deg,#ffffff,#fafafa);color:#111827;padding:16px 18px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.15),0 4px 20px rgba(0,0,0,0.08);font-size:13px;line-height:1.6;pointer-events:auto;display:none;overflow-x:hidden;overflow-y:auto;border:1px solid rgba(255,255,255,0.8);backdrop-filter:blur(8px);transform:translateY(-4px);transition:all 0.2s ease;scrollbar-width:thin;scrollbar-color:#9ca3af #f3f4f6;';
   // Custom scrollbar styling for WebKit
   try{
@@ -33,14 +30,65 @@ function ensureTooltip(){
   d.addEventListener('mouseleave', ()=>{ if(_evtTooltip){ _evtTooltip.style.display='none'; } });
   document.body.appendChild(d); _evtTooltip = d; return d;
 }
-function showEventTooltip(anchor, html){ const d=ensureTooltip(); d.innerHTML = String(html||''); d.style.display='block'; positionEventTooltip(anchor); }
-function hideEventTooltip(){ if(_evtTooltip) _evtTooltip.style.display='none'; }
-function positionEventTooltip(anchor){ if(!_evtTooltip) return; const r = anchor.getBoundingClientRect(); const pad=8; let x = r.right + pad; let y = r.top - 4; const vw = window.innerWidth; const vh = window.innerHeight; const dw = _evtTooltip.offsetWidth; const dh = _evtTooltip.offsetHeight; if(x+dw+12>vw) x = r.left - dw - pad; if(x<4) x=4; if(y+dh+12>vh) y = vh - dh - 8; if(y<4) y=4; _evtTooltip.style.left = `${Math.round(x)}px`; _evtTooltip.style.top = `${Math.round(y)}px`; }
+function showEventTooltip(anchor, html){ 
+  const d=ensureTooltip(); 
+  d.innerHTML = String(html||''); 
+  d.style.display='block'; 
+  positionEventTooltip(anchor); 
+}
+
+function hideEventTooltip(){ 
+  if(_evtTooltip) _evtTooltip.style.display='none'; 
+}
+function positionEventTooltip(anchor){ 
+  if(!_evtTooltip) return; 
+  const r = anchor.getBoundingClientRect(); 
+  const pad=8; let x = r.right + pad; 
+  let y = r.top - 4; 
+  const vw = window.innerWidth; 
+  const vh = window.innerHeight; 
+  const dw = _evtTooltip.offsetWidth; 
+  const dh = _evtTooltip.offsetHeight; 
+  if(x+dw+12>vw) x = r.left - dw - pad; 
+  if(x<4) x=4; 
+  if(y+dh+12>vh) y = vh - dh - 8; 
+  if(y<4) y=4; 
+  _evtTooltip.style.left = `${Math.round(x)}px`;
+  _evtTooltip.style.top = `${Math.round(y)}px`; 
+}
 
 // --- Icons/colors/tags ---
-function getEventIcon(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; if(desc.includes('red')||tagStr.includes('red')) return '🟥'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '↔️'; if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; return '⚪'; }
-function getEventColor(description, tags){ const desc=String(description).toLowerCase(); const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); if(desc.includes('goal')||tagStr.includes('goal')) return '#10b981'; if(desc.includes('yellow')||tagStr.includes('yellow')) return '#f59e0b'; if(desc.includes('red')||tagStr.includes('red')) return '#ef4444'; if(desc.includes('substitution')||tagStr.includes('substitution')) return '#8b5cf6'; return '#6b7280'; }
-function getTagColor(tag){ const t = String(tag).toLowerCase(); if(t.includes('goal')) return '#10b981'; if(t.includes('card')) return '#f59e0b'; if(t.includes('substitution')) return '#8b5cf6'; if(t.includes('penalty')) return '#ef4444'; return '#6b7280'; }
+function getEventIcon(description, tags){ 
+  const desc=String(description).toLowerCase(); 
+  const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); 
+  if(desc.includes('goal')||tagStr.includes('goal')) return '⚽'; 
+  if(desc.includes('yellow')||tagStr.includes('yellow')) return '🟨'; 
+  if(desc.includes('red')||tagStr.includes('red')) return '🟥';
+  if(desc.includes('substitution')||tagStr.includes('substitution')) return '↔️'; 
+  if(desc.includes('corner')||tagStr.includes('corner')) return '📐'; 
+  if(desc.includes('penalty')||tagStr.includes('penalty')) return '⚽'; 
+  if(desc.includes('offside')||tagStr.includes('offside')) return '🚩'; 
+  return '⚪';
+}
+
+function getEventColor(description, tags){ 
+  const desc=String(description).toLowerCase(); 
+  const tagStr = Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags).toLowerCase(); 
+  if(desc.includes('goal')||tagStr.includes('goal')) return '#10b981'; 
+  if(desc.includes('yellow')||tagStr.includes('yellow')) return '#f59e0b'; 
+  if(desc.includes('red')||tagStr.includes('red')) return '#ef4444'; 
+  if(desc.includes('substitution')||tagStr.includes('substitution')) return '#8b5cf6'; 
+  return '#6b7280'; 
+}
+
+function getTagColor(tag){ 
+  const t = String(tag).toLowerCase(); 
+  if(t.includes('goal')) return '#10b981'; 
+  if(t.includes('card')) return '#f59e0b'; 
+  if(t.includes('substitution')) return '#8b5cf6'; 
+  if(t.includes('penalty')) return '#ef4444'; 
+  return '#6b7280'; 
+}
 
 // --- Player image resolution helpers ---
 function ensurePlayersMap(matchCtx){
@@ -218,7 +266,7 @@ function normalizeEventTags(evt){
   if(evt){
     if(evt.tags !== undefined) candidates.push(evt.tags);
     if(evt.card !== undefined) candidates.push(evt.card);
-    if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
+    // if(evt.predicted_tags !== undefined) candidates.push(evt.predicted_tags);
     if(evt.predictedTags !== undefined) candidates.push(evt.predictedTags);
     if(evt.labels !== undefined) candidates.push(evt.labels);
     if(evt.labels_list !== undefined) candidates.push(evt.labels_list);
@@ -226,24 +274,97 @@ function normalizeEventTags(evt){
   let raw = [];
   for(const c of candidates){ if(c === undefined || c === null) continue; if(Array.isArray(c) && c.length>0){ raw = c; break; } if(typeof c === 'string' && c.trim()){ raw = [c]; break; } if(typeof c === 'object' && !Array.isArray(c)){ raw = [c]; break; } }
   const out = []; if(!raw) return out; try{ if(!Array.isArray(raw)){ if(typeof raw === 'string') raw = [raw]; else if(typeof raw === 'object') raw = [raw]; else raw = []; } }catch(e){ return out; }
-  raw.forEach(r=>{ if(r===undefined||r===null) return; if(typeof r === 'string'){ const isModel = /^model[:\-\s]/i.test(r) || /\bmodel\b|\bml\b/i.test(r); const text = r.replace(/^model[:\-\s]+/i,'').trim(); out.push({ text: text||r, source: isModel? 'model':'rule', confidence: undefined, isModel }); return; } if(typeof r === 'object'){ const text = r.label||r.text||r.name||r.tag||JSON.stringify(r); const src = r.source||r.origin||r.by||r.src||r.provider||''; const conf = r.confidence||r.score||r.probability||r.p||r.conf||undefined; const isModel = String(src).toLowerCase().includes('model')||String(src).toLowerCase().includes('ml')||/^model[:\-\s]/i.test(text)||!!r.isModel; out.push({ text, source: src || (isModel ? 'model':'rule'), confidence: conf, isModel }); return; } }); return out; }
+  raw.forEach(r=>{ if(r===undefined||r===null) return; 
+    if(typeof r === 'string'){ const isModel = /^model[:\-\s]/i.test(r) || /\bmodel\b|\bml\b/i.test(r); 
+      const text = r.replace(/^model[:\-\s]+/i,'').trim(); 
+      out.push({ text: text||r, source: isModel? 'model':'rule', confidence: undefined, isModel }); 
+      return; } 
+      if(typeof r === 'object'){ const text = r.label||r.text||r.name||r.tag||JSON.stringify(r); 
+        const src = r.source||r.origin||r.by||r.src||r.provider||''; 
+        const conf = r.confidence||r.score||r.probability||r.p||r.conf||undefined; 
+        const isModel = String(src).toLowerCase().includes('model')||String(src).toLowerCase().includes('ml')||/^model[:\-\s]/i.test(text)||!!r.isModel; 
+        out.push({ text, source: src || (isModel ? 'model':'rule'), confidence: conf, isModel }); 
+        return; } }); 
+        return out;
+       }
 
 // --- Synthesis/clean/merge ---
-function detectTagsFromText(text){ if(!text) return []; const t=String(text).toLowerCase(); const tags=new Set(); if(t.includes('goal')||/scores?|scored|goal by|assist/.test(t)) tags.add('goal'); if(t.includes('penalty')) tags.add('penalty'); if(t.includes('yellow card')||t.includes('yellow')) tags.add('yellow card'); if(t.includes('red card')||t.includes('sent off')||t.includes('red')) tags.add('red card'); if(t.includes('substitution')||t.includes('sub')||t.includes('replaced')) tags.add('substitution'); if(t.includes('corner')) tags.add('corner'); if(t.includes('offside')) tags.add('offside'); if(t.includes('penalty shootout')||t.includes('shootout')) tags.add('shootout'); const playerMatch = String(text).match(/by\s+([A-Z][a-z]+\s?[A-Z]?[a-z]*)/); if(playerMatch) tags.add('player'); return Array.from(tags).map(s=>({ text: s, source: 'heuristic', confidence: undefined, isModel: false })); }
+function detectTagsFromText(text){
+   if(!text) return []; const t=String(text).toLowerCase();
+    const tags=new Set(); 
+    if(t.includes('goal')||/scores?|scored|goal by|assist/.test(t)) tags.add('goal'); 
+    
+    if(t.includes('penalty')) tags.add('penalty'); 
+    if(t.includes('yellow card')||t.includes('yellow')) tags.add('yellow card'); 
+    if(t.includes('red card')||t.includes('sent off')||t.includes('red')) tags.add('red card'); 
+    if(t.includes('substitution')||t.includes('sub')||t.includes('replaced')) tags.add('substitution'); 
+    if(t.includes('corner')) tags.add('corner'); 
+    if(t.includes('offside')) tags.add('offside'); 
+    if(t.includes('penalty shootout')||t.includes('shootout')) tags.add('shootout'); 
+    const playerMatch = String(text).match(/by\s+([A-Z][a-z]+\s?[A-Z]?[a-z]*)/); 
+    if(playerMatch) tags.add('player'); 
+    return Array.from(tags).map(s=>({ text: s, source: 'heuristic', confidence: undefined, isModel: false })); }
 
 function buildCleanTimeline(ev){
-  const out=[]; const goalsSrc = ev.goalscorers||ev.goals||ev.goalscorer||[]; (goalsSrc||[]).forEach(g=>{ const minute = g.time||g.minute||''; const player = g.home_scorer||g.away_scorer||g.scorer||g.player||''; const assist = g.home_assist||g.away_assist||g.assist||''; const team = (g.away_scorer? ev.event_away_team : (g.home_scorer? ev.event_home_team : '')); const score = g.score||''; out.push({ minute, type:'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] }); });
-  const subs = ev.substitutes||ev.subs||ev.substitutions||[]; (subs||[]).forEach(s=>{ const minute = s.time||''; if(s.home_scorer && typeof s.home_scorer === 'object' && Object.keys(s.home_scorer).length>0){ out.push({ minute, type:'substitution', player_in: s.home_scorer.in, player_out: s.home_scorer.out, team: ev.event_home_team || 'home', description: `${minute} — ${s.home_scorer.in} ON for ${s.home_scorer.out} (${ev.event_home_team})`, tags: ['substitution'] }); } if(s.away_scorer && typeof s.away_scorer === 'object' && Object.keys(s.away_scorer).length>0){ out.push({ minute, type:'substitution', player_in: s.away_scorer.in, player_out: s.away_scorer.out, team: ev.event_away_team || 'away', description: `${minute} — ${s.away_scorer.in} ON for ${s.away_scorer.out} (${ev.event_away_team})`, tags: ['substitution'] }); } });
-  const cards = ev.cards||[]; (cards||[]).forEach(c=>{ const minute = c.time||''; const player = c.home_fault||c.away_fault||''; const cardType = (c.card||'').toLowerCase(); const team = c.home_fault? ev.event_home_team : (c.away_fault? ev.event_away_team : ''); out.push({ minute, type:'card', player, card: cardType, team, description: `${minute} — ${cardType} for ${player} (${team})`, tags: [cardType] }); });
-  function minuteSortKey(m){ if(!m) return 0; const plus = String(m).includes('+'); if(plus){ const parts = String(m).split('+'); return Number(parts[0]) + Number(parts[1]) / 100; } return Number(m)||0; }
+  const out=[]; const goalsSrc = ev.goalscorers||ev.goals||ev.goalscorer||[]; 
+  (goalsSrc||[]).forEach(g=>{ const minute = g.time||g.minute||''; 
+    const player = g.home_scorer||g.away_scorer||g.scorer||g.player||''; 
+    const assist = g.home_assist||g.away_assist||g.assist||''; 
+    const team = (g.away_scorer? ev.event_away_team : (g.home_scorer? ev.event_home_team : '')); 
+    const score = g.score||''; out.push({ minute, type:'goal', player, assist, team, description: `${minute} — ${player} (${team}) scores — assist: ${assist} — score: ${score}`, tags: ['goal'] }); 
+  });
+  const subs = ev.substitutes||ev.subs||ev.substitutions||[]; 
+  (subs||[]).forEach(s=>{ const minute = s.time||''; 
+    if(s.home_scorer && typeof s.home_scorer === 'object' && Object.keys(s.home_scorer).length>0){ 
+      out.push({ minute, type:'substitution', player_in: s.home_scorer.in, player_out: s.home_scorer.out, team: ev.event_home_team || 'home', description: `${minute} — ${s.home_scorer.in} ON for ${s.home_scorer.out} (${ev.event_home_team})`, tags: ['substitution'] }); 
+  } if(s.away_scorer && typeof s.away_scorer === 'object' && Object.keys(s.away_scorer).length>0){ 
+    out.push({ minute, type:'substitution', player_in: s.away_scorer.in, player_out: s.away_scorer.out, team: ev.event_away_team || 'away', description: `${minute} — ${s.away_scorer.in} ON for ${s.away_scorer.out} (${ev.event_away_team})`, tags: ['substitution'] }); 
+} });
+  const cards = ev.cards||[];
+   (cards||[]).forEach(c=>{ const minute = c.time||''; 
+    const player = c.home_fault||c.away_fault||''; 
+    const cardType = (c.card||'').toLowerCase(); 
+    const team = c.home_fault? ev.event_home_team : (c.away_fault? ev.event_away_team : ''); 
+    out.push({ minute, type:'card', player, card: cardType, team, description: `${minute} — ${cardType} for ${player} (${team})`, tags: [cardType] }); });
+  
+    function minuteSortKey(m){ 
+    if(!m) return 0; 
+    const plus = String(m).includes('+'); 
+    if(plus){ const parts = String(m).split('+'); return Number(parts[0]) + Number(parts[1]) / 100; } return Number(m)||0; 
+  }
   out.sort((a,b)=> minuteSortKey(a.minute) - minuteSortKey(b.minute)); return out;
 }
 
 function synthesizeTimelineFromEvent(ev){
-  try{ const out=[]; const scorers = ev.scorers||ev.goals||ev.goal_scorers||ev.scorers_list||ev.goals_list||[]; if(Array.isArray(scorers)&&scorers.length>0){ scorers.forEach(s=>{ const minute = s.minute||s.time||s.minute_display||s.m||s.match_minute||''; const name = s.name||s.player||s.scorer||s.player_name||s.player_fullname||''; const team = s.team||s.side||s.club||''; const desc = s.description||s.text||(name?`Goal by ${name}`:'Goal'); const tags = s.tags||s.predicted_tags||s.predictedTags||s.labels|| (s.type?[s.type]:[]); out.push({ minute, description: desc, player: name, team, type: s.type||'goal', predicted_tags: tags, raw: s }); }); }
-    const comments = ev.comments||ev.comments_list||ev.match_comments||ev.play_by_play||ev.commentary||[]; if(Array.isArray(comments)&&comments.length>0){ comments.slice(0,8).forEach(c=>{ const minute = c.time||c.minute||c.comments_time||c.match_minute||''; const desc = c.text||c.comment||c.comments_text||c.body||''; const tags = c.tags||c.predicted_tags||c.predictedTags||c.labels||[]; if(desc) out.push({ minute, description: desc, predicted_tags: tags, raw: c }); }); }
-    if(out.length===0){ const home = ev.event_home_team||ev.strHomeTeam||ev.home_team||ev.homeName||''; const away = ev.event_away_team||ev.strAwayTeam||ev.away_team||ev.awayName||''; const score = ev.event_final_result||ev.event_ft_result||(ev.home_score!=null&&ev.away_score!=null?`${ev.home_score} - ${ev.away_score}`:''); if(home||away||score) out.push({ minute:'', description: `${home} vs ${away} ${score}`, predicted_tags: [], raw: ev }); }
-    const enriched = out.map(entry=>{ const hasTags = entry.predicted_tags && Array.isArray(entry.predicted_tags) && entry.predicted_tags.length>0; if(!hasTags){ const inferred = detectTagsFromText(entry.description||''); entry.predicted_tags = inferred; } return entry; }); return enriched; }catch(e){ return []; }
+  try{ 
+    const out=[]; 
+    const scorers = ev.scorers||ev.goals||ev.goal_scorers||ev.scorers_list||ev.goals_list||[]; 
+    if(Array.isArray(scorers)&&scorers.length>0){ 
+      scorers.forEach(s=>{ const minute = s.minute||s.time||s.minute_display||s.m||s.match_minute||''; 
+        const name = s.name||s.player||s.scorer||s.player_name||s.player_fullname||''; 
+        const team = s.team||s.side||s.club||''; const desc = s.description||s.text||(name?`Goal by ${name}`:'Goal'); 
+        const tags = s.tags||s.predicted_tags||s.predictedTags||s.labels|| (s.type?[s.type]:[]); out.push({ minute, description: desc, player: name, team, type: s.type||'goal', predicted_tags: tags, raw: s }); 
+      }); }
+    const comments = ev.comments||ev.comments_list||ev.match_comments||ev.play_by_play||ev.commentary||[]; 
+    if(Array.isArray(comments)&&comments.length>0){ comments.slice(0,8).forEach(c=>{ const minute = c.time||c.minute||c.comments_time||c.match_minute||''; 
+      const desc = c.text||c.comment||c.comments_text||c.body||''; 
+      const tags = c.tags||c.predicted_tags||c.predictedTags||c.labels||[]; 
+      if(desc) out.push({ minute, description: desc, predicted_tags: tags, raw: c }); 
+    }); }
+    if(out.length===0){ const home = ev.event_home_team||ev.strHomeTeam||ev.home_team||ev.homeName||''; 
+      const away = ev.event_away_team||ev.strAwayTeam||ev.away_team||ev.awayName||''; 
+      const score = ev.event_final_result||ev.event_ft_result||(ev.home_score!=null&&ev.away_score!=null?`${ev.home_score} - ${ev.away_score}`:''); 
+      if(home||away||score) out.push({ minute:'', description: `${home} vs ${away} ${score}`, predicted_tags: [], raw: ev }); 
+    }
+    const enriched = out.map(entry=>{ const hasTags = entry.predicted_tags && Array.isArray(entry.predicted_tags) && entry.predicted_tags.length>0; 
+      if(!hasTags){ const inferred = detectTagsFromText(entry.description||''); 
+        entry.predicted_tags = inferred; 
+      } return entry; 
+    }); 
+    return enriched; 
+  }catch(e){ 
+    return []; 
+  }
 }
 
 function buildMergedTimeline(ev){
@@ -280,6 +401,7 @@ function buildMergedTimeline(ev){
 }
 
 // --- Horizontal helpers ---
+// Converts strings like "90+3" → 93.
 function toMinuteNumber(m){
   if(m===undefined||m===null) return NaN;
   const s = String(m).trim();
@@ -439,9 +561,26 @@ function createTimelineEvent(event, isLast, matchCtx){
   eventDiv.appendChild(timeline); eventDiv.appendChild(content); return eventDiv;
 }
 
-function deriveEventType(description, tags, ev){ const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase()); const d = String(description||'').toLowerCase(); if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) return 'goal'; if(t.includes('red')) return 'red card'; if(t.includes('yellow')) return 'yellow card'; if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) return 'substitution'; return null; }
+function deriveEventType(description, tags, ev){ 
+  const t = (Array.isArray(tags)?tags.join(' ').toLowerCase():String(tags||'').toLowerCase()); 
+  const d = String(description||'').toLowerCase(); 
+  if(t.includes('goal')||/\bgoal\b|scored|scores/.test(d)) 
+    return 'goal'; 
+  if(t.includes('red')) 
+    return 'red card'; 
+  if(t.includes('yellow')) 
+    return 'yellow card'; 
+  if(t.includes('substitution')||/\bsub\b|replaced/.test(d)) 
+    return 'substitution'; 
+  return null; 
+}
 
-function _briefKey(etype, payload){ const p = payload||{}; return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::'); }
+// Caching brief results to avoid repeated calls for same event
+function _briefKey(etype, payload){ 
+  const p = payload||{}; 
+  return [etype, p.minute||'', (p.description||'').slice(0,80), (p.event&& (p.event.player||p.event.home_scorer||p.event.away_scorer||''))||'', p.tags && p.tags.join('|')].join('::'); 
+}
+
 async function getEventBrief(etype, payload, matchCtx){
   const key = _briefKey(etype, payload);
   if(_eventBriefCache.has(key)) return _eventBriefCache.get(key);
@@ -463,7 +602,7 @@ async function getEventBrief(etype, payload, matchCtx){
 }
 
 function renderMatchTimeline(ev, container){
-  // 1) Collect events
+  // Collect events
   let events = ev.timeline || ev.timeline_items || ev.events || ev.event_timeline || ev.eventTimeline || ev.event_entries || [];
   if(events && !Array.isArray(events) && typeof events === 'object'){
     const vals = Object.values(events).filter(Boolean);
@@ -481,7 +620,7 @@ function renderMatchTimeline(ev, container){
     return !!etype && Number.isFinite(mn);
   });
 
-  // 2) Card shell
+  // Card shell
   const timelineCard = document.createElement('div');
   // Standard card width inside container; scrolling is confined to the timeline scroller only
   timelineCard.style.cssText='background:white;border-radius:16px;padding:20px 16px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,0.08);width:100%;max-width:100%;overflow:hidden;';
@@ -490,12 +629,12 @@ function renderMatchTimeline(ev, container){
   title.innerHTML = '⚽ Match Timeline';
   timelineCard.appendChild(title);
 
-  // 3) Domain and scale (compressed gaps + scroller)
+  // Domain and scale (compressed gaps + scroller)
   const minutes = events.map(e=> toMinuteNumber(e.minute||e.time)).filter(n=>Number.isFinite(n));
   const maxMinute = minutes.length ? Math.max(90, Math.max(...minutes)) : 90;
   const minMinute = 0;
 
-  // 4) Track baseline inside a horizontal scroller
+  // Track baseline inside a horizontal scroller
   const scroller = document.createElement('div');
   // Allow vertical scroll on the page while enabling horizontal scroll inside the timeline only when applicable
   scroller.style.cssText = 'position:relative;overflow-x:auto;overflow-y:hidden;padding:0 8px 6px 8px;scroll-behavior:smooth;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;width:100%;max-width:100%;box-sizing:border-box;';
@@ -521,15 +660,13 @@ function renderMatchTimeline(ev, container){
   const track = document.createElement('div');
   track.style.cssText = 'position:relative;height:104px;min-width:100%;overflow:hidden;';
   
-  // We'll create the baseline segments after computing positions
   // Store baseline container for later
   track.baselineContainer = document.createElement('div');
   // Slight offset upward (-1px) to visually center the thicker 3px line relative to icons
   track.baselineContainer.style.cssText = 'position:absolute;left:0;right:0;top:50%;height:3px;transform:translateY(calc(-50% - 1px));';
   track.appendChild(track.baselineContainer);
 
-  // 5) Minute ticks (sparse)
-  // We will add ticks after computing x positions in compressed space
+  // Minute ticks (sparse)
   const pendingTicks = [0,45,90]; if(maxMinute>90) pendingTicks.push(maxMinute);
   const tickPositions = [];
 
@@ -544,7 +681,7 @@ function renderMatchTimeline(ev, container){
     }
   }catch(_e){}
 
-  // 6) Cluster events by minute with stoppage-time compression (45+ and 90+)
+  //Cluster events by minute with stoppage-time compression (45+ and 90+)
   const clustersMap = new Map();
   const getClusterKey = (e)=>{
     const raw = (e.minute||e.time||'').toString().trim();
@@ -580,7 +717,6 @@ function renderMatchTimeline(ev, container){
     return am - bm;
   });
 
-  // 7) Compute compressed x positions
   // Layout tuning: extra breathing room at edges and around HT
   const cfg = { pxPerMinute: 9, maxGapPx: 110, minGapPx: 20, leftPad: 36, rightPad: 44, htGapBefore: 44, htGapAfter: 56 };
   const xPos = []; // pixel x for each cluster
@@ -617,7 +753,6 @@ function renderMatchTimeline(ev, container){
   }
   let totalWidth = (xPos.length ? xPos[xPos.length-1] : cfg.leftPad) + cfg.rightPad;
   // Stretch to fill container width (use full screen size) to avoid overly tight layout
-  // Stretch content (track) to viewport width when possible, while keeping card within container
   const viewport = Math.max(scroller?.clientWidth || 0, window.innerWidth || 0) - 48; // padding allowance
   if(viewport > 0 && totalWidth < viewport){
     const lastX = xPos[xPos.length-1] || cfg.leftPad;
@@ -671,7 +806,7 @@ function renderMatchTimeline(ev, container){
     return totalWidth - cfg.rightPad;
   };
 
-  // 8) Add sparse ticks using compressed mapping
+  // Add sparse ticks using compressed mapping
   const addTick = (min, label, plusN)=>{
     const x = getTickX(min);
     if(x===null) return;
@@ -707,7 +842,7 @@ function renderMatchTimeline(ev, container){
     }
   } catch(_e) {}
 
-  // 9) Render one marker per cluster at computed x
+  // Render one marker per cluster at computed x
   clusters.forEach((cluster, idx)=>{
     const x = xPos[idx];
     const wrap = document.createElement('div');
@@ -747,8 +882,6 @@ function renderMatchTimeline(ev, container){
     }
     
     wrap.appendChild(mainIcon);
-
-    // Removed +N cluster badge per UX request to avoid overlapping visuals
 
     // Hover: combined tooltip for cluster
     const onEnter = async ()=>{

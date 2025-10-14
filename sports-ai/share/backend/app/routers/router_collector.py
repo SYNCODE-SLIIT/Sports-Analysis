@@ -21,6 +21,8 @@ from ..services.highlight_search import search_event_highlights
 # --- Adapters (thin wrappers around your existing agents) ---
 from ..adapters.tsdb_adapter import TSDBAdapter
 from ..adapters.allsports_adapter import AllSportsAdapter
+from ..services.news_feed import LeagueNewsService, LeagueNewsError
+
 ## Agents
 from ..agents.analysis_agent import AnalysisAgent
 from ..agents.game_analytics_agent import AllSportsRawAgent
@@ -209,6 +211,8 @@ class RouterCollector:
             tsdb_agent=None,              # TSDBAdapter exposes .call, not .handle
             all_sports_agent=self.allsports,
         )
+        self.news = LeagueNewsService()
+
 
     @property
     def all_sports_agent(self):
@@ -299,6 +303,33 @@ class RouterCollector:
                     call_args["lookback"] = lookback
                 resp = self.analysis.handle("analysis.h2h", call_args)
                 return resp
+            if intent in ("league.news", "news.league"):
+                league_name = str(args.get("leagueName") or args.get("league"))
+                limit = int(args.get("limit") or 6)
+                try:
+                    payload = self.news.fetch(league_name, limit=limit)
+                    trace.append({"step": "primary", "provider": "news", "ok": True, "intent": intent})
+                    return {
+                        "ok": True,
+                        "intent": intent,
+                        "args_resolved": {"leagueName": league_name, "limit": limit},
+                        "data": payload,
+                        "meta": {"source": {"primary": "news", "fallback": None}, "trace": trace},
+                    }
+                
+                except LeagueNewsError as exc:
+                    trace.append(
+                        {"step": "primary", "provider": "news", "ok": False, "intent": intent, "error": str(exc)}
+                    )
+                    return {
+                        "ok": False,
+                        "intent": intent,
+                        "args_resolved": {"leagueName": league_name, "limit": limit},
+                        "error": str(exc),
+                        "data": getattr(exc, "payload", None),
+                        "meta": {"source": {"primary": "news", "fallback": None}, "trace": trace},
+                    }
+
 
             primary, fallback = self._route(intent)
 
