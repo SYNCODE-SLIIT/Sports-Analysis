@@ -9,6 +9,12 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  // bump this to notify consumers that user preferences changed
+  bumpPreferences: () => void;
+  prefsVersion: number;
+  // bump this when an interaction (like/click/save/view/share/dismiss) is recorded
+  bumpInteractions: () => void;
+  interactionsVersion: number;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -17,6 +23,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [prefsVersion, setPrefsVersion] = useState(0);
+  const [interactionsVersion, setInteractionsVersion] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -38,16 +46,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     return () => {
       mounted = false;
-      sub.subscription.unsubscribe();
+      try { sub.subscription.unsubscribe(); } catch {}
     };
   }, [supabase]);
+
+  // Realtime subscriptions to user_preferences and user_interactions for the signed-in user.
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    // create channels filtered to the current user
+    const prefChannel = supabase
+      .channel(`public:user_preferences:${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_preferences', filter: `user_id=eq.${userId}` }, () => {
+        setPrefsVersion(v => v + 1);
+      })
+      .subscribe();
+
+    const interactionsChannel = supabase
+      .channel(`public:user_interactions:${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_interactions', filter: `user_id=eq.${userId}` }, () => {
+        setInteractionsVersion(v => v + 1);
+      })
+      .subscribe();
+
+    return () => {
+      try { supabase.removeChannel(prefChannel); } catch {}
+      try { supabase.removeChannel(interactionsChannel); } catch {}
+    };
+  }, [supabase, session?.user?.id]);
 
   const value = useMemo<AuthContextValue>(() => ({
     supabase,
     session,
     user: session?.user ?? null,
     loading,
-  }), [supabase, session, loading]);
+    bumpPreferences: () => setPrefsVersion(v => v + 1),
+    prefsVersion,
+    bumpInteractions: () => setInteractionsVersion(v => v + 1),
+    interactionsVersion,
+  }), [supabase, session, loading, prefsVersion, interactionsVersion]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

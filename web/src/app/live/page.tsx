@@ -9,17 +9,39 @@ import { MatchCardSkeleton } from "@/components/Skeletons";
 import { useLiveMatches } from "@/hooks/useData";
 import { Input } from "@/components/ui/input";
 import { sanitizeInput } from "@/lib/collect";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function LivePage() {
+  const { user, supabase } = useAuth();
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [leagueFilter, setLeagueFilter] = useState("");
   const { data: liveMatches = [], isLoading, error } = useLiveMatches({ leagueName: leagueFilter || undefined });
+  const [favTeams, setFavTeams] = useState<string[]>([]);
+  const [favLeagues, setFavLeagues] = useState<string[]>([]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(sanitizeInput(search)), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  // Load user preferences for boosting
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (!user) { setFavTeams([]); setFavLeagues([]); return; }
+      try {
+        const { data } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
+        if (!active) return;
+        setFavTeams((data?.favorite_teams ?? []) as string[]);
+        setFavLeagues((data?.favorite_leagues ?? []) as string[]);
+      } catch {
+        if (!active) return;
+        setFavTeams([]); setFavLeagues([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [user, supabase]);
 
   const leagueOptions = useMemo(() => {
     const set = new Set<string>();
@@ -28,15 +50,25 @@ export default function LivePage() {
   }, [liveMatches]);
 
   const filtered = useMemo(() => {
-    if (!debounced) return liveMatches;
-    const q = debounced.toLowerCase();
-    return liveMatches.filter(m =>
-      m.home_team.toLowerCase().includes(q) ||
-      m.away_team.toLowerCase().includes(q) ||
-      (m.league?.toLowerCase().includes(q) ?? false) ||
-      (m.venue?.toLowerCase().includes(q) ?? false)
-    );
-  }, [debounced, liveMatches]);
+    const base = (!debounced) ? liveMatches : liveMatches.filter(m => {
+      const q = debounced.toLowerCase();
+      return m.home_team.toLowerCase().includes(q) ||
+        m.away_team.toLowerCase().includes(q) ||
+        (m.league?.toLowerCase().includes(q) ?? false) ||
+        (m.venue?.toLowerCase().includes(q) ?? false);
+    });
+    if (favTeams.length === 0 && favLeagues.length === 0) return base;
+    // Boost: favorite teams > favorite leagues
+    return [...base]
+      .map((m, idx) => {
+        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+        const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
+        const score = teamBoost + leagueBoost;
+        return { m, idx, score };
+      })
+      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+      .map(x => x.m);
+  }, [debounced, liveMatches, favTeams, favLeagues]);
 
   if (error) {
     return (
