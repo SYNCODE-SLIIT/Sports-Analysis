@@ -17,15 +17,15 @@ type ItemRow = {
 };
 
 export function useRecommendations() {
-  const { supabase, user } = useAuth();
-  return useQuery<{ items: RecItem[] }>({
-    queryKey: ["recommendations", user?.id],
+  const { supabase, user, prefsVersion, interactionsVersion } = useAuth();
+  return useQuery<{ items: RecItem[] }>( {
+    queryKey: ["recommendations", user?.id, prefsVersion, interactionsVersion],
     enabled: !!user,
     queryFn: async () => {
       // Prefer server-side scoring via RPC
       try {
-        const { data: rpcData, error: rpcError } = await supabase.rpc("get_personalized_recommendations", {
-          uid: user!.id,
+        // use the server-side wrapper which uses auth.uid() to ensure recs are computed for the logged in user
+        const { data: rpcData, error: rpcError } = await supabase.rpc("get_my_personalized_recommendations", {
           limit_count: 20,
         });
         if (!rpcError && Array.isArray(rpcData) && rpcData.length) {
@@ -41,14 +41,20 @@ export function useRecommendations() {
         // fall through to simple fallback
       }
 
-      // Fallback using preferences
+      // Fallback using preferences (and popularity for cold start)
       const { data: prefs } = await supabase
         .from("user_preferences")
         .select("favorite_teams, favorite_leagues")
         .eq("user_id", user!.id)
         .single();
 
-      let query = supabase.from("items").select("*").order("popularity", { ascending: false }).limit(20);
+      // Start from popular items, break ties by most recent
+      let query = supabase
+        .from("items")
+        .select("*")
+        .order("popularity", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(20);
       if (prefs?.favorite_teams?.length) {
         query = query.contains("teams", prefs.favorite_teams);
       }

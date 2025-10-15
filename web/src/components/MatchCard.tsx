@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 // Removed Link; navigation is handled programmatically
 import { useRouter } from "next/navigation";
 import { pickEventId } from "@/lib/collect";
+import { useAuth } from "@/components/AuthProvider";
 import { Calendar, Clock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ interface MatchCardProps {
 
 export function MatchCard({ fixture, insights, className }: MatchCardProps) {
   const router = useRouter();
+  const { user, supabase, bumpInteractions } = useAuth();
   const winprob = insights?.winprob;
   
   const formatTime = (dateTime: string) => {
@@ -122,6 +124,27 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
                   const id = pickEventId(fixture as unknown as Record<string, unknown>);
                   if (typeof window !== "undefined") {
                     sessionStorage.setItem("sa_selected_event_card", JSON.stringify(fixture));
+                  }
+                  // best-effort: log a click interaction by ensuring the match item and inserting interaction
+                  if (user && supabase) {
+                    void (async () => {
+                      try {
+                        const title = `${fixture.home_team} vs ${fixture.away_team}`;
+                        const teams = [fixture.home_team, fixture.away_team].filter(Boolean);
+                        const league = fixture.league ?? null;
+                        const { data: item_id } = await supabase.rpc("ensure_match_item", {
+                          p_event_id: String(id),
+                          p_title: title,
+                          p_teams: teams,
+                          p_league: league,
+                          p_popularity: 0,
+                        });
+                        if (item_id) {
+                          await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: "click" });
+                          try { bumpInteractions(); } catch {}
+                        }
+                      } catch {}
+                    })();
                   }
                   router.push(`/match/${encodeURIComponent(id)}?sid=card`);
                 } catch {
