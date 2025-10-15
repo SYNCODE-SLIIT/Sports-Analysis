@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { postCollect, sanitizeInput } from "@/lib/collect";
+import { summarize } from "@/lib/api";
 import type { DataObject, Json } from "@/lib/collect";
 
 export type MatchSummaryCardProps = {
@@ -71,8 +72,15 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
         const awaySan = sanitizeInput(event.awayTeam);
         if (awaySan) payload.awayTeam = awaySan;
 
-        const response = await postCollect<{ summary?: SummaryResponse }>("analysis.match_summary", payload);
-        const raw = response.data?.summary ?? (response.data as SummaryResponse | undefined);
+        // Call summarizer service directly. If unavailable, postCollect fallback remains an option.
+        let raw: SummaryResponse | undefined | null = undefined;
+        try {
+          raw = await summarize(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string });
+        } catch (e) {
+          // If direct summarizer failed, try router intent as a fallback
+          const response = await postCollect<{ summary?: SummaryResponse }>("analysis.match_summary", payload);
+          raw = response.data?.summary ?? (response.data as SummaryResponse | undefined);
+        }
         const normalized = normalizeSummary(raw) ?? fallback;
         if (!active) return;
         setState({ data: normalized, status: "ready" });
@@ -88,27 +96,51 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
     };
   }, [event, fallback]);
 
-  const summary = state.data ?? fallback;
+  const summary = state.data;
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">{summary.headline}</CardTitle>
+        <CardTitle className="text-lg">{state.status === 'loading' ? 'Generating summary…' : (summary?.headline ?? fallback.headline)}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {state.status === "loading" && <div className="text-sm text-muted-foreground">Generating summary…</div>}
-        {summary.paragraph && (
-          <p className="text-sm leading-relaxed text-muted-foreground">{summary.paragraph}</p>
-        )}
-        {summary.bullets.length > 0 && (
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            {summary.bullets.map((item, idx) => (
-              <li key={`summary-bullet-${idx}`}>{item}</li>
-            ))}
-          </ul>
-        )}
-        {state.status === "error" && (
-          <div className="text-xs text-muted-foreground">Fallback summary shown.</div>
+        {state.status === "loading" ? (
+          <div className="text-sm text-muted-foreground">Generating summary…</div>
+        ) : state.status === "error" ? (
+          // show fallback when generation errored
+          <>
+            {fallback.paragraph && <p className="text-sm leading-relaxed text-muted-foreground">{fallback.paragraph}</p>}
+            {fallback.bullets.length > 0 && (
+              <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                {fallback.bullets.map((item, idx) => (
+                  <li key={`fallback-bullet-${idx}`}>{item}</li>
+                ))}
+              </ul>
+            )}
+            <div className="text-xs text-muted-foreground">Fallback summary shown.</div>
+          </>
+        ) : (
+          // ready (or idle) — show generated summary if present, otherwise fallback
+          <>
+            {(summary?.paragraph ?? fallback.paragraph) && (
+              <p className="text-sm leading-relaxed text-muted-foreground">{summary?.paragraph ?? fallback.paragraph}</p>
+            )}
+            {(summary?.bullets?.length ?? 0) > 0 ? (
+              <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                {summary!.bullets.map((item, idx) => (
+                  <li key={`summary-bullet-${idx}`}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              fallback.bullets.length > 0 && (
+                <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  {fallback.bullets.map((item, idx) => (
+                    <li key={`fallback-bullet-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              )
+            )}
+          </>
         )}
       </CardContent>
     </Card>
