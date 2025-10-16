@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { ChevronRight, Search, ThumbsUp, Bookmark, Share2, Eye, MousePointerClick, X } from "lucide-react";
+import { ChevronRight, Search, ThumbsUp, Bookmark, Share2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchCard } from "@/components/MatchCard";
 import { Input } from "@/components/ui/input";
@@ -248,37 +249,10 @@ export default function LeaguesPage() {
       const params = new URLSearchParams(window.location.search);
       const l = params.get('league');
       if (l) setInitialLeagueParam(decodeURIComponent(l));
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
-
-  // When the leagues list arrives, try to resolve an initial param into a canonical league name.
-  useEffect(() => {
-    if (!initialLeagueParam) return;
-    if (!allLeagues || allLeagues.length === 0) return;
-    if (selectedLeague) return; // already selected by user
-
-    const param = initialLeagueParam.trim();
-    if (!param) return;
-
-    const paramL = param.toLowerCase();
-    // Try exact match by league_name or id, then substring match
-    let found = allLeagues.find(l => l.league_name.toLowerCase() === paramL || l.id.toLowerCase() === paramL);
-    if (!found) {
-      found = allLeagues.find(l => l.league_name.toLowerCase().includes(paramL) || l.id.toLowerCase().includes(paramL));
-    }
-
-    if (found) {
-      setSelectedLeague(found.league_name);
-      try { ensureLeagueItemAndSend(found.league_name, 'view'); } catch {}
-      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(found.league_name)}`); } catch {}
-    } else {
-      // No canonical match — still set the param value so panels will attempt to load by name
-      setSelectedLeague(param);
-      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(param)}`); } catch {}
-    }
-  }, [allLeagues, initialLeagueParam]);
 
   // Load user preferences for boosting
   useEffect(() => {
@@ -316,6 +290,33 @@ export default function LeaguesPage() {
     } catch {}
   }, [user, supabase, allLeagues]);
 
+  // When the leagues list arrives, try to resolve an initial param into a canonical league name.
+  useEffect(() => {
+    if (!initialLeagueParam) return;
+    if (!allLeagues || allLeagues.length === 0) return;
+    if (selectedLeague) return; // already selected by user
+
+    const param = initialLeagueParam.trim();
+    if (!param) return;
+
+    const paramL = param.toLowerCase();
+    // Try exact match by league_name or id, then substring match
+    let found = allLeagues.find(l => l.league_name.toLowerCase() === paramL || l.id.toLowerCase() === paramL);
+    if (!found) {
+      found = allLeagues.find(l => l.league_name.toLowerCase().includes(paramL) || l.id.toLowerCase().includes(paramL));
+    }
+
+    if (found) {
+      setSelectedLeague(found.league_name);
+      try { ensureLeagueItemAndSend(found.league_name, 'view'); } catch {}
+      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(found.league_name)}`); } catch {}
+    } else {
+      // No canonical match — still set the param value so panels will attempt to load by name
+      setSelectedLeague(param);
+      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(param)}`); } catch {}
+    }
+  }, [allLeagues, initialLeagueParam, selectedLeague, ensureLeagueItemAndSend]);
+
   // Save league to user preferences (favorite_leagues) and log interaction
   const handleSaveLeague = useCallback(async () => {
     if (!user || !selectedLeague) return;
@@ -345,7 +346,7 @@ export default function LeaguesPage() {
       console.error('save league', err);
       toast.error('Failed to save league');
     }
-  }, [user, selectedLeague, supabase, ensureLeagueItemAndSend]);
+  }, [user, selectedLeague, supabase, ensureLeagueItemAndSend, bumpPreferences]);
 
   const handleLeagueShare = useCallback(async () => {
     if (!selectedLeague) return;
@@ -355,15 +356,15 @@ export default function LeaguesPage() {
     const title = `${selectedLeague}`;
     const text = `Check out ${selectedLeague} on Sports Analysis`;
     try {
-      const nav: any = typeof navigator !== 'undefined' ? navigator : undefined;
+      const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { share?: (data: ShareData) => Promise<void> }) : undefined;
       if (nav?.share) {
         try {
           await nav.share({ title, text, url });
           toast.success('Shared');
           await ensureLeagueItemAndSend(selectedLeague, 'share');
           return;
-        } catch (err: any) {
-          if (err && err.name === 'AbortError') return;
+        } catch (err: unknown) {
+          if (err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'AbortError') return;
         }
       }
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -383,26 +384,29 @@ const fetchLeagueNews = useCallback(async (leagueName: string) => {
   try {
     const resp = await getLeagueNews(leagueName, 20);
     const articlesRaw = resp?.data?.articles || resp?.data?.result || resp?.data || [];
-    const normalized = (Array.isArray(articlesRaw) ? articlesRaw : []).map((a: any, i: number) => ({
-      id: a.id || a.articleId || a.url || `news-${i}`,
-      title: a.title || a.headline || a.name || "",
-      url: a.url || a.link || a.article_url || "",
-      summary: a.summary || a.description || a.excerpt || "",
+    type ArticleLike = Record<string, unknown>;
+    const arr = Array.isArray(articlesRaw) ? (articlesRaw as ArticleLike[]) : [];
+    const normalized = arr.map((a: ArticleLike, i: number) => ({
+      id: (a.id as string) || (a.articleId as string) || (a.url as string) || `news-${i}`,
+      title: (a.title as string) || (a.headline as string) || (a.name as string) || "",
+      url: (a.url as string) || (a.link as string) || (a.article_url as string) || "",
+      summary: (a.summary as string) || (a.description as string) || (a.excerpt as string) || "",
       // try many common keys providers use for an image
       imageUrl:
-        a.image ||
-        a.imageUrl ||
-        a.urlToImage ||
-        a.thumbnail ||
-        a.image_url ||
-        (a.media && a.media[0] && (a.media[0].url || a.media[0].src)) ||
+        (a.image as string) ||
+        (a.imageUrl as string) ||
+        (a.urlToImage as string) ||
+        (a.thumbnail as string) ||
+        (a.image_url as string) ||
+        (Array.isArray(a.media) && a.media[0] && (typeof a.media[0] === 'object') && (((a.media[0] as Record<string, unknown>).url as string) || ((a.media[0] as Record<string, unknown>).src as string))) ||
         undefined,
-      source: a.source || a.publisher || "",
-      publishedAt: a.publishedAt || a.pubDate || a.published || "",
+      source: (a.source as string) || (a.publisher as string) || "",
+      publishedAt: (a.publishedAt as string) || (a.pubDate as string) || (a.published as string) || "",
     }));
     setNews(normalized);
-  } catch (err: any) {
-    setNewsError(String(err?.message || err));
+  } catch (err: unknown) {
+    const msg = err && typeof err === 'object' && 'message' in err ? String((err as { message?: unknown }).message) : String(err);
+    setNewsError(msg);
   } finally {
     setNewsLoading(false);
   }
@@ -430,14 +434,25 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
       const rawEvents: unknown[] = Array.isArray(data)
         ? data
         : extract(data) || [];
-  setDateMatches(boostFixtures(parseFixtures(rawEvents)));
+      const fixtures = parseFixtures(rawEvents);
+      const boosted = (favTeams.length === 0 && favLeagues.length === 0)
+        ? fixtures
+        : [...fixtures]
+            .map((m, idx) => {
+              const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+              const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
+              return { m, idx, score: teamBoost + leagueBoost };
+            })
+            .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+            .map(x => x.m);
+      setDateMatches(boosted);
     } catch (error) {
       console.debug("[leagues] date fixtures", error);
       setDateMatches([]);
     } finally {
       setDateLoading(false);
     }
-  }, [todayISO]);
+  }, [todayISO, favTeams, favLeagues]);
 
   const applyDateFilter = useCallback(() => {
     if (!selectedLeague) return;
@@ -508,21 +523,53 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
           raw = getField("events") ?? getField("result") ?? getField("results") ?? getField("items") ?? [];
         }
         const fixtures = parseFixtures(Array.isArray(raw) ? raw : []);
-  setLiveInLeague(boostFixtures(fixtures));
+        const boosted = (favTeams.length === 0 && favLeagues.length === 0)
+          ? fixtures
+          : [...fixtures]
+              .map((m, idx) => {
+                const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+                const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
+                return { m, idx, score: teamBoost + leagueBoost };
+              })
+              .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+              .map(x => x.m);
+        setLiveInLeague(boosted);
       } else {
         setLiveInLeague([]);
       }
 
       if (upcomingRes.status === "fulfilled") {
         const events = extractEvents(upcomingRes.value.data);
-  setUpcoming(boostFixtures(parseFixtures(events)));
+        const fixtures = parseFixtures(events);
+        const boosted = (favTeams.length === 0 && favLeagues.length === 0)
+          ? fixtures
+          : [...fixtures]
+              .map((m, idx) => {
+                const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+                const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
+                return { m, idx, score: teamBoost + leagueBoost };
+              })
+              .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+              .map(x => x.m);
+        setUpcoming(boosted);
       } else {
         setUpcoming([]);
       }
 
       if (recentRes.status === "fulfilled") {
         const events = extractEvents(recentRes.value.data);
-  setRecent(boostFixtures(parseFixtures(events)));
+        const fixtures = parseFixtures(events);
+        const boosted = (favTeams.length === 0 && favLeagues.length === 0)
+          ? fixtures
+          : [...fixtures]
+              .map((m, idx) => {
+                const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+                const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
+                return { m, idx, score: teamBoost + leagueBoost };
+              })
+              .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+              .map(x => x.m);
+        setRecent(boosted);
       } else {
         setRecent([]);
       }
@@ -546,19 +593,9 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
     });
 
     return () => { active = false; };
-  }, [selectedLeague, fetchMatchesByDate, todayISO]);
+  }, [selectedLeague, fetchMatchesByDate, todayISO, fetchLeagueNews, favTeams, favLeagues]);
 
-  const boostFixtures = useCallback((arr: Fixture[]) => {
-    if (favTeams.length === 0 && favLeagues.length === 0) return arr;
-    return [...arr]
-      .map((m, idx) => {
-        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
-        const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
-        return { m, idx, score: teamBoost + leagueBoost };
-      })
-      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
-      .map(x => x.m);
-  }, [favTeams, favLeagues]);
+  // boostFixtures removed (inlined where used)
   return (
     <div className="container py-8 space-y-12">
       {/* Header */}
@@ -795,9 +832,11 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                         >
                           <div className="flex items-start gap-3">
                             {article.imageUrl ? (
-                              <img
+                              <Image
                                 src={article.imageUrl}
                                 alt={article.title || 'news image'}
+                                width={112}
+                                height={80}
                                 className="h-20 w-28 flex-shrink-0 rounded-md object-cover"
                                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                               />

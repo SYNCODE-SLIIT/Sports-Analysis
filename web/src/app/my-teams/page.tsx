@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { searchTeams } from "@/lib/collect";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useRef } from "react";
+ 
 
 export default function MyTeamsPage() {
   const { user, supabase, loading } = useAuth();
@@ -23,10 +23,10 @@ export default function MyTeamsPage() {
   const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<Array<{ name: string; logo?: string }>>([]);
-  const [searching, setSearching] = useState(false);
+  
   const [leagues, setLeagues] = useState<string[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  
 
   useEffect(() => {
     if (!user) return;
@@ -42,8 +42,9 @@ export default function MyTeamsPage() {
 
       // Load suggestions from RPC if available (ignore errors)
       try {
-        const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
-        const names = Array.isArray(rpc) ? rpc.map((r: any) => r.team).filter(Boolean) : [];
+  const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
+  type Row = { team?: string };
+  const names = Array.isArray(rpc) ? rpc.map((r: unknown) => (r as Row)?.team).filter((v): v is string => typeof v === 'string' && v.trim().length > 0) : [];
         setSuggestions(names);
       } catch {
         setSuggestions([]);
@@ -117,7 +118,7 @@ export default function MyTeamsPage() {
     if (!q) { setResults([]); return; }
     (async () => {
       try {
-        setSearching(true);
+        
         const [teamsResp, leaguesResp] = await Promise.allSettled([searchTeams(q), searchLeagues(q)]);
         const teamsArr = (teamsResp.status === 'fulfilled' ? teamsResp.value.data?.teams ?? [] : []) as Array<Record<string, unknown>>;
         const leaguesArr = (leaguesResp.status === 'fulfilled' ? leaguesResp.value.data?.leagues ?? [] : []) as Array<Record<string, unknown>>;
@@ -138,7 +139,7 @@ export default function MyTeamsPage() {
       } catch {
         if (alive) setResults([]);
       } finally {
-        if (alive) setSearching(false);
+        
       }
     })();
     return () => { alive = false; };
