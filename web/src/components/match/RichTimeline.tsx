@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { getEventBrief, postCollect, getComments } from "@/lib/collect";
+import { summarizeEventBriefs } from "@/lib/summarizer";
+import { resolvePlayerImageByName, resolvePlayerImageFromObj, getTeamRoster } from "@/lib/roster";
 import type { TLItem } from "@/lib/match-mappers";
 
 type Props = {
@@ -128,6 +131,17 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     }
   }, [matchRaw, items, players, teams]);
 
+  // Pre-warm roster cache for home/away teams when match loads
+  useEffect(() => {
+    try {
+      const m = matchRaw as any;
+      const home = (teams?.home && (teams as any).home?.name) || m?.event_home_team || m?.home_team || m?.strHomeTeam || undefined;
+      const away = (teams?.away && (teams as any).away?.name) || m?.event_away_team || m?.away_team || m?.strAwayTeam || undefined;
+      if (home) getTeamRoster(String(home)).catch(() => {});
+      if (away) getTeamRoster(String(away)).catch(() => {});
+    } catch (_e) {}
+  }, [matchRaw, teams]);
+
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -170,7 +184,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
       return [] as any[];
     };
 
-    const out: TLItem[] = [];
+  const out: TLItem[] = [];
 
   // goals
   const goalKeys = ['timeline','events','event_timeline','eventTimeline','event_entries','goalscorers','goals','scorers','scorers_list','goal_scorers','scorers_list','scorer_list'];
@@ -206,6 +220,26 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
       const outName = s.out_player || s.player_out || undefined;
       const side = (s.home || s.side === 'home' || s.team === 'home' || s.team === 'Home') ? 'home' : 'away';
       out.push({ minute: Number(minute)||0, team: side as any, type: 'sub', player: inName || undefined, assist: outName || undefined });
+    }
+
+    // If still empty, try to synthesize from comments list if present on raw
+    if (out.length === 0) {
+      try {
+        const comments = (m?.comments || m?.comments_list || m?.all_comments || []) as any[];
+        for (const cm of comments) {
+          const minute = toMinuteNumber(cm.minute ?? cm.time ?? cm.elapsed ?? cm.match_minute);
+          const text = String(cm.comment ?? cm.text ?? cm.description ?? "");
+          const tags = detectTagsFromText(text);
+          const t = deriveEventType(text, tags, cm);
+          if (t) {
+            const side = (cm.side === 'home' || /home/i.test(String(cm.team || ''))) ? 'home' : 'away';
+            const { inName, outName } = parseSubstitutionPlayers({ description: text });
+            const player = inName || String(cm.player || cm.player_name || cm.scorer || '' ) || undefined;
+            const assist = outName || undefined;
+            out.push({ minute: Number(minute) || 0, team: side as any, type: t as any, player, assist, note: text });
+          }
+        }
+      } catch {}
     }
 
     if (out.length === 0) return null;
@@ -251,35 +285,57 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   const maxMinute = minutesAll.length ? Math.max(90, Math.max(...minutesAll)) : 90;
 
   // --- Helpers to resolve images from provided context ---
-  const findPlayerImage = (name?: string): string | '' => {
-    if (!name) return '';
-    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-    const needle = norm(name);
-    const sources: any[] = [];
-    if (Array.isArray(players?.home)) sources.push(...players!.home);
-    if (Array.isArray(players?.away)) sources.push(...players!.away);
-    // fall back to matchRaw players array if present
+  // Use roster resolver when available for higher-quality player images
+  const findPlayerImage = (name?: string, team?: string) => {
+    // First try resolve from roster/cache asynchronously (but we expose sync placeholder)
+    // We'll try synchronous resolution from provided players array or matchRaw, otherwise return '';
     try {
+      // Prefer explicit players prop arrays
+      const keys = ['photo', 'headshot', 'player_image', 'player_photo', 'thumbnail', 'strThumb', 'photo_url', 'image', 'avatar', 'cutout', 'player_cutout'];
+      const sources: any[] = [];
+      if (Array.isArray(players?.home)) sources.push(...players!.home);
+      if (Array.isArray(players?.away)) sources.push(...players!.away);
       const m = matchRaw as any;
       if (m && typeof m === 'object') {
         const candidates = m.players || m.players_list || m.squads || m.lineup || [];
+    const buildLocalBrief = (grp: TLItem[], min: number) => {
+      try {
+        const parts: string[] = [];
+        const primary = grp[0] || {} as TLItem;
+        const player = primary.player ? String(primary.player).trim() : '';
+        const assist = primary.assist ? String(primary.assist).trim() : '';
+        const note = primary.note ? String(primary.note).trim() : '';
+        const typeMap: Record<string,string> = { goal: 'Goal', own_goal: 'Own goal', pen_score: 'Penalty (scored)', pen_miss: 'Penalty (missed)', yellow: 'Yellow card', red: 'Red card', sub: 'Substitution' };
+        const tlabel = typeMap[primary.type || ''] || (primary.type ? String(primary.type) : 'Event');
+        if (player) parts.push(player);
+        parts.push(tlabel);
+        if (assist) parts.push(`Assist: ${assist}`);
+        if (note) parts.push(note);
+        // include side if present
+        if (primary.team) parts.push(primary.team === 'home' ? (homeTeam || 'Home') : (awayTeam || 'Away'));
+        return `${parts.join(' — ')} (${min}')`;
+      } catch (_e) { return `${grp.map(g=>g.type).join(', ')} (${min}')`; }
+    };
         if (Array.isArray(candidates)) sources.push(...candidates);
       }
-    } catch (_e) {}
-
-    const keys = ['photo', 'headshot', 'player_image', 'player_photo', 'thumbnail', 'strThumb', 'photo_url', 'image', 'avatar', 'cutout', 'player_cutout'];
-    for (const p of sources) {
-      if (!p || typeof p !== 'object') continue;
-      const n = String(p.name || p.player || p.fullname || p.player_name || p.playerName || p.displayName || '').trim();
-      if (!n) continue;
-      if (norm(n).includes(needle) || needle.includes(norm(n))) {
-        for (const k of keys) {
-          const v = p[k];
-          if (typeof v === 'string' && v.trim()) return v;
+      const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+      const needle = norm(name || '');
+      for (const p of sources) {
+        if (!p || typeof p !== 'object') continue;
+        const n = String(p.name || p.player || p.fullname || p.player_name || p.playerName || p.displayName || '').trim();
+        if (!n) continue;
+        if (norm(n).includes(needle) || needle.includes(norm(n))) {
+          for (const k of keys) {
+            const v = p[k];
+            if (typeof v === 'string' && v.trim()) return v;
+          }
         }
       }
+      // Last resort: try to extract direct image fields from matchRaw object
+      return resolvePlayerImageFromObj(m);
+    } catch (_e) {
+      return '';
     }
-    return '';
   };
 
   const findTeamLogo = (teamSide: 'home' | 'away', teamName?: string): string | '' => {
@@ -312,6 +368,29 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     } catch (_e) {}
     return '';
   };
+
+  // local in-memory brief cache keyed by `${minute}:${type}`
+  const briefCacheRef = useRef<Record<string, string>>({});
+  // sessionStorage-backed cache key prefix so cached briefs survive repeated hovers until page refresh
+  const sessionPrefix = (() => {
+    try {
+      const m = matchRaw as any;
+      const id = String(m?.id ?? m?.eventId ?? m?.event_id ?? m?.fixture_id ?? `${homeTeam || ''}-${awayTeam || ''}`);
+      return `rt_brief_${id}_`;
+    } catch { return `rt_brief_`; }
+  })();
+  // hydrate from sessionStorage once
+  useEffect(() => {
+    try {
+      for (const k of Object.keys(sessionStorage)) {
+        if (!k.startsWith(sessionPrefix)) continue;
+        const val = sessionStorage.getItem(k);
+        if (val) briefCacheRef.current[k.replace(sessionPrefix, '')] = val;
+      }
+    } catch {}
+  }, [sessionPrefix]);
+  // local in-memory player image cache to avoid repeated async fetches
+  const playerImgCacheRef = useRef<Record<string, string>>({});
 
   return (
     <div className="space-y-3">
@@ -355,8 +434,16 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               findTeamLogo={findTeamLogo}
               homeTeam={homeTeam}
               awayTeam={awayTeam}
+              raw={matchRaw}
+              briefCacheRef={briefCacheRef}
+              eventId={String((matchRaw as any)?.eventId ?? (matchRaw as any)?.event_id ?? (matchRaw as any)?.event_key ?? (matchRaw as any)?.idEvent ?? (matchRaw as any)?.id ?? (matchRaw as any)?.fixture_id ?? '')}
+              playerImgCacheRef={playerImgCacheRef}
+              sessionPrefix={sessionPrefix}
               onHover={(html, ev) => {
-                setTooltip({ x: ev.clientX + 8, y: ev.clientY - 10, html });
+                // If the event is a synthetic MouseEvent without client coords, place tooltip near center of screen
+                const x = (ev as any)?.clientX ?? (window.innerWidth / 2);
+                const y = (ev as any)?.clientY ?? (window.innerHeight / 3);
+                setTooltip({ x: x + 8, y: y - 10, html });
               }}
               onLeave={() => setTooltip(null)}
             />
@@ -405,23 +492,173 @@ function tickX(minute: number, clusters: { minute: number; group: TLItem[] }[], 
   return xs[xs.length - 1] ?? cfg.leftPad;
 }
 
-function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeamLogo, homeTeam, awayTeam }: { x: number; minute: number; group: TLItem[]; onHover: (html: string, ev: MouseEvent | React.MouseEvent) => void; onLeave: () => void; findPlayerImage: (name?: string) => string; findTeamLogo: (side: 'home'|'away', name?: string) => string; homeTeam?: string; awayTeam?: string; }) {
+function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeamLogo, homeTeam, awayTeam, raw, briefCacheRef, eventId, playerImgCacheRef, sessionPrefix }: { x: number; minute: number; group: TLItem[]; onHover: (html: string, ev: MouseEvent | React.MouseEvent) => void; onLeave: () => void; findPlayerImage: (name?: string, team?: string) => string; findTeamLogo: (side: 'home'|'away', name?: string) => string; homeTeam?: string; awayTeam?: string; raw?: unknown; briefCacheRef?: React.MutableRefObject<Record<string,string>>; eventId?: string; playerImgCacheRef?: React.MutableRefObject<Record<string,string>>; sessionPrefix?: string; }) {
   const home = group.filter((g) => g.team === "home");
   const away = group.filter((g) => g.team === "away");
   const stackGap = 18;
 
-  const makeHtml = () => {
+  // Local HTML builders (self-contained, do not depend on timeline.js)
+  const imgBox = (src?: string) => {
+    if (!src) return "";
+    const s = escapeHtml(String(src));
+    return `<div style="width:36px;height:36px;overflow:hidden;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;margin-right:8px"><img src="${s}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()"/></div>`;
+  };
+
+  const placeholderBox = () => `<div style="width:36px;height:36px;overflow:hidden;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;margin-right:8px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px"> </div>`;
+
+  const tagChip = (t: string) => `<span style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;font-size:10px;color:#374151">${escapeHtml(t)}</span>`;
+
+  const chipsHtmlFrom = (chips: string[]) => chips.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${chips.map(tagChip).join('')}</div>` : '';
+
+  const makeHtml = (brief?: string, loading = false) => {
     const rows = group.map((g) => {
       const icon = iconFor(g.type);
       const whoParts = [g.player ? escapeHtml(g.player) : '', g.assist ? ` (↦ ${escapeHtml(g.assist)})` : '', g.note ? ` — ${escapeHtml(g.note)}` : ''];
       const who = whoParts.filter(Boolean).join('');
-      const pImg = typeof findPlayerImage === 'function' ? findPlayerImage(g.player) : '';
+      // Prefer cache-resolved image to avoid visual jump; fall back to sync resolver
+      const normName = (s: string | undefined) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const cachedKey = normName(g.player);
+      const pImgFromCache = (playerImgCacheRef && playerImgCacheRef.current && cachedKey) ? playerImgCacheRef.current[cachedKey] : '';
+      const pImg = pImgFromCache || (typeof findPlayerImage === 'function' ? findPlayerImage(g.player, g.team === 'home' ? homeTeam : awayTeam) : '');
       const teamLogo = typeof findTeamLogo === 'function' ? findTeamLogo(g.team as any, g.team === 'home' ? homeTeam : awayTeam) : '';
       const imgBox = (src: string) => src ? `<div style="width:36px;height:36px;overflow:hidden;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;margin-right:8px"><img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()"/></div>` : '';
-      const left = imgBox(pImg || teamLogo);
-      return `<div style="display:flex;gap:8px;align-items:center">${left}<div style="display:flex;flex-direction:row;gap:8px;align-items:center"><span style=\"font-size:16px;\">${icon}</span><span>${who || '<i>Event</i>'}</span></div></div>`;
+      const placeholderBox = () => `<div style="width:36px;height:36px;overflow:hidden;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;margin-right:8px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:12px"> </div>`;
+      const left = loading ? placeholderBox() : imgBox(pImg || teamLogo);
+      // Build tag chips from type + any predicted_tags present on raw timeline entries + side + score
+      const chips: string[] = [];
+      const typeToTag: Record<string, string> = { goal: 'GOAL', own_goal: 'OWN GOAL', pen_miss: 'PEN MISS', pen_score: 'PEN GOAL', yellow: 'YELLOW CARD', red: 'RED CARD', sub: 'SUBSTITUTION' };
+      if (typeToTag[g.type]) chips.push(typeToTag[g.type]);
+      // tag team side
+      chips.push(g.team === 'home' ? 'HOME' : 'AWAY');
+      try {
+        const rawTL = (raw as any)?.timeline || (raw as any)?.timeline_items || (raw as any)?.events || (raw as any)?.event_timeline;
+        if (Array.isArray(rawTL)) {
+          const mt = (g.minute ?? 0);
+          const cand = rawTL.find((it: any) => {
+            const m = (it?.minute ?? it?.time ?? it?.elapsed ?? '').toString();
+            const mm = Number(String(m).replace(/[^0-9]/g, '')) || 0;
+            return mm === (Number(mt) || 0);
+          });
+          const tags = Array.isArray(cand?.predicted_tags) ? cand.predicted_tags : [];
+          for (const t of tags) {
+            const up = String(t).toUpperCase();
+            if (!chips.includes(up)) chips.push(up);
+          }
+          // add score at minute if present
+          const scHome = cand?.score_home ?? cand?.home_score ?? cand?.homeGoals ?? cand?.goals_home;
+          const scAway = cand?.score_away ?? cand?.away_score ?? cand?.awayGoals ?? cand?.goals_away;
+          if (scHome !== undefined && scAway !== undefined) chips.push(`${scHome}-${scAway}`);
+        }
+      } catch {}
+
+      const tagHtml = chips.length
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${chips.map(t => `<span style=\"background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;font-size:10px;color:#374151\">${escapeHtml(t)}</span>`).join('')}</div>`
+        : '';
+      return `<div style="display:flex;gap:8px;align-items:center">${left}<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><div style=\"display:flex;flex-direction:row;gap:8px;align-items:center\"><span style=\"font-size:16px;\">${icon}</span><span>${who || '<i>Event</i>'}</span></div>${tagHtml}</div></div>`;
     }).join('');
-    return `<div><div style="font-weight:700;margin-bottom:6px">${minute}'</div>${rows}</div>`;
+    const briefHtml = loading ? `<div style="margin-top:8px;color:#374151;font-size:12px"><em>Loading…</em></div>` : (brief ? `<div style="margin-top:8px;color:#374151;font-size:12px">${escapeHtml(brief)}</div>` : '');
+    return `<div><div style="font-weight:700;margin-bottom:6px">${minute}'</div>${rows}${briefHtml}</div>`;
+  };
+
+  // Async fetch brief if missing in cache and augment tooltip when available
+  // Fetch brief and resolve player image, then update tooltip via provided event
+  const isBriefPoor = (b: string | undefined | null) => {
+    if (!b) return true;
+    const s = String(b || '').trim();
+    if (!s) return true;
+    // Common poor patterns from providers: single token + ':' or 'yellow:' or just a tag
+    if (/^[a-zA-Z]+:\s*$/.test(s)) return true;
+    if (s.length < 6) return true; // too short to be useful
+    return false;
+  };
+  const ensureBrief = async (ev?: MouseEvent | React.MouseEvent) => {
+    try {
+      const key = `${minute}:${group.map(g => g.type).join(',')}`;
+      const cache = briefCacheRef?.current ?? {};
+      if (cache[key]) {
+        // If cached, also ensure images from cache are used (no-op)
+        const brief = cache[key];
+        if (ev) onHover(makeHtml(brief, false), ev);
+        return brief;
+      }
+  // If we don't have a numeric/explicit eventId, attempt to call brief by eventName
+  const m = raw as any;
+  const homeName = (m && (m.event_home_team || m.home_team || m.strHomeTeam)) || homeTeam;
+  const awayName = (m && (m.event_away_team || m.away_team || m.strAwayTeam)) || awayTeam;
+  const eventName = (!eventId && homeName && awayName) ? `${homeName} vs ${awayName}` : undefined;
+  // Build a small local fallback brief so tooltip doesn't stay empty
+  const g0 = group[0] || {};
+  const localBriefParts: string[] = [];
+  const playerLabel = g0.player ? String(g0.player).trim() : '';
+  const typeLabel = ({ goal: 'Goal', own_goal: 'Own goal', pen_score: 'Penalty goal', pen_miss: 'Penalty miss', yellow: 'Yellow card', red: 'Red card', sub: 'Substitution' } as Record<string,string>)[g0.type || ''] || (g0.type ? String(g0.type) : 'Event');
+  if (playerLabel) localBriefParts.push(`${playerLabel}`);
+  if (typeLabel) localBriefParts.push(typeLabel);
+  const sideLabel = g0.team ? (g0.team === 'home' ? (homeName || 'Home') : (awayName || 'Away')) : '';
+  if (!playerLabel && sideLabel) localBriefParts.push(sideLabel);
+  const localFallbackBrief = localBriefParts.length ? `${localBriefParts.join(' — ')} (${minute}')` : `${typeLabel} (${minute}')`;
+
+      // Resolve primary player image (if any) from roster and store in cache
+      try {
+        const primaryPlayer = group[0]?.player;
+        const teamName = group[0]?.team === 'home' ? homeTeam : awayTeam;
+        if (primaryPlayer && playerImgCacheRef) {
+          const normName = (s: string | undefined) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+          const pkey = normName(String(primaryPlayer));
+          if (!playerImgCacheRef.current[pkey]) {
+            const img = await resolvePlayerImageByName(teamName, primaryPlayer).catch(() => '');
+            if (img) {
+              playerImgCacheRef.current[pkey] = img;
+            } else {
+              // try synchronous resolver from props/context as a last resort
+              try {
+                const syncImg = (typeof findPlayerImage === 'function') ? findPlayerImage(String(primaryPlayer), teamName) : '';
+                if (syncImg) playerImgCacheRef.current[pkey] = syncImg;
+              } catch {}
+            }
+          }
+        }
+      } catch (e) {}
+
+      // Always call the summarizer for uncached events (single-event payload) and cache the result for the session
+      let brief = '';
+      try {
+        const ev = {
+          minute: String(minute),
+          type: group[0]?.type,
+          description: group[0]?.note || undefined,
+          player: group[0]?.player || undefined,
+          team: group[0]?.team || undefined,
+        };
+        const payload: any = { events: [ev] };
+        if (eventId) payload.eventId = String(eventId);
+        if (eventName) payload.eventName = String(eventName);
+        if (!payload.eventName && homeName && awayName) payload.eventName = `${homeName} vs ${awayName}`;
+        const sum = await summarizeEventBriefs(payload).catch(() => null);
+        const first = sum?.items?.[0];
+  if (first?.brief) brief = first.brief;
+  else brief = localFallbackBrief;
+        // capture player image or team logo from summarizer item when present
+        const pimg = first?.player_image;
+        const tlogo = first?.team_logo;
+        if ((pimg || tlogo) && group[0]?.player && playerImgCacheRef) {
+          const pkey = String(group[0].player).toLowerCase().trim();
+          if (!playerImgCacheRef.current[pkey]) playerImgCacheRef.current[pkey] = (pimg || tlogo) as string;
+        }
+      } catch {
+        brief = localFallbackBrief;
+      }
+      const cacheObj = briefCacheRef?.current ?? {};
+    // final local fallback if summarizer didn't return anything
+  if (!brief) brief = localFallbackBrief;
+  cacheObj[key] = brief;
+  try {
+    sessionStorage.setItem(sessionPrefix + key, brief);
+  } catch {}
+      if (ev) onHover(makeHtml(brief, false), ev);
+      return brief;
+    } catch (e) {
+      return '';
+    }
   };
 
   return (
@@ -429,7 +666,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       {/* Home side (top) */}
       {home.map((g, i) => (
         <Marker key={`h-${i}`} y={40 - i * stackGap} color={colorFor(g.type)} icon={iconFor(g.type)}
-          onMouseEnter={(ev) => onHover(makeHtml(), ev)} onMouseLeave={onLeave} />
+          onMouseEnter={async (ev) => { onHover(makeHtml(undefined, true), ev); await ensureBrief(ev); }} onMouseLeave={onLeave} />
       ))}
 
       {/* Minute label bubble */}
@@ -440,7 +677,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       {/* Away side (bottom) */}
       {away.map((g, i) => (
         <Marker key={`a-${i}`} y={80 + i * stackGap} color={colorFor(g.type)} icon={iconFor(g.type)}
-          onMouseEnter={(ev) => onHover(makeHtml(), ev)} onMouseLeave={onLeave} />
+          onMouseEnter={async (ev) => { onHover(makeHtml(undefined, true), ev); await ensureBrief(ev); }} onMouseLeave={onLeave} />
       ))}
     </div>
   );
@@ -475,4 +712,114 @@ function escapeHtml(s: string | undefined) {
   return String(s ?? "").replace(/[&<>"'`=\/]/g, (ch) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "/": "&#x2F;", "`": "&#x60;", "=": "&#x3D;" } as Record<string, string>)[ch] || ch
   );
+}
+
+// --- Ported helpers from legacy timeline.js (simplified and adapted for the React component) ---
+function getEventIcon(description?: string | null, tags?: any) {
+  const desc = String(description || '').toLowerCase();
+  const tagStr = Array.isArray(tags) ? tags.join(' ').toLowerCase() : String(tags || '').toLowerCase();
+  if (desc.includes('goal') || tagStr.includes('goal')) return '⚽';
+  if (desc.includes('yellow') || tagStr.includes('yellow')) return '🟨';
+  if (desc.includes('red') || tagStr.includes('red')) return '🟥';
+  if (desc.includes('substitution') || tagStr.includes('substitution')) return '↔️';
+  if (desc.includes('corner') || tagStr.includes('corner')) return '📐';
+  if (desc.includes('penalty') || tagStr.includes('penalty')) return '⚽';
+  if (desc.includes('offside') || tagStr.includes('offside')) return '🚩';
+  return '•';
+}
+
+function getEventColor(description?: string | null, tags?: any) {
+  const desc = String(description || '').toLowerCase();
+  const tagStr = Array.isArray(tags) ? tags.join(' ').toLowerCase() : String(tags || '').toLowerCase();
+  if (desc.includes('goal') || tagStr.includes('goal')) return '#10b981';
+  if (desc.includes('yellow') || tagStr.includes('yellow')) return '#f59e0b';
+  if (desc.includes('red') || tagStr.includes('red')) return '#ef4444';
+  if (desc.includes('substitution') || tagStr.includes('substitution')) return '#8b5cf6';
+  return '#6b7280';
+}
+
+function getTagColor(tag?: string) {
+  const t = String(tag || '').toLowerCase();
+  if (t.includes('goal')) return '#10b981';
+  if (t.includes('card')) return '#f59e0b';
+  if (t.includes('substitution')) return '#8b5cf6';
+  if (t.includes('penalty')) return '#ef4444';
+  return '#6b7280';
+}
+
+function normalizeEventTags(evt?: any): string[] {
+  const out: string[] = [];
+  if (!evt) return out;
+  const candidates: any[] = [];
+  if (evt.tags) candidates.push(evt.tags);
+  if (evt.predicted_tags) candidates.push(evt.predicted_tags);
+  if (evt.predictedTags) candidates.push(evt.predictedTags);
+  if (evt.labels) candidates.push(evt.labels);
+  if (evt.labels_list) candidates.push(evt.labels_list);
+  if (evt.card) candidates.push(evt.card);
+  for (const c of candidates) {
+    if (!c) continue;
+    if (Array.isArray(c)) {
+      for (const it of c) if (typeof it === 'string' && it.trim()) out.push(it.trim());
+    } else if (typeof c === 'string') {
+      const parts = c.split(/[;,|]/).map(s => s.trim()).filter(Boolean);
+      out.push(...parts);
+    } else if (typeof c === 'object') {
+      // Accept objects with text/name fields
+      if (c.text) out.push(String(c.text));
+      else if (c.name) out.push(String(c.name));
+    }
+  }
+  // De-duplicate and normalize
+  const seen = new Set<string>();
+  return out.map(s => String(s).trim()).filter(s => { const k = s.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function detectTagsFromText(text?: string) {
+  if (!text) return [] as string[];
+  const t = String(text).toLowerCase();
+  const tags = new Set<string>();
+  if (t.includes('goal') || /scores?|scored|goal by|assist/.test(t)) tags.add('goal');
+  if (t.includes('penalty')) tags.add('penalty');
+  if (t.includes('yellow card') || t.includes('yellow')) tags.add('yellow card');
+  if (t.includes('red card') || t.includes('sent off') || t.includes('red')) tags.add('red card');
+  if (t.includes('substitution') || t.includes('sub') || t.includes('replaced')) tags.add('substitution');
+  if (t.includes('corner')) tags.add('corner');
+  if (t.includes('offside')) tags.add('offside');
+  if (t.includes('penalty shootout') || t.includes('shootout')) tags.add('shootout');
+  return Array.from(tags);
+}
+
+function parseSubstitutionPlayers(event: any) {
+  const out = { inName: '', outName: '' };
+  try {
+    if (!event) return out;
+    if (event.player_in || event.playerIn || event.player_in_name) out.inName = String(event.player_in || event.playerIn || event.player_in_name || '');
+    if (event.player_out || event.playerOut || event.player_out_name) out.outName = String(event.player_out || event.playerOut || event.player_out_name || '');
+    if (out.inName || out.outName) return out;
+    const raw = event.raw || {};
+    if (raw && typeof raw === 'object') {
+      if (raw.in) out.inName = String(raw.in);
+      if (raw.out) out.outName = String(raw.out);
+    }
+    if (out.inName || out.outName) return out;
+    const desc = String(event.description || event.text || event.event || '');
+    // Try a pattern like "Player A replaced Player B"
+    const m = desc.match(/([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)\s+(?:replaced|in for|on for)\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)/i);
+    if (m) {
+      out.inName = m[1];
+      out.outName = m[2];
+    }
+  } catch (_e) {}
+  return out;
+}
+
+function deriveEventType(description?: string | null, tags?: string[] | undefined, ev?: any) {
+  const t = (Array.isArray(tags) ? tags.join(' ').toLowerCase() : String(tags || '').toLowerCase());
+  const d = String(description || '').toLowerCase();
+  if (t.includes('goal') || /\bgoal\b|scored|scores?/.test(d)) return 'goal';
+  if (t.includes('red') || d.includes('sent off') || d.includes('red card')) return 'red';
+  if (t.includes('yellow') || d.includes('yellow card')) return 'yellow';
+  if (t.includes('substitution') || /\bsub\b|replaced/.test(d)) return 'sub';
+  return null;
 }
