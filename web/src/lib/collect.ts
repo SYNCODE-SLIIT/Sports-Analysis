@@ -91,6 +91,29 @@ export async function getEventResults(eventId: string) {
   return postCollect<{ event?: DataObject; stats?: DataObject; score?: DataObject }>("event.results", { eventId: String(eventId) });
 }
 
+/**
+ * Single match details from AllSports (raw) with optional augmentation.
+ * This calls the AllSports-first router intent 'event.get' so we can leverage
+ * the RAW provider payload including optional synthesized timeline and tags.
+ */
+export async function getEventAllSports(eventId: string, opts?: { augmentTags?: boolean; includeBest?: boolean }) {
+  const a: Record<string, Json> = { eventId: String(eventId) };
+  if (opts?.augmentTags) a["augment_tags"] = true;
+  if (opts?.includeBest) a["include_best_player"] = true;
+  return postCollect<Record<string, Json> | { result?: DataObject[] }>("event.get", a);
+}
+
+/**
+ * Request a short computed brief for a specific event minute/type.
+ * Backend should support intent `event.brief` which returns { brief: string }
+ */
+export async function getEventBrief(eventId: string, minute?: number | string, type?: string) {
+  const payload: Record<string, Json> = { eventId: String(eventId) };
+  if (minute !== undefined && minute !== null) payload.minute = String(minute);
+  if (type) payload.type = String(type);
+  return postCollect<{ brief?: string }>("event.brief", payload);
+}
+
 /** Highlights for a match */
 export async function getHighlights(eventId: string) {
   return postCollect<{ videos?: DataObject[] }>("video.highlights", { eventId: String(eventId) });

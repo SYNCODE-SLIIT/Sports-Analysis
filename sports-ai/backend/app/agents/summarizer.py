@@ -58,6 +58,7 @@ if AGENT_MODE == "local" and (CollectorAgentV2 is None or AllSportsRawAgent is N
     AGENT_MODE = "http"
 
 import httpx
+import re
 
 app = FastAPI(title="Summarizer Agent", version="2.0")
 # Enable CORS (same policy as main app) so frontend on other origins can call this mounted sub-app
@@ -141,6 +142,34 @@ def _short(s: str | None, n: int = 120) -> str:
 # ⬇️ ADD THESE HELPERS RIGHT AFTER _short(...)
 def word_count(s: str | None) -> int:
     return len((s or "").strip().split())
+
+def _truncate_brief(s: str | None, max_words: int = 35) -> str:
+    """Return a short brief: prefer full sentences up to max_words, otherwise cut to max_words words."""
+    if not s:
+        return ""
+    txt = str(s).strip()
+    # try to keep full sentences: split on sentence enders
+    sentences = [seg.strip() for seg in re.split(r'(?<=[\.\!\?])\s+', txt) if seg.strip()]
+    out = ""
+    if sentences:
+        # accumulate sentences until word limit reached
+        words = 0
+        parts: list[str] = []
+        for sent in sentences:
+            wc = len(sent.split())
+            if words + wc <= max_words or not parts:
+                parts.append(sent)
+                words += wc
+            else:
+                break
+        out = " ".join(parts)
+    if not out:
+        # fallback: cut by words
+        w = txt.split()
+        out = " ".join(w[:max_words])
+        if len(w) > max_words:
+            out = out.rstrip() + "…"
+    return out
 
 def _minute_of_first_goal(timeline: list[dict]) -> str | None:
     mins = []
@@ -1257,12 +1286,38 @@ async def summarize_events(req: dict):
 
         # Generate briefs (LLM or fallback)
         briefs = await _llm_event_briefs(context, events)
+        # Ensure briefs is a list aligned with input events; if LLM returned a match-level one_paragraph
+        # or a single item, we must convert/trim it to per-event short briefs.
+        if not isinstance(briefs, list):
+            # If the LLM returned a dict with 'items' or a one_paragraph, convert
+            if isinstance(briefs, dict) and isinstance(briefs.get('items'), list):
+                briefs = briefs.get('items')
+            else:
+                # Not a list: fall back to templated per-event briefs below
+                briefs = []
         # backfill images/team logos from normalized bundle when possible
         bundle = context.get("match") or {}
 
         # map back to output items, with backfills
         items: List[Dict[str, Any]] = []
-        for i, b in enumerate(briefs):
+        # If there are fewer briefs than events, or briefs seems to be a single long paragraph,
+        # synthesize short templated briefs for missing entries.
+        templated_short: List[Dict[str, Any]] = []
+        for ev in events:
+            t = (ev.get('type') or ev.get('event') or '').lower()
+            minute = ev.get('minute') or ev.get('time')
+            player = ev.get('player') or ev.get('player_name') or ev.get('home_scorer') or ev.get('away_scorer') or None
+            team = ev.get('team') or ev.get('side') or ''
+            short = ''
+            if player:
+                short = f"{player} — {t.title() if t else 'Event'} ({minute or '?'}')"
+            else:
+                short = f"{t.title() if t else 'Event'} ({minute or '?'}')"
+            templated_short.append({"minute": minute, "type": t or None, "brief": _truncate_brief(short), "player_image": None, "team_logo": None})
+
+        # Now iterate and fill items using briefs when present, otherwise templated_short
+        for i in range(len(events)):
+            b = briefs[i] if i < len(briefs) and isinstance(briefs[i], dict) else templated_short[i]
             if not isinstance(b, dict):
                 b = {}
             # pick up values the LLM returned (if any); default to empty string for stability
@@ -1319,10 +1374,13 @@ async def summarize_events(req: dict):
                         player_id = found_id
                 except Exception:
                     pass
+            # Enforce short brief length here to guarantee tooltip brevity
+            brief_text = b.get("brief") or ""
+            brief_text = _truncate_brief(brief_text, max_words=35)
             items.append({
                 "minute": b.get("minute"),
                 "type": b.get("type"),
-                "brief": b.get("brief") or "",
+                "brief": brief_text,
                 "player_image": pi,
                 "team_logo": tl,
                 "player": primary_player,
