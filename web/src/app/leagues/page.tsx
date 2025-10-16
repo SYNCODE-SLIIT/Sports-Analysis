@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, Search, ThumbsUp, Bookmark, Share2 } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MatchCard } from "@/components/MatchCard";
 import { Input } from "@/components/ui/input";
-import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect, getLeagueNews } from "@/lib/collect";
-import { parseFixtures, type Fixture } from "@/lib/schemas";
+import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
@@ -51,8 +48,6 @@ type FeaturedSection = {
   leagues: DisplayLeague[];
 };
 
-type NavigatorWithShare = Navigator & { share?: (data: ShareData) => Promise<void> };
-
 const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
 type CategoryMetadata = { id: string; title?: string; description?: string };
 const CATEGORY_METADATA_LIST: CategoryMetadata[] = rawCategoryMetadata as CategoryMetadata[];
@@ -83,6 +78,12 @@ type ResolvedMetadata = {
   categories: string[];
   fameRank: number;
 };
+
+const REMAINING_INITIAL_ROWS = 3;
+const REMAINING_INCREMENT_ROWS = 5;
+const ITEMS_PER_ROW_DESKTOP = 4;
+const INITIAL_REMAINING_COUNT = REMAINING_INITIAL_ROWS * ITEMS_PER_ROW_DESKTOP;
+const INCREMENT_REMAINING_COUNT = REMAINING_INCREMENT_ROWS * ITEMS_PER_ROW_DESKTOP;
 
 const buildMetadataIndex = () => {
   const aggregated = new Map<string, AggregatedMetadata>();
@@ -420,30 +421,21 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
-  const { user, supabase, bumpPreferences, bumpInteractions } = useAuth();
+  const { user, supabase } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
-  const [standings, setStandings] = useState<Array<{ position?: number; team?: string; played?: number; points?: number }>>([]);
-  const [standingsLoading, setStandingsLoading] = useState(false);
-  const [liveInLeague, setLiveInLeague] = useState<Fixture[]>([]);
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [upcoming, setUpcoming] = useState<Fixture[]>([]);
-  const [recent, setRecent] = useState<Fixture[]>([]);
-  const [loadingUpcoming, setLoadingUpcoming] = useState(false);
-  const [loadingRecent, setLoadingRecent] = useState(false);
-  const todayISO = useMemo(() => new Date().toISOString().split("T")[0], []);
-  const [selectedDate, setSelectedDate] = useState<string>(todayISO);
-  const [dateMatches, setDateMatches] = useState<Fixture[]>([]);
-  const [dateLoading, setDateLoading] = useState(false);
   const [news, setNews] = useState<Array<{ id?: string; title?: string; url?: string; summary?: string; imageUrl?: string; source?: string; publishedAt?: string }>>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
-  const [favTeams, setFavTeams] = useState<string[]>([]);
-  const [favLeagues, setFavLeagues] = useState<string[]>([]);
+  const [remainingVisibleCount, setRemainingVisibleCount] = useState<number>(INITIAL_REMAINING_COUNT);
 
   const metadataIndex = useMetadataIndex();
+
+  useEffect(() => {
+    setRemainingVisibleCount(INITIAL_REMAINING_COUNT);
+  }, [search, allLeagues]);
 
   const findMetadataForLeague = useCallback(
     (league: LeagueLite): ResolvedMetadata | undefined => {
@@ -586,6 +578,24 @@ export default function LeaguesPage() {
     };
   }, [displayLeagues]);
 
+  useEffect(() => {
+    setRemainingVisibleCount(prev => {
+      if (!remainingLeagues.length) return INITIAL_REMAINING_COUNT;
+      if (prev > remainingLeagues.length) {
+        return Math.max(INITIAL_REMAINING_COUNT, remainingLeagues.length);
+      }
+      return prev;
+    });
+  }, [remainingLeagues.length]);
+
+  const visibleRemainingLeagues = useMemo(
+    () => remainingLeagues.slice(0, remainingVisibleCount),
+    [remainingLeagues, remainingVisibleCount]
+  );
+
+  const canShowMore = remainingLeagues.length > visibleRemainingLeagues.length;
+  const canShowLess = remainingVisibleCount > INITIAL_REMAINING_COUNT;
+
   const totalVisibleCount = useMemo(
     () => featuredSections.reduce((sum, section) => sum + section.leagues.length, 0) + remainingLeagues.length,
     [featuredSections, remainingLeagues]
@@ -597,9 +607,6 @@ export default function LeaguesPage() {
   }, [allLeagues, selectedLeague, createDisplayLeague]);
 
   const selectedDisplayName = selectedDisplayLeague?.displayName ?? selectedLeague;
-  const selectedDisplayContext = [selectedDisplayLeague?.displayCountry, selectedDisplayLeague?.metadata?.primary.confederation]
-    .filter(Boolean)
-    .join(" • ");
   const selectedDisplayLabel = selectedDisplayLeague?.displayLabel ?? selectedDisplayName;
 
   useEffect(() => {
@@ -704,24 +711,6 @@ export default function LeaguesPage() {
     }
   }, [allLeagues, ensureLeagueItemAndSend, initialLeagueParam, selectedLeague]);
 
-  // Load user preferences for boosting
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      if (!user) { setFavTeams([]); setFavLeagues([]); return; }
-      try {
-        const { data } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
-        if (!active) return;
-        setFavTeams((data?.favorite_teams ?? []) as string[]);
-        setFavLeagues((data?.favorite_leagues ?? []) as string[]);
-      } catch {
-        if (!active) return;
-        setFavTeams([]); setFavLeagues([]);
-      }
-    })();
-    return () => { active = false; };
-  }, [user, supabase]);
-
   const handleLeagueSelect = useCallback(
     (league: DisplayLeague) => {
       if (!league) return;
@@ -737,67 +726,6 @@ export default function LeaguesPage() {
     },
     [ensureLeagueItemAndSend]
   );
-
-  // Save league to user preferences (favorite_leagues) and log interaction
-  const handleSaveLeague = useCallback(async () => {
-    if (!user || !selectedLeague) return;
-    try {
-      // ensure league item & send save interaction
-      await ensureLeagueItemAndSend(selectedLeague, 'save');
-
-      // fetch existing preferences
-      const { data: prefs } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
-      const existingLeagues: string[] = (prefs?.favorite_leagues ?? []) as string[];
-      const existingTeams: string[] = (prefs?.favorite_teams ?? []) as string[];
-      if (existingLeagues.includes(selectedLeague)) {
-        toast.success(`${selectedDisplayLabel} is already in your favorites`);
-        // still update local state to reflect db
-        setFavLeagues(existingLeagues);
-        return;
-      }
-      const newLeagues = [...existingLeagues, selectedLeague];
-      // upsert preferences
-      await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
-      // update local state so UI updates immediately
-      setFavLeagues(newLeagues);
-      // notify other components (Profile) to refresh preferences
-      try { bumpPreferences(); } catch {}
-      toast.success(`${selectedDisplayLabel} saved to your favorites`);
-    } catch (err) {
-      console.error('save league', err);
-      toast.error('Failed to save league');
-    }
-  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences]);
-
-  const handleLeagueShare = useCallback(async () => {
-    if (!selectedLeague) return;
-    const displayName = selectedDisplayLabel || selectedLeague;
-    const url = typeof window !== 'undefined'
-      ? `${window.location.origin}/leagues?league=${encodeURIComponent(selectedLeague)}`
-      : `/leagues?league=${encodeURIComponent(selectedLeague)}`;
-    const title = `${displayName}`;
-    const text = `Check out ${displayName} on Sports Analysis`;
-    try {
-      const nav: NavigatorWithShare | undefined = typeof navigator !== 'undefined' ? (navigator as NavigatorWithShare) : undefined;
-      if (nav?.share) {
-        try {
-          await nav.share({ title, text, url });
-          toast.success('Shared');
-          await ensureLeagueItemAndSend(selectedLeague, 'share');
-          return;
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-        }
-      }
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        toast.success('Link copied to clipboard');
-        await ensureLeagueItemAndSend(selectedLeague, 'share');
-      }
-    } catch {
-      // Ignore share failures
-    }
-  }, [selectedLeague, selectedDisplayLabel, ensureLeagueItemAndSend]);
 
   const fetchLeagueNews = useCallback(async (leagueName: string) => {
     if (!leagueName) return;
@@ -852,158 +780,14 @@ export default function LeaguesPage() {
       setNewsLoading(false);
     }
   }, []);
-
-  const boostFixtures = useCallback((arr: Fixture[]) => {
-    if (favTeams.length === 0 && favLeagues.length === 0) return arr;
-    return [...arr]
-      .map((m, idx) => {
-        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
-        const leagueBoost = favLeagues.includes(m.league ?? "") ? 2 : 0;
-        return { m, idx, score: teamBoost + leagueBoost };
-      })
-      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
-      .map(x => x.m);
-  }, [favTeams, favLeagues]);
-
-  const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) => {
-    setDateLoading(true);
-    try {
-      const cleanLeague = sanitizeInput(leagueName);
-      const cleanDate = date || todayISO;
-      const response = await postCollect("events.list", {
-        leagueName: cleanLeague,
-        fromDate: cleanDate,
-        toDate: cleanDate,
-      });
-      const data = response.data;
-      const extract = (value: unknown): unknown[] => {
-        if (!value || typeof value !== "object") return [];
-        const candidate = value as Record<string, unknown>;
-        if (Array.isArray(candidate.events)) return candidate.events;
-        if (Array.isArray(candidate.result)) return candidate.result;
-        if (Array.isArray(candidate.results)) return candidate.results;
-        return Array.isArray(candidate) ? (candidate as unknown[]) : [];
-      };
-      const rawEvents: unknown[] = Array.isArray(data)
-        ? data
-        : extract(data) || [];
-      setDateMatches(boostFixtures(parseFixtures(rawEvents)));
-    } catch (error) {
-      console.debug("[leagues] date fixtures", error);
-      setDateMatches([]);
-    } finally {
-      setDateLoading(false);
-    }
-  }, [todayISO, boostFixtures]);
-
-  const applyDateFilter = useCallback(() => {
-    if (!selectedLeague) return;
-    fetchMatchesByDate(selectedLeague, selectedDate);
-  }, [fetchMatchesByDate, selectedLeague, selectedDate]);
-
-  // Load panels when selected league changes
   useEffect(() => {
     if (!selectedLeague) {
-      setDateMatches([]);
-      setDateLoading(false);
+      setNews([]);
+      setNewsError(null);
       return;
     }
-    let active = true;
-    setStandingsLoading(true);
-    setLiveLoading(true);
-    setLoadingUpcoming(true);
-    setLoadingRecent(true);
-    const initialDate = todayISO;
-    setSelectedDate(initialDate);
-    fetchMatchesByDate(selectedLeague, initialDate);
-    setStandings([]);
-    setLiveInLeague([]);
-    setUpcoming([]);
-    setRecent([]);
-    setNews([]);
     fetchLeagueNews(selectedLeague);
-
-    const extractEvents = (payload: unknown): unknown[] => {
-      if (!payload || typeof payload !== "object") return [];
-      const events = (payload as Record<string, unknown>).events;
-      return Array.isArray(events) ? events : [];
-    };
-
-    const run = async () => {
-      const [tableRes, liveRes, upcomingRes, recentRes] = await Promise.allSettled([
-        getLeagueTable(selectedLeague),
-        getLiveEvents({ leagueName: selectedLeague }),
-        listEvents({ leagueName: selectedLeague, kind: "upcoming", days: 7 }),
-        listEvents({ leagueName: selectedLeague, kind: "past", days: 3 }),
-      ]);
-      if (!active) return;
-
-      if (tableRes.status === "fulfilled") {
-        const d = tableRes.value.data as { table?: Array<Record<string, unknown>> } | undefined;
-        const arr = (d && Array.isArray(d.table)) ? d.table : [];
-        const mapped = arr.slice(0, 10).map((r, i) => {
-          const rec = r as Record<string, unknown>;
-          const rank = rec.rank;
-          const teamName = typeof rec.team_name === "string" ? rec.team_name : undefined;
-          return {
-            position: typeof rec.position === "number" ? rec.position : (typeof rank === "string" && rank.trim() ? Number(rank) : i + 1),
-            team: typeof rec.team === "string" ? rec.team : teamName,
-            played: typeof rec.played === "number" ? rec.played : undefined,
-            points: typeof rec.points === "number" ? rec.points : undefined,
-          };
-        });
-        setStandings(mapped);
-      } else {
-        setStandings([]);
-      }
-
-      if (liveRes.status === "fulfilled") {
-        const data = liveRes.value.data as Record<string, unknown> | undefined;
-        let raw: unknown = [];
-        if (data && typeof data === "object") {
-          const getField = (key: string) => (data as Record<string, unknown>)[key];
-          raw = getField("events") ?? getField("result") ?? getField("results") ?? getField("items") ?? [];
-        }
-        const fixtures = parseFixtures(Array.isArray(raw) ? raw : []);
-  setLiveInLeague(boostFixtures(fixtures));
-      } else {
-        setLiveInLeague([]);
-      }
-
-      if (upcomingRes.status === "fulfilled") {
-        const events = extractEvents(upcomingRes.value.data);
-  setUpcoming(boostFixtures(parseFixtures(events)));
-      } else {
-        setUpcoming([]);
-      }
-
-      if (recentRes.status === "fulfilled") {
-        const events = extractEvents(recentRes.value.data);
-  setRecent(boostFixtures(parseFixtures(events)));
-      } else {
-        setRecent([]);
-      }
-
-      setStandingsLoading(false);
-      setLiveLoading(false);
-      setLoadingUpcoming(false);
-      setLoadingRecent(false);
-    };
-
-    run().catch(() => {
-      if (!active) return;
-      setStandings([]);
-      setLiveInLeague([]);
-      setUpcoming([]);
-      setRecent([]);
-      setStandingsLoading(false);
-      setLiveLoading(false);
-      setLoadingUpcoming(false);
-      setLoadingRecent(false);
-    });
-
-    return () => { active = false; };
-  }, [selectedLeague, fetchMatchesByDate, todayISO, boostFixtures, fetchLeagueNews]);
+  }, [selectedLeague, fetchLeagueNews]);
 
   return (
     <div className="container py-8 space-y-12">
@@ -1052,7 +836,7 @@ export default function LeaguesPage() {
               <div className="space-y-4">
                 <h3 className="text-xl font-semibold">All Other Leagues</h3>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {remainingLeagues.map(league => (
+                  {visibleRemainingLeagues.map(league => (
                     <LeagueCardItem
                       key={`${league.id}-${league.displayCountry ?? "global"}-${league.rawName}`}
                       league={league}
@@ -1061,160 +845,35 @@ export default function LeaguesPage() {
                     />
                   ))}
                 </div>
+                {(canShowMore || canShowLess) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canShowMore && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRemainingVisibleCount(prev => Math.min(prev + INCREMENT_REMAINING_COUNT, remainingLeagues.length))}
+                      >
+                        Show more
+                      </Button>
+                    )}
+                    {canShowLess && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRemainingVisibleCount(INITIAL_REMAINING_COUNT)}
+                      >
+                        Show less
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
         {selectedLeague && (
-          <Card className="p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold">Filters</h3>
-                <p className="text-sm text-muted-foreground">
-                  Pick a date to view fixtures for {selectedDisplayLabel}.
-                  {selectedDisplayContext ? <span className="block text-xs text-muted-foreground/80">{selectedDisplayContext}</span> : null}
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center">
-                <label className="text-sm text-muted-foreground md:flex md:flex-col md:items-start md:gap-2">
-                  <span className="text-xs uppercase tracking-wide">Date</span>
-                  <input
-                    type="date"
-                    className="h-9 rounded-md border border-border bg-background px-3 text-sm"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-transform active:scale-95"
-                  onClick={applyDateFilter}
-                  disabled={dateLoading}
-                >
-                  {dateLoading ? 'Loading…' : 'Apply'}
-                </button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => { ensureLeagueItemAndSend(selectedLeague, 'like'); try { bumpInteractions(); } catch {} }}>
-                <ThumbsUp className="w-4 h-4 mr-1"/> Like
-              </Button>
-              <Button variant="outline" size="sm" title="Save" className="transition-transform active:scale-95" onClick={handleSaveLeague}>
-                <Bookmark className="w-4 h-4 mr-1"/> Save
-              </Button>
-              <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={() => { handleLeagueShare(); try { bumpInteractions(); } catch {} }}>
-                <Share2 className="w-4 h-4 mr-1"/> Share
-              </Button>
-              {/* Dismiss removed as per request */}
-            </div>
-          </Card>
-        )}
-
-        {selectedLeague && (
           <div className="space-y-6">
-            {selectedLeague && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    Matches for {selectedDisplayLabel} on{" "}
-                    {selectedDate ? new Date(selectedDate + "T00:00:00").toLocaleDateString() : "selected date"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {dateLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading fixtures…</div>
-                  ) : dateMatches.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No fixtures scheduled for this date.</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {dateMatches.map((f) => (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-1">
-                <CardHeader><CardTitle>{selectedDisplayLabel} Standings</CardTitle></CardHeader>
-                <CardContent>
-                  {standingsLoading && standings.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Loading standings…</div>
-                  ) : standings.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Standings unavailable</div>
-                  ) : (
-                    <div className="text-sm">
-                      <div className="grid grid-cols-4 gap-2 font-medium text-muted-foreground mb-2">
-                        <div>#</div><div>Team</div><div>P</div><div>Pts</div>
-                      </div>
-                      <div className="space-y-1">
-                        {standings.map((r, i)=> (
-                          <div key={i} className="grid grid-cols-4 gap-2">
-                            <div>{r.position ?? i+1}</div>
-                            <div className="truncate">{r.team}</div>
-                            <div>{r.played ?? '-'}</div>
-                            <div>{r.points ?? '-'}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              <Card className="lg:col-span-2">
-                <CardHeader><CardTitle>Live in {selectedDisplayLabel}</CardTitle></CardHeader>
-                <CardContent>
-                  {liveLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading live…</div>
-                  ) : liveInLeague.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No live matches</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {liveInLeague.map((f)=> (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader><CardTitle>Upcoming (next 7 days)</CardTitle></CardHeader>
-                <CardContent>
-                  {loadingUpcoming ? (
-                    <div className="text-sm text-muted-foreground">Loading upcoming…</div>
-                  ) : upcoming.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No upcoming fixtures</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {upcoming.map((f)=> (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader><CardTitle>Recent Results (last 3 days)</CardTitle></CardHeader>
-                <CardContent>
-                  {loadingRecent ? (
-                    <div className="text-sm text-muted-foreground">Loading recent…</div>
-                  ) : recent.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No recent results</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {recent.map((f)=> (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
             <div>
               <Card>
                 <CardHeader>
