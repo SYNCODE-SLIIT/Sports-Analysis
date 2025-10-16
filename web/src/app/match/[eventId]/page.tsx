@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { Calendar, MapPin, Users, Trophy, TrendingUp, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
+import { Calendar, MapPin, Users, Trophy, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import RichTimeline from "@/components/match/RichTimeline";
 import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
 import MatchSummaryCard from "@/components/match/MatchSummaryCard";
+import WinProbabilityCard from "@/components/match/WinProbabilityCard";
 import MatchExtrasTabs, { type MatchExtrasTabsProps } from "@/components/match/MatchExtrasTabs";
 import { buildTimeline, computeLeaders, computeBestPlayer } from "@/lib/match-mappers";
 import type { TLItem } from "@/lib/match-mappers";
@@ -107,6 +108,7 @@ export default function MatchPage() {
   const [leaders, setLeaders] = useState<ReturnType<typeof computeLeaders> | null>(null);
   const [best, setBest] = useState<{ name: string; score?: number } | null>(null);
   const [winProbDisplay, setWinProbDisplay] = useState<{ home: number; draw: number; away: number }>({ home: 0, draw: 0, away: 0 });
+  const [winProbInsight, setWinProbInsight] = useState<Record<string, unknown> | null | undefined>(undefined);
   const [teamsExtra, setTeamsExtra] = useState<{ home: DataObject | null; away: DataObject | null }>({ home: null, away: null });
   const [playersExtra, setPlayersExtra] = useState<{ home: DataObject[]; away: DataObject[] }>({ home: [], away: [] });
   const [oddsExtra, setOddsExtra] = useState<{ listed: DataObject[]; live: DataObject[] }>({ listed: [], live: [] });
@@ -399,6 +401,7 @@ export default function MatchPage() {
   useEffect(() => {
     if (!eventId) return;
     let active = true;
+    setWinProbInsight(undefined);
     postCollect("analysis.match_insights", { eventId: String(eventId) })
       .then(env => {
         if (!active) return;
@@ -407,6 +410,7 @@ export default function MatchPage() {
         const insights = insightsRaw && typeof insightsRaw === "object" ? (insightsRaw as Record<string, unknown>) : undefined;
         const winprobContainer = insights ?? data;
         const winprobRaw = winprobContainer.winprob;
+        setWinProbInsight(winprobContainer && typeof winprobContainer === "object" ? (winprobContainer as Record<string, unknown>) : null);
         const winprob = winprobRaw && typeof winprobRaw === "object"
           ? (winprobRaw as Record<string, unknown>)
           : undefined;
@@ -433,10 +437,27 @@ export default function MatchPage() {
       })
       .catch(() => {
         if (!active) return;
+        setWinProbInsight(null);
         setWinProbDisplay({ home: 0, draw: 0, away: 0 });
       });
     return () => { active = false; };
   }, [eventId]);
+
+  useEffect(() => {
+    const win = event?.winProbabilities;
+    if (!win) return;
+    if (winProbInsight && typeof winProbInsight === "object") return;
+    const toPct = (value?: number) => {
+      if (typeof value !== "number" || Number.isNaN(value)) return 0;
+      if (value <= 1.0001) return Math.round(value * 100);
+      return Math.round(value);
+    };
+    setWinProbDisplay({
+      home: toPct(win.home),
+      draw: toPct(win.draw),
+      away: toPct(win.away),
+    });
+  }, [event, winProbInsight]);
 
   useEffect(() => {
     if (!eventRaw) {
@@ -747,39 +768,14 @@ export default function MatchPage() {
         </CardContent>
       </Card>
 
-      {/* Win Probabilities */}
-      <div>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <TrendingUp className="w-5 h-5" />
-              <span>Win Probabilities</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-green-600">
-                  {winProbDisplay.home.toFixed(0)}%
-                </div>
-                <div className="text-sm text-muted-foreground">{match.homeTeam} Win</div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-yellow-600">
-                  {winProbDisplay.draw.toFixed(0)}%
-                </div>
-                <div className="text-sm text-muted-foreground">Draw</div>
-              </div>
-              <div className="space-y-2">
-                <div className="text-2xl font-bold text-blue-600">
-                  {winProbDisplay.away.toFixed(0)}%
-                </div>
-                <div className="text-sm text-muted-foreground">{match.awayTeam} Win</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <WinProbabilityCard
+        homeTeam={match.homeTeam}
+        awayTeam={match.awayTeam}
+        fallback={winProbDisplay}
+        rawInsight={winProbInsight}
+        rawEvent={eventRaw}
+        teams={teamsExtra}
+      />
 
       {/* Match Details Tabs */}
       <div>
