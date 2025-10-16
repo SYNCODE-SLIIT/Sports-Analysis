@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { POPULAR_LEAGUES } from "@/lib/leagues";
 
 const API_BASE = process.env.API_BASE_INTERNAL;
 
@@ -55,7 +54,19 @@ function normalizeLeagues(raw: unknown): Array<{ league_name: string; country_na
 export async function GET() {
   try {
     const env = await callCollect("leagues.list", {});
-    const leaguesRaw = (env?.data as Record<string, unknown> | undefined)?.leagues ?? env?.data ?? [];
+    // AllSports returns { success, result: [...] }; TSDB may use { leagues: [...] } or other shapes.
+    const data = env?.data as Record<string, unknown> | undefined;
+    const extractArray = (payload: unknown): unknown[] => {
+      if (!payload || typeof payload !== "object") return [];
+      const obj = payload as Record<string, unknown>;
+      const candidates =
+        (Array.isArray(obj.result) ? obj.result : undefined) ||
+        (Array.isArray(obj.results) ? obj.results : undefined) ||
+        (Array.isArray(obj.leagues) ? obj.leagues : undefined) ||
+        (Array.isArray(obj.data) ? obj.data : undefined);
+      return candidates ?? [];
+    };
+    const leaguesRaw = Array.isArray(data) ? data : extractArray(data);
     const leagues = normalizeLeagues(leaguesRaw);
     if (leagues.length) return NextResponse.json({ leagues });
   } catch {}
@@ -84,18 +95,9 @@ export async function GET() {
           : undefined;
       inferred.set(league, country ? { league_name: league, country_name: country } : { league_name: league });
     }
-    const merged = new Map<string, { league_name: string; country_name?: string }>();
-    for (const name of POPULAR_LEAGUES) {
-      const key = name.toLowerCase();
-      if (!merged.has(key)) merged.set(key, { league_name: name });
-    }
-    inferred.forEach((value, name) => {
-      const key = name.toLowerCase();
-      if (!merged.has(key)) merged.set(key, value);
-    });
-    return NextResponse.json({ leagues: Array.from(merged.values()) });
+    return NextResponse.json({ leagues: Array.from(inferred.values()) });
   } catch {}
 
-  const fallback = POPULAR_LEAGUES.map(name => ({ league_name: name }));
-  return NextResponse.json({ leagues: fallback });
+  // Final fallback: empty list (avoid hardcoded leagues)
+  return NextResponse.json({ leagues: [] });
 }
