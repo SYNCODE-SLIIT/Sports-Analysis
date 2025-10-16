@@ -64,11 +64,25 @@ export async function summarize(payload: {
   eventName?: string;
   date?: string;
 }): Promise<SummaryResponse> {
-  return request<SummaryResponse>('/summarizer/summarize', {
-    method: 'POST',
-    body: JSON.stringify({
-      provider: 'auto',
-      ...payload,
-    }),
-  });
+  const maxAttempts = 3;
+  const timeoutPerAttempt = 30000; // 30s per summarize attempt
+  let attempt = 0;
+  let lastErr: unknown = null;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      return await request<SummaryResponse>('/summarizer/summarize', {
+        method: 'POST',
+        body: JSON.stringify({ provider: 'auto', ...payload }),
+      }, timeoutPerAttempt);
+    } catch (err) {
+      lastErr = err;
+      // transient retryable conditions: network errors, aborted, 5xx
+      // simple backoff
+      const backoff = 500 * Math.pow(2, attempt - 1);
+      await new Promise((res) => setTimeout(res, backoff));
+    }
+  }
+  // If we reach here, rethrow the last error
+  throw lastErr;
 }
