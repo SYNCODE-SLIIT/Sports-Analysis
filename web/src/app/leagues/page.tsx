@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, Search, ThumbsUp, Bookmark, Share2, Eye, MousePointerClick, X } from "lucide-react";
+import { ChevronRight, Search, ThumbsUp, Bookmark, Share2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MatchCard } from "@/components/MatchCard";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,8 @@ import { parseFixtures, type Fixture } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
+import rawLeagueMetadata from "./league-metadata.json";
+import rawCategoryMetadata from "./category-metadata.json";
 
 type LeagueLite = {
   id: string;
@@ -18,6 +20,268 @@ type LeagueLite = {
   country_name?: string;
   logo?: string;
 };
+
+type LeagueMetadata = {
+  id: number;
+  slug: string;
+  name: string;
+  country?: string;
+  confederation?: string;
+  type?: string;
+  category?: string;
+  categories?: string[];
+  fame_rank?: number;
+  aliases?: string[];
+  active?: boolean;
+  strength_score?: number;
+};
+
+type DisplayLeague = LeagueLite & {
+  rawName: string;
+  displayName: string;
+  displayCountry?: string;
+  displayLabel: string;
+  metadata?: ResolvedMetadata;
+};
+
+type FeaturedSection = {
+  id: string;
+  title: string;
+  description?: string;
+  leagues: DisplayLeague[];
+};
+
+type NavigatorWithShare = Navigator & { share?: (data: ShareData) => Promise<void> };
+
+const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
+type CategoryMetadata = { id: string; title?: string; description?: string };
+const CATEGORY_METADATA_LIST: CategoryMetadata[] = rawCategoryMetadata as CategoryMetadata[];
+const CATEGORY_PRIORITY = new Map<string, number>();
+const CATEGORY_LOOKUP = new Map<string, CategoryMetadata>();
+CATEGORY_METADATA_LIST.forEach((item, index) => {
+  CATEGORY_PRIORITY.set(item.id, index);
+  CATEGORY_LOOKUP.set(item.id, item);
+});
+const CATEGORY_PRIORITY_DEFAULT = Number.MAX_SAFE_INTEGER;
+const getCategoryPriority = (id: string) => CATEGORY_PRIORITY.get(id) ?? CATEGORY_PRIORITY_DEFAULT;
+
+const normalizeValue = (value: string | undefined | null) => {
+  if (!value) return "";
+  return value.trim().toLowerCase().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ");
+};
+
+type AggregatedMetadata = {
+  primary: LeagueMetadata;
+  categories: Set<string>;
+  fameRank: number;
+  aliasKeys: Set<string>;
+  countryKeys: Set<string>;
+};
+
+type ResolvedMetadata = {
+  primary: LeagueMetadata;
+  categories: string[];
+  fameRank: number;
+};
+
+const buildMetadataIndex = () => {
+  const aggregated = new Map<string, AggregatedMetadata>();
+
+  const ensureEntry = (item: LeagueMetadata) => {
+    const nameKey = normalizeValue(item.name);
+    if (!nameKey) return null;
+    const countryKey = normalizeValue(item.country);
+    const mapKey = `${countryKey}|${nameKey}`;
+    let entry = aggregated.get(mapKey);
+    if (!entry) {
+      entry = {
+        primary: item,
+        categories: new Set<string>(),
+        fameRank: item.fame_rank ?? Number.MAX_SAFE_INTEGER,
+        aliasKeys: new Set<string>(),
+        countryKeys: new Set<string>(),
+      };
+      aggregated.set(mapKey, entry);
+    } else {
+      const currentRank = entry.primary.fame_rank ?? Number.MAX_SAFE_INTEGER;
+      const nextRank = item.fame_rank ?? Number.MAX_SAFE_INTEGER;
+      const currentPopular = entry.primary.category === "popular";
+      const nextPopular = item.category === "popular";
+      if ((nextPopular && !currentPopular) || (!nextPopular && currentPopular ? false : nextRank < currentRank)) {
+        entry.primary = item;
+      }
+      entry.fameRank = Math.min(entry.fameRank, nextRank);
+    }
+
+    const categoriesValue = Array.isArray(item.categories) && item.categories.length
+      ? item.categories
+      : item.category
+        ? [item.category]
+        : [];
+    categoriesValue.forEach(cat => { if (cat) entry?.categories.add(cat); });
+
+    const addAlias = (alias: string | undefined | null) => {
+      const aliasKey = normalizeValue(alias);
+      if (!aliasKey) return;
+      entry?.aliasKeys.add(aliasKey);
+    };
+    addAlias(item.name);
+    (item.aliases ?? []).forEach(addAlias);
+
+    const addCountryVariant = (country: string | undefined | null) => {
+      const variant = normalizeValue(country);
+      entry?.countryKeys.add(variant);
+      if (variant.includes("/")) {
+        variant.split("/").forEach(part => entry?.countryKeys.add(part));
+      }
+    };
+    addCountryVariant(item.country);
+    if (!item.country) {
+      entry?.countryKeys.add("");
+    }
+
+    return entry;
+  };
+
+  LEAGUE_METADATA.forEach(item => {
+    ensureEntry(item);
+  });
+
+  const aliasIndex = new Map<string, AggregatedMetadata>();
+  aggregated.forEach(entry => {
+    const countries = entry.countryKeys.size ? entry.countryKeys : new Set<string>([""]);
+    countries.forEach(countryKey => {
+      entry.aliasKeys.forEach(aliasKey => {
+        const key = `${countryKey}|${aliasKey}`;
+        const existing = aliasIndex.get(key);
+        if (!existing || entry.fameRank < existing.fameRank) {
+          aliasIndex.set(key, entry);
+        }
+      });
+    });
+    if (entry.countryKeys.has("")) {
+      entry.aliasKeys.forEach(aliasKey => {
+        const key = `|${aliasKey}`;
+        const existing = aliasIndex.get(key);
+        if (!existing || entry.fameRank < existing.fameRank) {
+          aliasIndex.set(key, entry);
+        }
+      });
+    }
+  });
+
+  return { aliasIndex };
+};
+
+const useMetadataIndex = () => useMemo(buildMetadataIndex, []);
+
+const formatCategoryTitle = (id: string) =>
+  id
+    .split("_")
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const getCategoryTitle = (id: string) => CATEGORY_LOOKUP.get(id)?.title ?? formatCategoryTitle(id);
+
+const sortLeaguesWithinCategory = (leagues: DisplayLeague[]) =>
+  [...leagues].sort((a, b) => {
+    const rankA = a.metadata?.fameRank ?? Number.MAX_SAFE_INTEGER;
+    const rankB = b.metadata?.fameRank ?? Number.MAX_SAFE_INTEGER;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.displayName.localeCompare(b.displayName);
+  });
+
+type LeagueCardItemProps = {
+  league: DisplayLeague;
+  isSelected: boolean;
+  onSelect: (league: DisplayLeague) => void;
+  variant?: "grid" | "carousel";
+};
+
+function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: LeagueCardItemProps) {
+  const handleSelect = () => onSelect(league);
+  const baseClasses = [
+    "cursor-pointer",
+    "border",
+    "hover:shadow-md",
+    "focus-within:ring-2",
+    "focus-within:ring-primary",
+    "focus-within:ring-offset-2",
+    "transition-transform",
+    "active:scale-95",
+    isSelected ? "border-primary shadow-lg" : "",
+    variant === "carousel" ? "min-w-[240px] flex-shrink-0" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const subtitle = [league.metadata?.primary.confederation, league.rawName !== league.displayName ? league.rawName : undefined]
+    .filter(Boolean)
+    .join(" • ");
+
+  return (
+    <Card
+      className={baseClasses}
+      onClick={handleSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={evt => {
+        if (evt.key === "Enter" || evt.key === " ") {
+          evt.preventDefault();
+          handleSelect();
+        }
+      }}
+    >
+      <CardContent className="flex items-center gap-4 p-4">
+        <div
+          className={`flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border text-sm font-semibold ${
+            league.logo ? "border-transparent" : "border-border bg-muted text-muted-foreground"
+          }`}
+          style={
+            league.logo
+              ? { backgroundImage: `url(${league.logo})`, backgroundSize: "cover", backgroundPosition: "center" }
+              : undefined
+          }
+        >
+          {!league.logo && getInitials(league.displayName)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-foreground">{league.displayLabel}</div>
+          {subtitle && <div className="truncate text-xs text-muted-foreground">{subtitle}</div>}
+        </div>
+        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+      </CardContent>
+    </Card>
+  );
+}
+
+type FeaturedCategorySectionProps = {
+  section: FeaturedSection;
+  onSelect: (league: DisplayLeague) => void;
+  selectedLeague: string;
+};
+
+function FeaturedCategorySection({ section, onSelect, selectedLeague }: FeaturedCategorySectionProps) {
+  if (!section.leagues.length) return null;
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1">
+        <h3 className="text-xl font-semibold">{section.title}</h3>
+        {section.description && <p className="text-sm text-muted-foreground max-w-3xl">{section.description}</p>}
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        {section.leagues.map(league => (
+          <LeagueCardItem
+            key={`${section.id}-${league.id}-${league.displayCountry ?? "global"}-${league.rawName}`}
+            league={league}
+            isSelected={selectedLeague === league.rawName}
+            onSelect={onSelect}
+            variant="carousel"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const POPULAR_LEAGUES = [
   "Premier League",
@@ -140,7 +404,14 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
   for (const entry of raw) {
     const info = extractLeagueInfo(entry);
     if (!info) continue;
-    const uniqueKey = info.id || info.league_name.toLowerCase();
+    const idKey = typeof info.id === "string"
+      ? info.id.toLowerCase()
+      : info.id !== undefined && info.id !== null
+        ? String(info.id).toLowerCase()
+        : "";
+    const nameKey = info.league_name.toLowerCase();
+    const countryKey = info.country_name ? info.country_name.toLowerCase() : "";
+    const uniqueKey = [idKey, nameKey, countryKey].join("|");
     if (seen.has(uniqueKey)) continue;
     seen.add(uniqueKey);
     normalized.push(info);
@@ -172,6 +443,69 @@ export default function LeaguesPage() {
   const [favTeams, setFavTeams] = useState<string[]>([]);
   const [favLeagues, setFavLeagues] = useState<string[]>([]);
 
+  const metadataIndex = useMetadataIndex();
+
+  const findMetadataForLeague = useCallback(
+    (league: LeagueLite): ResolvedMetadata | undefined => {
+      if (!league) return undefined;
+      const nameKey = normalizeValue(league.league_name);
+      if (!nameKey) return undefined;
+      const countryKey = normalizeValue(league.country_name);
+
+      const keysToTry: string[] = [];
+      if (countryKey) {
+        keysToTry.push(`${countryKey}|${nameKey}`);
+        if (countryKey.includes("/")) {
+          countryKey.split("/").forEach(part => {
+            const variant = normalizeValue(part);
+            if (variant) keysToTry.push(`${variant}|${nameKey}`);
+          });
+        }
+      } else {
+        keysToTry.push(`|${nameKey}`);
+      }
+
+      let entry: AggregatedMetadata | undefined;
+      for (const key of keysToTry) {
+        entry = metadataIndex.aliasIndex.get(key);
+        if (entry) break;
+      }
+      if (!entry) return undefined;
+
+      const categories = Array.from(entry.categories)
+        .filter(Boolean)
+        .sort((a, b) => {
+          const order = getCategoryPriority(a) - getCategoryPriority(b);
+          if (order !== 0) return order;
+          return a.localeCompare(b);
+        });
+
+      return {
+        primary: entry.primary,
+        categories,
+        fameRank: entry.fameRank,
+      };
+    },
+    [metadataIndex]
+  );
+
+  const createDisplayLeague = useCallback(
+    (league: LeagueLite): DisplayLeague => {
+      const metadata = findMetadataForLeague(league);
+      const displayName = league.league_name;
+      const displayCountry = league.country_name || metadata?.primary.country;
+      const displayLabel = displayCountry ? `${displayCountry} • ${displayName}` : displayName;
+      return {
+        ...league,
+        rawName: league.league_name,
+        displayName,
+        displayCountry: displayCountry || undefined,
+        displayLabel,
+        metadata,
+      };
+    },
+    [findMetadataForLeague]
+  );
 
   const qSan = useMemo(() => sanitizeInput(search), [search]);
 
@@ -195,6 +529,78 @@ export default function LeaguesPage() {
     });
     return ordered;
   }, [filteredLeagues]);
+
+  const displayLeagues = useMemo(() => visibleLeagues.map(createDisplayLeague), [visibleLeagues, createDisplayLeague]);
+
+  const { featuredSections, remainingLeagues } = useMemo(() => {
+    const categoryMap = new Map<string, DisplayLeague[]>();
+    const uncategorized: DisplayLeague[] = [];
+
+    displayLeagues.forEach(league => {
+      const categories = league.metadata?.categories ?? [];
+      if (categories.length === 0) {
+        uncategorized.push(league);
+        return;
+      }
+      categories.forEach(category => {
+        const bucket = categoryMap.get(category) ?? [];
+        bucket.push(league);
+        categoryMap.set(category, bucket);
+      });
+    });
+
+    const sections: FeaturedSection[] = [];
+
+    CATEGORY_METADATA_LIST.forEach(meta => {
+      const leagues = categoryMap.get(meta.id);
+      if (leagues && leagues.length) {
+        sections.push({
+          id: meta.id,
+          title: meta.title ?? formatCategoryTitle(meta.id),
+          description: meta.description,
+          leagues: sortLeaguesWithinCategory(leagues),
+        });
+        categoryMap.delete(meta.id);
+      }
+    });
+
+    Array.from(categoryMap.entries())
+      .sort((a, b) => {
+        const priorityDiff = getCategoryPriority(a[0]) - getCategoryPriority(b[0]);
+        if (priorityDiff !== 0) return priorityDiff;
+        return getCategoryTitle(a[0]).localeCompare(getCategoryTitle(b[0]));
+      })
+      .forEach(([id, leagues]) => {
+        const info = CATEGORY_LOOKUP.get(id);
+        sections.push({
+          id,
+          title: info?.title ?? formatCategoryTitle(id),
+          description: info?.description,
+          leagues: sortLeaguesWithinCategory(leagues),
+        });
+      });
+
+    return {
+      featuredSections: sections,
+      remainingLeagues: uncategorized,
+    };
+  }, [displayLeagues]);
+
+  const totalVisibleCount = useMemo(
+    () => featuredSections.reduce((sum, section) => sum + section.leagues.length, 0) + remainingLeagues.length,
+    [featuredSections, remainingLeagues]
+  );
+
+  const selectedDisplayLeague = useMemo(() => {
+    const raw = allLeagues.find(l => l.league_name === selectedLeague);
+    return raw ? createDisplayLeague(raw) : undefined;
+  }, [allLeagues, selectedLeague, createDisplayLeague]);
+
+  const selectedDisplayName = selectedDisplayLeague?.displayName ?? selectedLeague;
+  const selectedDisplayContext = [selectedDisplayLeague?.displayCountry, selectedDisplayLeague?.metadata?.primary.confederation]
+    .filter(Boolean)
+    .join(" • ");
+  const selectedDisplayLabel = selectedDisplayLeague?.displayLabel ?? selectedDisplayName;
 
   useEffect(() => {
     let active = true;
@@ -248,10 +654,28 @@ export default function LeaguesPage() {
       const params = new URLSearchParams(window.location.search);
       const l = params.get('league');
       if (l) setInitialLeagueParam(decodeURIComponent(l));
-    } catch (e) {
+    } catch {
       // ignore
     }
   }, []);
+
+  // Ensure a league item exists and log interaction
+  const ensureLeagueItemAndSend = useCallback(async (
+    leagueName: string,
+    evt: "view" | "click" | "like" | "save" | "share" | "dismiss"
+  ) => {
+    if (!user || !leagueName) return;
+    try {
+      const league = allLeagues.find(l => l.league_name === leagueName);
+      const { data: item_id } = await supabase.rpc("ensure_league_item", {
+        p_league_name: leagueName,
+        p_logo: league?.logo ?? null,
+        p_popularity: 0,
+      });
+      if (!item_id) return;
+      await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: evt });
+    } catch {}
+  }, [user, supabase, allLeagues]);
 
   // When the leagues list arrives, try to resolve an initial param into a canonical league name.
   useEffect(() => {
@@ -278,7 +702,7 @@ export default function LeaguesPage() {
       setSelectedLeague(param);
       try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(param)}`); } catch {}
     }
-  }, [allLeagues, initialLeagueParam]);
+  }, [allLeagues, ensureLeagueItemAndSend, initialLeagueParam, selectedLeague]);
 
   // Load user preferences for boosting
   useEffect(() => {
@@ -298,23 +722,21 @@ export default function LeaguesPage() {
     return () => { active = false; };
   }, [user, supabase]);
 
-  // Ensure a league item exists and log interaction
-  const ensureLeagueItemAndSend = useCallback(async (
-    leagueName: string,
-    evt: "view" | "click" | "like" | "save" | "share" | "dismiss"
-  ) => {
-    if (!user || !leagueName) return;
-    try {
-      const league = allLeagues.find(l => l.league_name === leagueName);
-      const { data: item_id } = await supabase.rpc("ensure_league_item", {
-        p_league_name: leagueName,
-        p_logo: league?.logo ?? null,
-        p_popularity: 0,
-      });
-      if (!item_id) return;
-      await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: evt });
-    } catch {}
-  }, [user, supabase, allLeagues]);
+  const handleLeagueSelect = useCallback(
+    (league: DisplayLeague) => {
+      if (!league) return;
+      setSelectedLeague(league.rawName);
+      void ensureLeagueItemAndSend(league.rawName, "view");
+      try {
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", `?league=${encodeURIComponent(league.rawName)}`);
+        }
+      } catch {
+        // ignore history replace failures
+      }
+    },
+    [ensureLeagueItemAndSend]
+  );
 
   // Save league to user preferences (favorite_leagues) and log interaction
   const handleSaveLeague = useCallback(async () => {
@@ -328,42 +750,43 @@ export default function LeaguesPage() {
       const existingLeagues: string[] = (prefs?.favorite_leagues ?? []) as string[];
       const existingTeams: string[] = (prefs?.favorite_teams ?? []) as string[];
       if (existingLeagues.includes(selectedLeague)) {
-        toast.success('League already in your favorites');
+        toast.success(`${selectedDisplayLabel} is already in your favorites`);
         // still update local state to reflect db
         setFavLeagues(existingLeagues);
         return;
       }
       const newLeagues = [...existingLeagues, selectedLeague];
       // upsert preferences
-  await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
-  // update local state so UI updates immediately
-  setFavLeagues(newLeagues);
-  // notify other components (Profile) to refresh preferences
-  try { bumpPreferences(); } catch {}
-  toast.success('League saved to your favorites');
+      await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
+      // update local state so UI updates immediately
+      setFavLeagues(newLeagues);
+      // notify other components (Profile) to refresh preferences
+      try { bumpPreferences(); } catch {}
+      toast.success(`${selectedDisplayLabel} saved to your favorites`);
     } catch (err) {
       console.error('save league', err);
       toast.error('Failed to save league');
     }
-  }, [user, selectedLeague, supabase, ensureLeagueItemAndSend]);
+  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences]);
 
   const handleLeagueShare = useCallback(async () => {
     if (!selectedLeague) return;
+    const displayName = selectedDisplayLabel || selectedLeague;
     const url = typeof window !== 'undefined'
       ? `${window.location.origin}/leagues?league=${encodeURIComponent(selectedLeague)}`
       : `/leagues?league=${encodeURIComponent(selectedLeague)}`;
-    const title = `${selectedLeague}`;
-    const text = `Check out ${selectedLeague} on Sports Analysis`;
+    const title = `${displayName}`;
+    const text = `Check out ${displayName} on Sports Analysis`;
     try {
-      const nav: any = typeof navigator !== 'undefined' ? navigator : undefined;
+      const nav: NavigatorWithShare | undefined = typeof navigator !== 'undefined' ? (navigator as NavigatorWithShare) : undefined;
       if (nav?.share) {
         try {
           await nav.share({ title, text, url });
           toast.success('Shared');
           await ensureLeagueItemAndSend(selectedLeague, 'share');
           return;
-        } catch (err: any) {
-          if (err && err.name === 'AbortError') return;
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
         }
       }
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -374,41 +797,75 @@ export default function LeaguesPage() {
     } catch {
       // Ignore share failures
     }
-  }, [selectedLeague, ensureLeagueItemAndSend]);
+  }, [selectedLeague, selectedDisplayLabel, ensureLeagueItemAndSend]);
 
-const fetchLeagueNews = useCallback(async (leagueName: string) => {
-  if (!leagueName) return;
-  setNewsLoading(true);
-  setNewsError(null);
-  try {
-    const resp = await getLeagueNews(leagueName, 20);
-    const articlesRaw = resp?.data?.articles || resp?.data?.result || resp?.data || [];
-    const normalized = (Array.isArray(articlesRaw) ? articlesRaw : []).map((a: any, i: number) => ({
-      id: a.id || a.articleId || a.url || `news-${i}`,
-      title: a.title || a.headline || a.name || "",
-      url: a.url || a.link || a.article_url || "",
-      summary: a.summary || a.description || a.excerpt || "",
-      // try many common keys providers use for an image
-      imageUrl:
-        a.image ||
-        a.imageUrl ||
-        a.urlToImage ||
-        a.thumbnail ||
-        a.image_url ||
-        (a.media && a.media[0] && (a.media[0].url || a.media[0].src)) ||
-        undefined,
-      source: a.source || a.publisher || "",
-      publishedAt: a.publishedAt || a.pubDate || a.published || "",
-    }));
-    setNews(normalized);
-  } catch (err: any) {
-    setNewsError(String(err?.message || err));
-  } finally {
-    setNewsLoading(false);
-  }
-}, []);
+  const fetchLeagueNews = useCallback(async (leagueName: string) => {
+    if (!leagueName) return;
+    setNewsLoading(true);
+    setNewsError(null);
+    try {
+      const resp = await getLeagueNews(leagueName, 20);
+      const articlesRaw = resp?.data?.articles || resp?.data?.result || resp?.data || [];
+      const normalized = (Array.isArray(articlesRaw) ? articlesRaw : []).map((item, index) => {
+        if (!item || typeof item !== "object") {
+          return { id: `news-${index}` };
+        }
+        const record = item as Record<string, unknown>;
+        const pick = (keys: string[]): string | undefined => {
+          const value = getFirstString(record, keys);
+          return value ? value : undefined;
+        };
+        let imageUrl = pick(["image", "imageUrl", "urlToImage", "thumbnail", "image_url"]);
+        if (!imageUrl) {
+          const mediaValue = record["media"];
+          if (Array.isArray(mediaValue)) {
+            for (const mediaItem of mediaValue) {
+              if (typeof mediaItem === "string" && mediaItem.trim()) {
+                imageUrl = mediaItem.trim();
+                break;
+              }
+              if (mediaItem && typeof mediaItem === "object") {
+                const mediaRecord = mediaItem as Record<string, unknown>;
+                const nested = getFirstString(mediaRecord, ["url", "src", "image"]);
+                if (nested) {
+                  imageUrl = nested;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        return {
+          id: pick(["id", "articleId", "url"]) ?? `news-${index}`,
+          title: pick(["title", "headline", "name"]),
+          url: pick(["url", "link", "article_url"]),
+          summary: pick(["summary", "description", "excerpt"]),
+          imageUrl,
+          source: pick(["source", "publisher"]),
+          publishedAt: pick(["publishedAt", "pubDate", "published"]),
+        };
+      });
+      setNews(normalized);
+    } catch (err) {
+      setNewsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setNewsLoading(false);
+    }
+  }, []);
 
-const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) => {
+  const boostFixtures = useCallback((arr: Fixture[]) => {
+    if (favTeams.length === 0 && favLeagues.length === 0) return arr;
+    return [...arr]
+      .map((m, idx) => {
+        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
+        const leagueBoost = favLeagues.includes(m.league ?? "") ? 2 : 0;
+        return { m, idx, score: teamBoost + leagueBoost };
+      })
+      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
+      .map(x => x.m);
+  }, [favTeams, favLeagues]);
+
+  const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) => {
     setDateLoading(true);
     try {
       const cleanLeague = sanitizeInput(leagueName);
@@ -430,14 +887,14 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
       const rawEvents: unknown[] = Array.isArray(data)
         ? data
         : extract(data) || [];
-  setDateMatches(boostFixtures(parseFixtures(rawEvents)));
+      setDateMatches(boostFixtures(parseFixtures(rawEvents)));
     } catch (error) {
       console.debug("[leagues] date fixtures", error);
       setDateMatches([]);
     } finally {
       setDateLoading(false);
     }
-  }, [todayISO]);
+  }, [todayISO, boostFixtures]);
 
   const applyDateFilter = useCallback(() => {
     if (!selectedLeague) return;
@@ -546,19 +1003,8 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
     });
 
     return () => { active = false; };
-  }, [selectedLeague, fetchMatchesByDate, todayISO]);
+  }, [selectedLeague, fetchMatchesByDate, todayISO, boostFixtures, fetchLeagueNews]);
 
-  const boostFixtures = useCallback((arr: Fixture[]) => {
-    if (favTeams.length === 0 && favLeagues.length === 0) return arr;
-    return [...arr]
-      .map((m, idx) => {
-        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
-        const leagueBoost = favLeagues.includes(m.league ?? '') ? 2 : 0;
-        return { m, idx, score: teamBoost + leagueBoost };
-      })
-      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
-      .map(x => x.m);
-  }, [favTeams, favLeagues]);
   return (
     <div className="container py-8 space-y-12">
       {/* Header */}
@@ -577,8 +1023,8 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
       {/* All Leagues + Search */}
       <section className="space-y-6">
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold">All Leagues</h2>
-          <p className="text-muted-foreground">Search all leagues and view details</p>
+          <h2 className="text-2xl font-bold">Browse Leagues & Competitions</h2>
+          <p className="text-muted-foreground">Use search or explore curated collections of the world&apos;s most followed leagues.</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="relative w-full max-w-md">
@@ -586,45 +1032,37 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
             <Input className="pl-9" placeholder="Search by league or country" value={search} onChange={(e)=> setSearch(e.target.value)} />
           </div>
         </div>
-        {visibleLeagues.length === 0 ? (
+        {totalVisibleCount === 0 ? (
           <div className="text-sm text-muted-foreground">No leagues match your search.</div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visibleLeagues.map(league => {
-              const isSelected = selectedLeague === league.league_name;
-              return (
-                <Card
-                  key={`${league.id}-${league.league_name}`}
-                  className={`cursor-pointer border hover:shadow-md focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 transition-transform active:scale-95 ${isSelected ? 'border-primary shadow-lg' : ''}`}
-                  onClick={() => { setSelectedLeague(league.league_name); ensureLeagueItemAndSend(league.league_name, 'view'); }}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(evt) => {
-                    if (evt.key === 'Enter' || evt.key === ' ') {
-                      evt.preventDefault();
-                      setSelectedLeague(league.league_name);
-                      ensureLeagueItemAndSend(league.league_name, 'view');
-                    }
-                  }}
-                >
-                  <CardContent className="flex items-center gap-4 p-4">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border text-sm font-semibold ${league.logo ? 'border-transparent' : 'border-border bg-muted text-muted-foreground'}`}
-                      style={league.logo ? { backgroundImage: `url(${league.logo})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
-                    >
-                      {!league.logo && getInitials(league.league_name)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-foreground">{league.league_name}</div>
-                      {league.country_name && (
-                        <div className="truncate text-xs text-muted-foreground">{league.country_name}</div>
-                      )}
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  </CardContent>
-                </Card>
-              );
-            })}
+          <div className="space-y-8">
+            {featuredSections.length > 0 && (
+              <div className="space-y-8">
+                {featuredSections.map(section => (
+                  <FeaturedCategorySection
+                    key={section.id}
+                    section={section}
+                    onSelect={handleLeagueSelect}
+                    selectedLeague={selectedLeague}
+                  />
+                ))}
+              </div>
+            )}
+            {remainingLeagues.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-semibold">All Other Leagues</h3>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {remainingLeagues.map(league => (
+                    <LeagueCardItem
+                      key={`${league.id}-${league.displayCountry ?? "global"}-${league.rawName}`}
+                      league={league}
+                      isSelected={selectedLeague === league.rawName}
+                      onSelect={handleLeagueSelect}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -633,7 +1071,10 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
             <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">Filters</h3>
-                <p className="text-sm text-muted-foreground">Pick a date to view fixtures for {selectedLeague}.</p>
+                <p className="text-sm text-muted-foreground">
+                  Pick a date to view fixtures for {selectedDisplayLabel}.
+                  {selectedDisplayContext ? <span className="block text-xs text-muted-foreground/80">{selectedDisplayContext}</span> : null}
+                </p>
               </div>
               <div className="flex flex-col gap-2 md:flex-row md:items-center">
                 <label className="text-sm text-muted-foreground md:flex md:flex-col md:items-start md:gap-2">
@@ -675,7 +1116,10 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
             {selectedLeague && (
               <Card>
                 <CardHeader>
-                  <CardTitle>Matches on {selectedDate ? new Date(selectedDate + 'T00:00:00').toLocaleDateString() : 'selected date'}</CardTitle>
+                  <CardTitle>
+                    Matches for {selectedDisplayLabel} on{" "}
+                    {selectedDate ? new Date(selectedDate + "T00:00:00").toLocaleDateString() : "selected date"}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {dateLoading ? (
@@ -694,7 +1138,7 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
             )}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1">
-                <CardHeader><CardTitle>{selectedLeague} Standings</CardTitle></CardHeader>
+                <CardHeader><CardTitle>{selectedDisplayLabel} Standings</CardTitle></CardHeader>
                 <CardContent>
                   {standingsLoading && standings.length === 0 ? (
                     <div className="text-sm text-muted-foreground">Loading standings…</div>
@@ -720,7 +1164,7 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
                 </CardContent>
               </Card>
               <Card className="lg:col-span-2">
-                <CardHeader><CardTitle>Live in {selectedLeague}</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Live in {selectedDisplayLabel}</CardTitle></CardHeader>
                 <CardContent>
                   {liveLoading ? (
                     <div className="text-sm text-muted-foreground">Loading live…</div>
@@ -774,7 +1218,7 @@ const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) 
             <div>
               <Card>
                 <CardHeader>
-                  <CardTitle>Latest News</CardTitle>
+                  <CardTitle>Latest News for {selectedDisplayLabel}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {newsLoading ? (
