@@ -761,6 +761,17 @@ export default function MatchPage() {
         </Card>
       </div>
 
+      {/* Timeline*/}
+      <div>
+        <Card>
+          <CardContent className="p-4">
+            {/* Rich horizontal timeline */}
+            <RichTimeline items={timeline} homeTeam={match.homeTeam} awayTeam={match.awayTeam}
+              matchRaw={eventRaw} players={playersExtra} teams={teamsExtra} />
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Win Probabilities */}
       <div>
         <Card>
@@ -891,13 +902,6 @@ export default function MatchPage() {
           </TabsContent>
 
           <TabsContent value="events" className="space-y-4">
-            <Card>
-              <CardContent className="p-4">
-                {/* Rich horizontal timeline */}
-                <RichTimeline items={timeline} homeTeam={match.homeTeam} awayTeam={match.awayTeam}
-                  matchRaw={eventRaw} players={playersExtra} teams={teamsExtra} />
-              </CardContent>
-            </Card>
             <BestPlayerCard best={best} />
             <LeadersCard leaders={leaders} />
           </TabsContent>
