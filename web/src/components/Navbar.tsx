@@ -21,6 +21,7 @@ const navItems = [
   { name: "Assistant", href: "/chatbot" },
   { name: "Live", href: "/live" },
   { name: "Leagues", href: "/leagues" },
+  { name: "News", href: "/news" },
   { name: "My Teams", href: "/my-teams" },
 ];
 
