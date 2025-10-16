@@ -49,6 +49,54 @@ const getFirstString = (record: Record<string, unknown>, keys: string[]): string
   return "";
 };
 
+// Try many common keys and nested shapes to find a logo URL
+const getLogoFromObject = (obj: Record<string, unknown>): string | undefined => {
+  const keys = [
+    "league_logo",
+    "league_logo_url",
+    "league_badge",
+    "badge",
+    "logo",
+    "image",
+    "strLogo",
+    "strBadge",
+    "strBadgeWide",
+    "logo_path",
+    "logo_url",
+    "image_url",
+    "thumb",
+    "badge_url",
+    "strLeagueLogo",
+    "strLogoWide",
+    "strThumb",
+  ];
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (v && typeof v === "object") {
+      const nested = (v as Record<string, unknown>).url || (v as Record<string, unknown>).src || (v as Record<string, unknown>).image || (v as Record<string, unknown>).path;
+      if (typeof nested === "string" && nested.trim()) return nested.trim();
+    }
+  }
+
+  // try media arrays
+  const mediaCandidates = ["media", "images", "logos", "thumbnails"];
+  for (const mk of mediaCandidates) {
+    const mv = obj[mk];
+    if (Array.isArray(mv) && mv.length) {
+      for (const item of mv) {
+        if (typeof item === "string" && item.trim()) return item.trim();
+        if (item && typeof item === "object") {
+          const nested = (item as Record<string, unknown>).url || (item as Record<string, unknown>).src || (item as Record<string, unknown>).image;
+          if (typeof nested === "string" && nested.trim()) return nested.trim();
+        }
+      }
+    }
+  }
+
+  return undefined;
+};
+
 const extractLeagueInfo = (entry: unknown): LeagueLite | null => {
   if (typeof entry === "string") {
     const name = entry.trim();
@@ -64,7 +112,7 @@ const extractLeagueInfo = (entry: unknown): LeagueLite | null => {
     if (!name) return null;
     const country = getFirstString(obj, ["country_name", "country", "nation"]);
     const idRaw = getFirstString(obj, ["league_id", "league_key", "id", "key", "idLeague"]);
-    const logo = getFirstString(obj, [
+    const logo = getLogoFromObject(obj) ?? getFirstString(obj, [
       "league_logo",
       "league_logo_url",
       "league_badge",
@@ -154,7 +202,18 @@ export default function LeaguesPage() {
     const loadLeagues = async () => {
       try {
         const env = await postCollect("leagues.list", {});
-        const data = mapLeagues((env?.data as unknown) ?? []);
+        // env.data can be many shapes: array, { leagues: [...] }, { result: [...] }, or provider raw
+        const rawPayload = env?.data as unknown;
+        let arr: unknown[] = [];
+        if (Array.isArray(rawPayload)) arr = rawPayload as unknown[];
+        else if (rawPayload && typeof rawPayload === 'object') {
+          const obj = rawPayload as Record<string, unknown>;
+          if (Array.isArray(obj.leagues)) arr = obj.leagues as unknown[];
+          else if (Array.isArray(obj.result)) arr = obj.result as unknown[];
+          else if (Array.isArray(obj.results)) arr = obj.results as unknown[];
+          else if (Array.isArray(obj.data)) arr = obj.data as unknown[];
+        }
+        const data = mapLeagues(arr);
         if (active && data.length) {
           setAllLeagues(data);
           return;
