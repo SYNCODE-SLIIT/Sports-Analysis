@@ -106,7 +106,7 @@ export function useLiveMatches(opts?: { leagueName?: string }) {
   return parsed;
     },
     staleTime: 0, // Always fresh
-    refetchInterval: 15 * 1000, // Poll every 15 seconds
+      refetchInterval: 60 * 1000, // Poll every 1 minute
     refetchIntervalInBackground: true,
   });
 }

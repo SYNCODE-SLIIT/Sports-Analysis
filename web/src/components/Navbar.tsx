@@ -18,8 +18,10 @@ import { NlSearchBar } from "@/components/search/NlSearchBar";
 const navItems = [
   { name: "Home", href: "/" },
   { name: "About", href: "/about" },
+  { name: "Assistant", href: "/chatbot" },
   { name: "Live", href: "/live" },
   { name: "Leagues", href: "/leagues" },
+  { name: "News", href: "/news" },
   { name: "My Teams", href: "/my-teams" },
 ];
 
