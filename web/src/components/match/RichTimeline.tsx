@@ -118,36 +118,16 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   const trackRef = useRef<HTMLDivElement>(null);
   const width = useContainerWidth(scrollerRef);
 
-  // Horizontal layout configuration (compressed spacing)
-  const cfg = { pxPerMinute: 9, maxGapPx: 110, minGapPx: 24, leftPad: 36, rightPad: 44 };
+  useEffect(() => {
+    // Helpful debug: print provided raw match payload and context so we can map fields
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        // eslint-disable-next-line no-console
+        console.debug('[RichTimeline] debug', { matchRaw, items, players, teams });
+      } catch (e) {}
+    }
+  }, [matchRaw, items, players, teams]);
 
-  const positions = useMemo(() => {
-    let curX = cfg.leftPad;
-    const xs: number[] = [];
-    for (let i = 0; i < clusters.length; i++) {
-      if (i === 0) {
-        xs.push(curX);
-        continue;
-      }
-      const prevMin = clusters[i - 1].minute;
-      const thisMin = clusters[i].minute;
-      const gapMin = Math.max(0, thisMin - prevMin);
-      const rawGap = gapMin * cfg.pxPerMinute;
-      const gapPx = Math.min(Math.max(rawGap, cfg.minGapPx), cfg.maxGapPx);
-      curX += gapPx;
-      xs.push(curX);
-    }
-    let total = (xs.length ? xs[xs.length - 1] : cfg.leftPad) + cfg.rightPad;
-    // Stretch to container width to look good
-    const viewport = Math.max(width || 0, 0) - 48; // padding allowance
-    if (viewport > 0 && total < viewport) {
-      const extra = viewport - total;
-      const bump = extra / (xs.length + 1);
-      for (let i = 0; i < xs.length; i++) xs[i] += bump * (i + 1);
-      total = viewport;
-    }
-    return { xs, total };
-  }, [clusters, width]);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -165,7 +145,109 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   // Simple hover tooltip
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string } | null>(null);
 
-  const minutesAll = cleaned.map((e) => e.minute).filter((n) => Number.isFinite(n));
+  // If the passed timeline is effectively empty (only HT/FT anchors), try to synthesize from raw match data
+  const synthesized = useMemo(() => {
+    const isOnlyAnchors = cleaned.length <= 2 && cleaned.every(i => i.type === 'ht' || i.type === 'ft');
+    if (!isOnlyAnchors && cleaned.length > 0) return null;
+    const m = matchRaw as any;
+    if (!m || typeof m !== 'object') return null;
+
+    const asArray = (keys: string[]) => {
+      // Check top-level and several common nested locations
+      const candidates = [m, m.event || m.data || m.match || m.raw || m.payload || {}];
+      for (const c of candidates) {
+        if (!c || typeof c !== 'object') continue;
+        for (const k of keys) {
+          const v = c[k];
+          if (Array.isArray(v) && v.length) return v;
+        }
+      }
+      // Fallback: scan all object values for first array-looking value
+      for (const k of Object.keys(m)) {
+        const v = (m as any)[k];
+        if (Array.isArray(v) && v.length) return v;
+      }
+      return [] as any[];
+    };
+
+    const out: TLItem[] = [];
+
+  // goals
+  const goalKeys = ['timeline','events','event_timeline','eventTimeline','event_entries','goalscorers','goals','scorers','scorers_list','goal_scorers','scorers_list','scorer_list'];
+    const goals = asArray(goalKeys);
+    for (const g of goals) {
+      const minute = toMinuteNumber(g.time ?? g.minute ?? g.elapsed ?? g.match_minute ?? g.min);
+  const player = String((g.scorer ?? g.player ?? g.home_scorer ?? g.away_scorer) || '') || undefined;
+  const assist = String((g.assist ?? g.home_assist ?? g.away_assist) || '') || undefined;
+      const isOwn = Boolean(g.own_goal || g.ownGoal);
+      const type: TLItem['type'] = isOwn ? 'own_goal' : (g.penalty || g.pen ? 'pen_score' : 'goal');
+      const side = (g.home_scorer || g.side === 'home' || g.team === 'home' || g.team === 'Home') ? 'home' : 'away';
+      out.push({ minute: Number(minute)||0, team: side as any, type, player, assist });
+    }
+
+    // cards
+  const cardKeys = ['cards','bookings','cards_list','bookings_list','discipline'];
+    const cards = asArray(cardKeys);
+    for (const c of cards) {
+      const minute = toMinuteNumber(c.time ?? c.minute ?? c.elapsed ?? c.match_minute);
+  const player = String((c.player ?? c.home_fault ?? c.away_fault) || '') || undefined;
+      const isRed = String(c.card ?? c.type ?? '').toLowerCase().includes('red');
+      const type: TLItem['type'] = isRed ? 'red' : 'yellow';
+      const side = (c.home_fault || c.side === 'home' || c.team === 'home' || c.team === 'Home') ? 'home' : 'away';
+      out.push({ minute: Number(minute)||0, team: side as any, type, player, note: String(c.reason ?? c.info ?? '') || undefined });
+    }
+
+    // substitutions
+  const subKeys = ['substitutes','subs','substitutions','substitutions_list','changes','sub_list'];
+    const subs = asArray(subKeys);
+    for (const s of subs) {
+      const minute = toMinuteNumber(s.time ?? s.minute ?? s.elapsed ?? s.match_minute);
+      const inName = s.in_player || s.player_in || s.player || (s.player && typeof s.player === 'string' ? s.player : undefined);
+      const outName = s.out_player || s.player_out || undefined;
+      const side = (s.home || s.side === 'home' || s.team === 'home' || s.team === 'Home') ? 'home' : 'away';
+      out.push({ minute: Number(minute)||0, team: side as any, type: 'sub', player: inName || undefined, assist: outName || undefined });
+    }
+
+    if (out.length === 0) return null;
+    out.sort((a,b) => (a.minute - b.minute));
+    return out;
+  }, [matchRaw, cleaned]);
+
+  const allItems = synthesized && synthesized.length ? synthesized : cleaned;
+  const allClusters = useMemo(() => clusterItems(allItems), [allItems]);
+
+  // Horizontal layout configuration (compressed spacing)
+  const cfg = { pxPerMinute: 9, maxGapPx: 110, minGapPx: 24, leftPad: 36, rightPad: 44 };
+
+  const positions = useMemo(() => {
+    let curX = cfg.leftPad;
+    const xs: number[] = [];
+    for (let i = 0; i < allClusters.length; i++) {
+      if (i === 0) {
+        xs.push(curX);
+        continue;
+      }
+      const prevMin = allClusters[i - 1].minute;
+      const thisMin = allClusters[i].minute;
+      const gapMin = Math.max(0, thisMin - prevMin);
+      const rawGap = gapMin * cfg.pxPerMinute;
+      const gapPx = Math.min(Math.max(rawGap, cfg.minGapPx), cfg.maxGapPx);
+      curX += gapPx;
+      xs.push(curX);
+    }
+    let total = (xs.length ? xs[xs.length - 1] : cfg.leftPad) + cfg.rightPad;
+    // Stretch to container width to look good
+    const viewport = Math.max(width || 0, 0) - 48; // padding allowance
+    if (viewport > 0 && total < viewport) {
+      const extra = viewport - total;
+      const bump = extra / (xs.length + 1);
+      for (let i = 0; i < xs.length; i++) xs[i] += bump * (i + 1);
+      total = viewport;
+    }
+    return { xs, total };
+  }, [allClusters, width]);
+
+  const minutesAll = allItems.map((e) => e.minute).filter((n) => Number.isFinite(n));
   const maxMinute = minutesAll.length ? Math.max(90, Math.max(...minutesAll)) : 90;
 
   // --- Helpers to resolve images from provided context ---
@@ -242,7 +324,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
             {(() => {
               const startX = cfg.leftPad;
               const endX = (positions.total || 0) - cfg.rightPad;
-              const ftX = tickX(90, clusters, positions.xs, cfg);
+              const ftX = tickX(90, allClusters, positions.xs, cfg);
               const greenW = Math.max(0, ftX - startX);
               const redW = Math.max(0, endX - ftX);
               return (
@@ -256,14 +338,14 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
 
           {/* Sparse ticks for 0,45,90(+ET) */}
           {[0, 45, 90].map((t) => (
-            <Tick key={t} x={tickX(t, clusters, positions.xs, cfg)} label={`${t}'`} />
+            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${t}'`} />
           ))}
           {maxMinute > 90 && (
-            <Tick x={tickX(maxMinute, clusters, positions.xs, cfg)} label={`${maxMinute}'`} />
+            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${maxMinute}'`} />
           )}
 
           {/* Markers per cluster */}
-          {clusters.map((c, i) => (
+          {allClusters.map((c, i) => (
             <Cluster
               key={`c-${c.minute}-${i}`}
               x={positions.xs[i]}
