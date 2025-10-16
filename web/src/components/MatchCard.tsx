@@ -49,7 +49,7 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
       transition={{ duration: 0.2 }}
       className={className}
     >
-      <Card className="h-full hover:shadow-lg transition-all duration-200 cursor-pointer group">
+      <Card className="h-full min-h-[280px] hover:shadow-lg transition-all duration-200 cursor-pointer group">
         <CardContent className="p-6 space-y-4">
           {/* Header */}
           <div className="flex justify-between items-start">
