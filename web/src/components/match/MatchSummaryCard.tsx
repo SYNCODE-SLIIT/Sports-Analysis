@@ -50,10 +50,33 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
 
   const fallback = useMemo(() => buildFallbackSummary(event, rawEvent), [event, rawEvent]);
 
+  // Module-scoped in-flight promise map and cache to dedupe and cache results across
+  // component remounts (helps in dev StrictMode and HMR). We store the request
+  // Promise so subsequent mounts can await the same work and receive the result.
+  const inflightMap: Map<string, Promise<SummaryContent | null>> = (globalThis as any).__sa_inflight_summaries ||= new Map<string, Promise<SummaryContent | null>>();
+  const resultCache: Map<string, SummaryContent> = (globalThis as any).__sa_summary_cache ||= new Map<string, SummaryContent>();
+
+  // Stable key for this event — prefer eventId when available, otherwise fall
+  // back to a composed key from teams+date. We only re-run when this key changes.
+  const stableEventKey = useMemo(() => {
+    if (!event) return null;
+    if (event.eventId) return String(event.eventId);
+    return `${event.homeTeam ?? ''}::${event.awayTeam ?? ''}::${event.date ?? ''}`;
+  }, [event?.eventId, event?.homeTeam, event?.awayTeam, event?.date]);
+
   useEffect(() => {
     let active = true;
-    if (!event) {
+    if (!stableEventKey) {
       setState({ data: null, status: "idle" });
+      return () => {
+        active = false;
+      };
+    }
+
+    // If we have a cached result, use it and don't re-fetch.
+    if (resultCache.has(stableEventKey)) {
+      const cached = resultCache.get(stableEventKey)!;
+      setState({ data: cached, status: "ready" });
       return () => {
         active = false;
       };
@@ -61,32 +84,73 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
 
     const load = async () => {
       setState(prev => ({ ...prev, status: "loading", error: undefined }));
-      try {
-        const payload: Record<string, Json> = {};
-        if (event.eventId) payload.eventId = event.eventId;
-        if (event.homeTeam && event.awayTeam) payload.eventName = `${event.homeTeam} vs ${event.awayTeam}`;
-        if (event.date) payload.date = event.date;
-        if (event.venue) payload.venue = event.venue;
-        const homeSan = sanitizeInput(event.homeTeam);
-        if (homeSan) payload.homeTeam = homeSan;
-        const awaySan = sanitizeInput(event.awayTeam);
-        if (awaySan) payload.awayTeam = awaySan;
 
-        // Call summarizer service directly. If unavailable, postCollect fallback remains an option.
-        let raw: SummaryResponse | undefined | null = undefined;
+      // If another load for the same event is in-flight, await its promise and use its result
+      if (inflightMap.has(stableEventKey)) {
         try {
-          raw = await summarize(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string });
+          const shared = inflightMap.get(stableEventKey)!;
+          const res = await shared;
+          if (!active) return;
+          if (res) {
+            setState({ data: res, status: "ready" });
+          } else {
+            setState({ data: fallback, status: "error" });
+          }
+          return;
         } catch (e) {
-          // If direct summarizer failed, try router intent as a fallback
-          const response = await postCollect<{ summary?: SummaryResponse }>("analysis.match_summary", payload);
-          raw = response.data?.summary ?? (response.data as SummaryResponse | undefined);
+          if (!active) return;
+          setState({ data: fallback, status: "error", error: e instanceof Error ? e.message : String(e) });
+          return;
         }
-        const normalized = normalizeSummary(raw) ?? fallback;
+      }
+
+      // Otherwise start a new request and store its promise
+      const p = (async () => {
+        try {
+          const payload: Record<string, Json> = {};
+          if (event?.eventId) payload.eventId = event.eventId;
+          if (event?.homeTeam && event?.awayTeam) payload.eventName = `${event.homeTeam} vs ${event.awayTeam}`;
+          if (event?.date) payload.date = event.date;
+          if (event?.venue) payload.venue = event.venue;
+          const homeSan = sanitizeInput(event?.homeTeam ?? "");
+          if (homeSan) payload.homeTeam = homeSan;
+          const awaySan = sanitizeInput(event?.awayTeam ?? "");
+          if (awaySan) payload.awayTeam = awaySan;
+
+          let raw: SummaryResponse | undefined | null = undefined;
+          try {
+            raw = await summarize(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string });
+          } catch (e) {
+            try {
+              const response = await postCollect<{ summary?: SummaryResponse }>("analysis.match_summary", payload);
+              raw = response.data?.summary ?? (response.data as SummaryResponse | undefined);
+            } catch (e2) {
+              raw = undefined;
+            }
+          }
+
+          const normalized = normalizeSummary(raw) ?? fallback;
+          // cache the successful result for this key
+          try { if (normalized) resultCache.set(stableEventKey, normalized); } catch (_) {}
+          return normalized;
+        } catch (err) {
+          return null;
+        } finally {
+          // ensure we clean the inflight entry (after promise settles)
+          setTimeout(() => { try { inflightMap.delete(stableEventKey); } catch (_) {} }, 0);
+        }
+      })();
+
+      inflightMap.set(stableEventKey, p);
+
+      try {
+        const res = await p;
         if (!active) return;
-        setState({ data: normalized, status: "ready" });
-      } catch (error) {
+        if (res) setState({ data: res, status: "ready" });
+        else setState({ data: fallback, status: "error" });
+      } catch (e) {
         if (!active) return;
-        setState({ data: fallback, status: "error", error: error instanceof Error ? error.message : String(error) });
+        setState({ data: fallback, status: "error", error: e instanceof Error ? e.message : String(e) });
       }
     };
 
