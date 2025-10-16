@@ -1,0 +1,720 @@
+league_id,name,country,sport,season,slug,raw.league_key,raw.league_name,raw.country_key,raw.country_name,raw.league_logo,raw.country_logo
+4,UEFA Europa League,eurocups,,,,4,UEFA Europa League,1,eurocups,https://apiv2.allsportsapi.com/logo/logo_leagues/,
+1,UEFA European Championship,eurocups,,,,1,UEFA European Championship,1,eurocups,,
+683,UEFA Conference League,eurocups,,,,683,UEFA Conference League,1,eurocups,,
+3,UEFA Champions League,eurocups,,,,3,UEFA Champions League,1,eurocups,https://apiv2.allsportsapi.com/logo/logo_leagues/3_uefa_champions_league.png,
+633,UEFA Nations League,eurocups,,,,633,UEFA Nations League,1,eurocups,,
+28,World Cup,Worldcup,,,,28,World Cup,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/28_world-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+152,Premier League,England,,,,152,Premier League,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/152_premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+302,La Liga,Spain,,,,302,La Liga,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/302_la-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+207,Serie A,Italy,,,,207,Serie A,5,Italy,https://apiv2.allsportsapi.com/logo/logo_leagues/207_serie-a.png,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+175,Bundesliga,Germany,,,,175,Bundesliga,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/175_bundesliga.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+168,Ligue 1,France,,,,168,Ligue 1,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/168_ligue-1.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+266,Primeira Liga,Portugal,,,,266,Primeira Liga,92,Portugal,https://apiv2.allsportsapi.com/logo/logo_leagues/266_primeira-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+63,First Division A,Belgium,,,,63,First Division A,23,Belgium,https://apiv2.allsportsapi.com/logo/logo_leagues/63_first-division-a.png,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+244,Eredivisie,Netherlands,,,,244,Eredivisie,82,Netherlands,https://apiv2.allsportsapi.com/logo/logo_leagues/244_eredivisie.png,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+332,MLS,USA,,,,332,MLS,114,USA,https://apiv2.allsportsapi.com/logo/logo_leagues/332_mls.png,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+322,Süper Lig,Turkey,,,,322,Süper Lig,111,Turkey,https://apiv2.allsportsapi.com/logo/logo_leagues/322_süper-lig.png,https://apiv2.allsportsapi.com/logo/logo_country/111_turkey.png
+235,Liga MX,Mexico,,,,235,Liga MX,78,Mexico,https://apiv2.allsportsapi.com/logo/logo_leagues/235_liga-mx.png,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+279,Premiership,Scotland,,,,279,Premiership,98,Scotland,https://apiv2.allsportsapi.com/logo/logo_leagues/279_premiership.png,https://apiv2.allsportsapi.com/logo/logo_country/98_scotland.png
+135,Superliga,Denmark,,,,135,Superliga,40,Denmark,https://apiv2.allsportsapi.com/logo/logo_leagues/135_superliga.png,https://apiv2.allsportsapi.com/logo/logo_country/40_denmark.png
+308,Super League,Switzerland,,,,308,Super League,106,Switzerland,https://apiv2.allsportsapi.com/logo/logo_leagues/308_super-league.png,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+127,First NL,Croatia,,,,127,First NL,37,Croatia,https://apiv2.allsportsapi.com/logo/logo_leagues/127_2.-hnl.png,https://apiv2.allsportsapi.com/logo/logo_country/37_croatia.png
+148,EFL Trophy,England,,,,148,EFL Trophy,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/148_efl-trophy.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+178,Super League 1,Greece,,,,178,Super League 1,51,Greece,https://apiv2.allsportsapi.com/logo/logo_leagues/178_super-league-1.png,https://apiv2.allsportsapi.com/logo/logo_country/51_greece.png
+307,Allsvenskan,Sweden,,,,307,Allsvenskan,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/307_allsvenskan.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+134,Czech Liga,Czech Republic,,,,134,Czech Liga,39,Czech Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/134_czech-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/39_czech-republic.png
+130,1. Division,Cyprus,,,,130,1. Division,38,Cyprus,https://apiv2.allsportsapi.com/logo/logo_leagues/130_1.-division.png,https://apiv2.allsportsapi.com/logo/logo_country/38_cyprus.png
+288,Super Liga,Serbia,,,,288,Super Liga,99,Serbia,https://apiv2.allsportsapi.com/logo/logo_leagues/288_super-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/99_serbia.png
+278,Saudi League,Saudi Arabia,,,,278,Saudi League,97,Saudi Arabia,https://apiv2.allsportsapi.com/logo/logo_leagues/278_pro-league.png,https://apiv2.allsportsapi.com/logo/logo_country/97_saudi-arabia.png
+259,Ekstraklasa,Poland,,,,259,Ekstraklasa,91,Poland,https://apiv2.allsportsapi.com/logo/logo_leagues/259_ekstraklasa.png,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+118,Chinese Super League,China,,,,118,Chinese Super League,32,China,https://apiv2.allsportsapi.com/logo/logo_leagues/118_csl.png,https://apiv2.allsportsapi.com/logo/logo_country/32_china.png
+120,Primera A,Colombia,,,,120,Primera A,34,Colombia,https://apiv2.allsportsapi.com/logo/logo_leagues/120_primera-a.png,https://apiv2.allsportsapi.com/logo/logo_country/34_colombia.png
+202,Ligat Ha'al,Israel,,,,202,Ligat Ha'al,62,Israel,https://apiv2.allsportsapi.com/logo/logo_leagues/202_ligat-ha'al.png,https://apiv2.allsportsapi.com/logo/logo_country/62_israel.png
+209,J1 League,Japan,,,,209,J1 League,64,Japan,https://apiv2.allsportsapi.com/logo/logo_leagues/209_j1-league.png,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+253,Eliteserien,Norway,,,,253,Eliteserien,87,Norway,https://apiv2.allsportsapi.com/logo/logo_leagues/253_eliteserien.png,https://apiv2.allsportsapi.com/logo/logo_country/87_norway.png
+111,First League,Bulgaria,,,,111,First League,28,Bulgaria,https://apiv2.allsportsapi.com/logo/logo_leagues/111_first-league.png,https://apiv2.allsportsapi.com/logo/logo_country/28_bulgaria.png
+272,Liga I,Romania,,,,272,Liga I,94,Romania,https://apiv2.allsportsapi.com/logo/logo_leagues/272_liga-i.png,https://apiv2.allsportsapi.com/logo/logo_country/94_romania.png
+269,Stars League,Qatar,,,,269,Stars League,93,Qatar,,https://apiv2.allsportsapi.com/logo/logo_country/93_qatar.png
+171,2. Bundesliga,Germany,,,,171,2. Bundesliga,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/171_2.-bundesliga.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+293,1. liga,Slovakia,,,,293,1. liga,101,Slovakia,https://apiv2.allsportsapi.com/logo/logo_leagues/293_super-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/101_slovakia.png
+255,Division Profesional,Paraguay,,,,255,Division Profesional,89,Paraguay,https://apiv2.allsportsapi.com/logo/logo_leagues/255_division-profesional.png,https://apiv2.allsportsapi.com/logo/logo_country/89_paraguay.png
+164,Ligue 2,France,,,,164,Ligue 2,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/164_ligue-2.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+301,Segunda División,Spain,,,,301,Segunda División,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/301_segunda-división.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+191,NB I,Hungary,,,,191,NB I,56,Hungary,https://apiv2.allsportsapi.com/logo/logo_leagues/191_nb-i.png,https://apiv2.allsportsapi.com/logo/logo_country/56_hungary.png
+57,Premyer Liqa,Azerbaijan,,,,57,Premyer Liqa,19,Azerbaijan,,https://apiv2.allsportsapi.com/logo/logo_country/19_azerbaijan.png
+206,Serie B,Italy,,,,206,Serie B,5,Italy,https://apiv2.allsportsapi.com/logo/logo_leagues/206_serie-b.png,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+219,K League 1,Korea Republic,,,,219,K League 1,68,Korea Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/219_k-league-1.png,https://apiv2.allsportsapi.com/logo/logo_country/68_korea-republic.png
+195,Persian Gulf Pro League,Iran,,,,195,Persian Gulf Pro League,60,Iran,https://apiv2.allsportsapi.com/logo/logo_leagues/195_persian-gulf-pro-league.png,https://apiv2.allsportsapi.com/logo/logo_country/60_iran.png
+328,Pro League,United Arab Emirates,,,,328,Pro League,113,United Arab Emirates,https://apiv2.allsportsapi.com/logo/logo_leagues/328_arabian-gulf-league.png,https://apiv2.allsportsapi.com/logo/logo_country/113_united-arab-emirates.png
+121,Primera División,Costa Rica,,,,121,Primera División,35,Costa Rica,https://apiv2.allsportsapi.com/logo/logo_leagues/121_primera-división.png,https://apiv2.allsportsapi.com/logo/logo_country/35_costa-rica.png
+406,LPF,Panama,,,,406,LPF,126,Panama,,https://apiv2.allsportsapi.com/logo/logo_country/126_panama.png
+2,UEFA Women's Champions League,intl,,,,2,UEFA Women's Champions League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10,AFC Champions League Elite,intl,,,,10,AFC Champions League Elite,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/10_afc-champions-league.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+14,Damallsvenskan,Sweden,,,,14,Damallsvenskan,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/14_damallsvenskan.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+15,Concacaf Gold Cup,intl,,,,15,Concacaf Gold Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/15_concacaf-gold-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+17,CONMEBOL Copa America,intl,,,,17,CONMEBOL Copa America,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/17_copa-america.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+18,CONMEBOL Libertadores,intl,,,,18,CONMEBOL Libertadores,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/18_conmebol-libertadores.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+24,UEFA World Cup Qualifiers,Worldcup,,,,24,UEFA World Cup Qualifiers,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/24_wc-qualification-europe.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+27,CONMEBOL World Cup Qualifiers,Worldcup,,,,27,CONMEBOL World Cup Qualifiers,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/27_wc-qualification-south-america.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+29,CAF Africa Cup of Nations,intl,,,,29,CAF Africa Cup of Nations,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/29_africa-cup-of-nations-qualification.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+44,Liga Profesional Argentina,Argentina,,,,44,Liga Profesional Argentina,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/44_liga-profesional-argentina.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+49,A-League Men,Australia,,,,49,A-League Men,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/49_a-league.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+145,League Two,England,,,,145,League Two,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/145_league-two.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+146,FA Cup,England,,,,146,FA Cup,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/146_fa-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+147,League Cup,England,,,,147,League Cup,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/147_league-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+153,Championship,England,,,,153,Championship,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/153_championship.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+154,League One,England,,,,154,League One,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/154_league-one.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+165,Coupe de France,France,,,,165,Coupe de France,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/165_coupe-de-france.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+172,DFB Pokal,Germany,,,,172,DFB Pokal,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/172_dfb-pokal.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+205,Coppa Italia,Italy,,,,205,Coppa Italia,5,Italy,https://apiv2.allsportsapi.com/logo/logo_leagues/205_coppa-italia.png,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+243,KNVB Beker,Netherlands,,,,243,KNVB Beker,82,Netherlands,https://apiv2.allsportsapi.com/logo/logo_leagues/243_knvb-beker.png,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+257,Liga 1,Peru,,,,257,Liga 1,90,Peru,https://apiv2.allsportsapi.com/logo/logo_leagues/257_primera-división.png,https://apiv2.allsportsapi.com/logo/logo_country/90_peru.png
+265,Taça de Portugal,Portugal,,,,265,Taça de Portugal,92,Portugal,https://apiv2.allsportsapi.com/logo/logo_leagues/265_taça-de-portugal.png,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+300,Copa del Rey,Spain,,,,300,Copa del Rey,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/300_copa-del-rey.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+346,CAF Champions League,intl,,,,346,CAF Champions League,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/346_caf-champions-league.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+354,UEFA European Championship Qualifiers,eurocups,,,,354,UEFA European Championship Qualifiers,1,eurocups,https://apiv2.allsportsapi.com/logo/logo_leagues/354_ec-qualification.png,
+372,UEFA Super Cup,eurocups,,,,372,UEFA Super Cup,1,eurocups,https://apiv2.allsportsapi.com/logo/logo_leagues/372_uefa-super-cup.png,
+377,Community Shield,England,,,,377,Community Shield,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/377_community-shield.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+383,Super Cup,Spain,,,,383,Super Cup,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/383_super-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+385,CONMEBOL Sudamericana,intl,,,,385,CONMEBOL Sudamericana,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/385_conmebol-sudamericana.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+390,CAF Confederation Cup,intl,,,,390,CAF Confederation Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/390_caf-confederation-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+566,Indian Super League,India,,,,566,Indian Super League,58,India,https://apiv2.allsportsapi.com/logo/logo_leagues/566_indian-super-league.png,https://apiv2.allsportsapi.com/logo/logo_country/58_india.png
+727,AFC Champions League,intl,,,,727,AFC Champions League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+16,FIFA Confederations Cup,intl,,,,16,FIFA Confederations Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/16_confederations-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+19,FIFA Intercontinental Cup,Worldcup,,,,19,FIFA Intercontinental Cup,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/19_fifa-club-world-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+53,2. Liga,Austria,,,,53,2. Liga,18,Austria,https://apiv2.allsportsapi.com/logo/logo_leagues/53_2.-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/18_austria.png
+83,Carioca Série A,Brazil,,,,83,Carioca Série A,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/83_carioca-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+91,Pernambucano 1,Brazil,,,,91,Pernambucano 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/91_pernambucano-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+124,HNL,Croatia,,,,124,HNL,37,Croatia,https://apiv2.allsportsapi.com/logo/logo_leagues/124_1.-hnl.png,https://apiv2.allsportsapi.com/logo/logo_country/37_croatia.png
+140,Liga Pro,Ecuador,,,,140,Liga Pro,41,Ecuador,https://apiv2.allsportsapi.com/logo/logo_leagues/140_liga-pro.png,https://apiv2.allsportsapi.com/logo/logo_country/41_ecuador.png
+166,Coupe de la Ligue,France,,,,166,Coupe de la Ligue,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/166_coupe-de-la-ligue.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+193,I-League,India,,,,193,I-League,58,India,https://apiv2.allsportsapi.com/logo/logo_leagues/193_i-league.png,https://apiv2.allsportsapi.com/logo/logo_country/58_india.png
+239,Botola Pro,Morocco,,,,239,Botola Pro,80,Morocco,https://apiv2.allsportsapi.com/logo/logo_leagues/239_botola-pro.png,https://apiv2.allsportsapi.com/logo/logo_country/80_morocco.png
+245,Eerste Divisie,Netherlands,,,,245,Eerste Divisie,82,Netherlands,https://apiv2.allsportsapi.com/logo/logo_leagues/245_eerste-divisie.png,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+260,Cup,Poland,,,,260,Cup,91,Poland,https://apiv2.allsportsapi.com/logo/logo_leagues/260_cup.png,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+267,Segunda Liga,Portugal,,,,267,Segunda Liga,92,Portugal,https://apiv2.allsportsapi.com/logo/logo_leagues/267_segunda-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+280,Scottish Cup,Scotland,,,,280,Scottish Cup,98,Scotland,https://apiv2.allsportsapi.com/logo/logo_leagues/280_fa-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/98_scotland.png
+296,1. SNL,Slovenia,,,,296,1. SNL,102,Slovenia,https://apiv2.allsportsapi.com/logo/logo_leagues/296_1.-snl.png,https://apiv2.allsportsapi.com/logo/logo_country/102_slovenia.png
+297,PSL,South Africa,,,,297,PSL,103,South Africa,https://apiv2.allsportsapi.com/logo/logo_leagues/297_psl.png,https://apiv2.allsportsapi.com/logo/logo_country/103_south-africa.png
+314,Thai League 1,Thailand,,,,314,Thai League 1,108,Thailand,,https://apiv2.allsportsapi.com/logo/logo_country/108_thailand.png
+349,Copa do Brasil,Brazil,,,,349,Copa do Brasil,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/349_copa-do-brasil.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+476,Taça da Liga,Portugal,,,,476,Taça da Liga,92,Portugal,https://apiv2.allsportsapi.com/logo/logo_leagues/476_taça-da-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+515,Copa Argentina,Argentina,,,,515,Copa Argentina,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/515_copa-argentina.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+5,Concacaf Champions Cup,intl,,,,5,Concacaf Champions Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/5_concacaf-champions-league.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+6,Première Ligue,France,,,,6,Première Ligue,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/6_feminine_division_1.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+7,Frauen Bundesliga,Germany,,,,7,Frauen Bundesliga,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/7_frauen-bundesliga.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+8,Serie A Women,Italy,,,,8,Serie A Women,5,Italy,https://apiv2.allsportsapi.com/logo/logo_leagues/8_serie-a-women.png,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+9,AFC Challenge Cup,intl,,,,9,AFC Challenge Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/9_afc-challenge-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11,AFC Champions League Two,intl,,,,11,AFC Champions League Two,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/11_afc-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12,ASEAN Championship,intl,,,,12,ASEAN Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+13,Primera División Femenina,Spain,,,,13,Primera División Femenina,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/13_primera-división-femenina.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+20,FIFA Women's World Cup,World cup,,,,20,FIFA Women's World Cup,166,World cup,https://apiv2.allsportsapi.com/logo/logo_leagues/20_women's-world-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/166_world-cup.png
+21,CAF World Cup Qualifiers,Worldcup,,,,21,CAF World Cup Qualifiers,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/21_wc-qualification-africa.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+22,AFC World Cup Qualifiers,Worldcup,,,,22,AFC World Cup Qualifiers,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/22_wc-qualification-asia.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+23,Concacaf World Cup Qualifiers,Worldcup,,,,23,Concacaf World Cup Qualifiers,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/23_wc-qualification-concacaf.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+25,WC Qualification Intercontinental Play-offs,Worldcup,,,,25,WC Qualification Intercontinental Play-offs,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/25_wc-qualification-intercontinental-play-offs.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+26,OFC World Cup Qualifiers,Worldcup,,,,26,OFC World Cup Qualifiers,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/26_wc-qualification-oceania.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+30,CAF Super Cup,intl,,,,30,CAF Super Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/30_caf-super-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+32,1st Division,Albania,,,,32,1st Division,10,Albania,https://apiv2.allsportsapi.com/logo/logo_leagues/32_1st-division.png,https://apiv2.allsportsapi.com/logo/logo_country/10_albania.png
+33,2nd Division,Albania,,,,33,2nd Division,10,Albania,,https://apiv2.allsportsapi.com/logo/logo_country/10_albania.png
+36,2a Divisió,Andorra,,,,36,2a Divisió,12,Andorra,,https://apiv2.allsportsapi.com/logo/logo_country/12_andorra.png
+37,1a Divisió,Andorra,,,,37,1a Divisió,12,Andorra,https://apiv2.allsportsapi.com/logo/logo_leagues/37_1a-divisió.png,https://apiv2.allsportsapi.com/logo/logo_country/12_andorra.png
+38,Girabola,Angola,,,,38,Girabola,13,Angola,https://apiv2.allsportsapi.com/logo/logo_leagues/38_girabola.png,https://apiv2.allsportsapi.com/logo/logo_country/13_angola.png
+39,Torneo Federal A,Argentina,,,,39,Torneo Federal A,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/39_torneo-federal-a.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+40,Prim B Metro,Argentina,,,,40,Prim B Metro,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/40_prim-b-metro.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+41,Primera Nacional,Argentina,,,,41,Primera Nacional,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/41_primera-nacional.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+42,Primera C,Argentina,,,,42,Primera C,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/42_primera-c.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+43,Primera D,Argentina,,,,43,Primera D,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/43_primera-d.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+47,Division di Honor,Aruba,,,,47,Division di Honor,16,Aruba,,https://apiv2.allsportsapi.com/logo/logo_country/16_aruba.png
+48,South Australia NPL,Australia,,,,48,South Australia NPL,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/48_south-australia-npl.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+50,New South Wales NPL,Australia,,,,50,New South Wales NPL,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/50_new-south-wales-npl.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+51,Western Australia NPL,Australia,,,,51,Western Australia NPL,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/51_western-australia-npl.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+52,Landesliga,Austria,,,,52,Landesliga,18,Austria,,https://apiv2.allsportsapi.com/logo/logo_country/18_austria.png
+55,Regionalliga,Austria,,,,55,Regionalliga,18,Austria,https://apiv2.allsportsapi.com/logo/logo_leagues/55_regionalliga.png,https://apiv2.allsportsapi.com/logo/logo_country/18_austria.png
+58,Birinci Dasta,Azerbaijan,,,,58,Birinci Dasta,19,Azerbaijan,,https://apiv2.allsportsapi.com/logo/logo_country/19_azerbaijan.png
+65,Challenger Pro League,Belgium,,,,65,Challenger Pro League,23,Belgium,https://apiv2.allsportsapi.com/logo/logo_leagues/65_first-division-b.png,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+66,Third Amateur Division,Belgium,,,,66,Third Amateur Division,23,Belgium,,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+67,Second Amateur Division,Belgium,,,,67,Second Amateur Division,23,Belgium,https://apiv2.allsportsapi.com/logo/logo_leagues/67_second-amateur-division.png,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+70,Premijer Liga,Bosnia and Herzegovina,,,,70,Premijer Liga,26,Bosnia and Herzegovina,,https://apiv2.allsportsapi.com/logo/logo_country/26_bosnia-and-herzegovina.png
+71,1st League,Bosnia and Herzegovina,,,,71,1st League,26,Bosnia and Herzegovina,https://apiv2.allsportsapi.com/logo/logo_leagues/71_1st-league.png,https://apiv2.allsportsapi.com/logo/logo_country/26_bosnia-and-herzegovina.png
+72,Gaúcho 2,Brazil,,,,72,Gaúcho 2,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/72_gaúcho-2.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+73,Piauiense,Brazil,,,,73,Piauiense,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/73_piauiense.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+74,Sul-Matogrossense,Brazil,,,,74,Sul-Matogrossense,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/74_sul-matogrossense.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+76,Potiguar 1,Brazil,,,,76,Potiguar 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/76_potiguar.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+77,Acreano,Brazil,,,,77,Acreano,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+78,Paranaense 2,Brazil,,,,78,Paranaense 2,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/78_paranaense-2.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+79,Serie C,Brazil,,,,79,Serie C,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/79_serie-c.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+80,Serie D,Brazil,,,,80,Serie D,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/80_serie-d.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+81,Amazonense 1,Brazil,,,,81,Amazonense 1,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+82,Mineiro 1,Brazil,,,,82,Mineiro 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/82_mineiro-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+84,Carioca B1,Brazil,,,,84,Carioca B1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/84_carioca-2.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+85,Sergipano 1,Brazil,,,,85,Sergipano 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/85_sergipano-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+86,Paulista A2,Brazil,,,,86,Paulista A2,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/86_paulista-a2.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+87,Paraense A,Brazil,,,,87,Paraense A,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/87_paraense.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+88,Goiano 1,Brazil,,,,88,Goiano 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/88_goiano-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+89,Matogrossense 1,Brazil,,,,89,Matogrossense 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/89_matogrossense.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+90,Tocantinense,Brazil,,,,90,Tocantinense,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+92,Rondoniense,Brazil,,,,92,Rondoniense,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+93,Alagoano 1,Brazil,,,,93,Alagoano 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/93_alagoano.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+94,Baiano 2,Brazil,,,,94,Baiano 2,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/94_baiano-2.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+95,Baiano 1,Brazil,,,,95,Baiano 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/95_baiano-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+96,Paulista A3,Brazil,,,,96,Paulista A3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+97,Paraibano 1,Brazil,,,,97,Paraibano 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/97_paraibano.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+98,Catarinense 1,Brazil,,,,98,Catarinense 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/98_catarinense-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+100,Paranaense 1,Brazil,,,,100,Paranaense 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/100_paranaense-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+101,Roraimense,Brazil,,,,101,Roraimense,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+102,Gaúcho 1,Brazil,,,,102,Gaúcho 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/102_gaúcho-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+103,Maranhense 1,Brazil,,,,103,Maranhense 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/103_maranhense.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+104,Cearense 1,Brazil,,,,104,Cearense 1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/104_cearense-1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+105,Brasiliense A,Brazil,,,,105,Brasiliense A,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/105_brasiliense.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+106,Paulista A1,Brazil,,,,106,Paulista A1,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/106_paulista-a1.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+107,Amapaense,Brazil,,,,107,Amapaense,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+108,Capixaba A,Brazil,,,,108,Capixaba A,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/108_capixaba.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+109,Second League,Bulgaria,,,,109,Second League,28,Bulgaria,https://apiv2.allsportsapi.com/logo/logo_leagues/109_second-league.png,https://apiv2.allsportsapi.com/logo/logo_country/28_bulgaria.png
+110,Third League,Bulgaria,,,,110,Third League,28,Bulgaria,,https://apiv2.allsportsapi.com/logo/logo_country/28_bulgaria.png
+112,Elite One,Cameroon,,,,112,Elite One,29,Cameroon,https://apiv2.allsportsapi.com/logo/logo_leagues/112_elite-one.png,https://apiv2.allsportsapi.com/logo/logo_country/29_cameroon.png
+113,Canadian Soccer League,Canada,,,,113,Canadian Soccer League,30,Canada,,https://apiv2.allsportsapi.com/logo/logo_country/30_canada.png
+114,PCSL,Canada,,,,114,PCSL,30,Canada,,https://apiv2.allsportsapi.com/logo/logo_country/30_canada.png
+116,Primera B,Chile,,,,116,Primera B,31,Chile,https://apiv2.allsportsapi.com/logo/logo_leagues/116_primera-b.png,https://apiv2.allsportsapi.com/logo/logo_country/31_chile.png
+117,Chinese Football League 1,China,,,,117,Chinese Football League 1,32,China,https://apiv2.allsportsapi.com/logo/logo_leagues/117_china-league-one.png,https://apiv2.allsportsapi.com/logo/logo_country/32_china.png
+119,Taiwan Football Premier League,Chinese Taipei,,,,119,Taiwan Football Premier League,33,Chinese Taipei,,https://apiv2.allsportsapi.com/logo/logo_country/33_chinese-taipei.png
+122,Liga de Ascenso,Costa Rica,,,,122,Liga de Ascenso,35,Costa Rica,,https://apiv2.allsportsapi.com/logo/logo_country/35_costa-rica.png
+126,Third NL,Croatia,,,,126,Third NL,37,Croatia,,https://apiv2.allsportsapi.com/logo/logo_country/37_croatia.png
+128,3. Division,Cyprus,,,,128,3. Division,38,Cyprus,,https://apiv2.allsportsapi.com/logo/logo_country/38_cyprus.png
+129,2. Division,Cyprus,,,,129,2. Division,38,Cyprus,https://apiv2.allsportsapi.com/logo/logo_leagues/129_2.-division.png,https://apiv2.allsportsapi.com/logo/logo_country/38_cyprus.png
+131,3. liga,Czech Republic,,,,131,3. liga,39,Czech Republic,,https://apiv2.allsportsapi.com/logo/logo_country/39_czech-republic.png
+132,4. liga,Czech Republic,,,,132,4. liga,39,Czech Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/132_4.-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/39_czech-republic.png
+133,FNL,Czech Republic,,,,133,FNL,39,Czech Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/133_fnl.png,https://apiv2.allsportsapi.com/logo/logo_country/39_czech-republic.png
+137,Denmark Series,Denmark,,,,137,Denmark Series,40,Denmark,,https://apiv2.allsportsapi.com/logo/logo_country/40_denmark.png
+139,Liga Pro Serie B,Ecuador,,,,139,Liga Pro Serie B,41,Ecuador,,https://apiv2.allsportsapi.com/logo/logo_country/41_ecuador.png
+142,Primera Division,El Salvador,,,,142,Primera Division,43,El Salvador,https://apiv2.allsportsapi.com/logo/logo_leagues/142_primera-division.png,https://apiv2.allsportsapi.com/logo/logo_country/43_el-salvador.png
+143,Non League Div One,England,,,,143,Non League Div One,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/143_non-league-div-one.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+144,FA Trophy,England,,,,144,FA Trophy,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/144_fa-trophy.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+149,Non League Premier,England,,,,149,Non League Premier,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/149_non-league-premier.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+150,National League N / S,England,,,,150,National League N / S,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/150_national-league-n-s.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+151,National League,England,,,,151,National League,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/151_national-league.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+155,Esiliiga A,Estonia,,,,155,Esiliiga A,45,Estonia,https://apiv2.allsportsapi.com/logo/logo_leagues/155_esiliiga-a.png,https://apiv2.allsportsapi.com/logo/logo_country/45_estonia.png
+156,Premium liiga,Estonia,,,,156,Premium liiga,45,Estonia,https://apiv2.allsportsapi.com/logo/logo_leagues/156_meistriliiga.png,https://apiv2.allsportsapi.com/logo/logo_country/45_estonia.png
+157,Meistaradeildin,Faroe Islands,,,,157,Meistaradeildin,46,Faroe Islands,,https://apiv2.allsportsapi.com/logo/logo_country/46_faroe-islands.png
+158,1. Deild,Faroe Islands,,,,158,1. Deild,46,Faroe Islands,,https://apiv2.allsportsapi.com/logo/logo_country/46_faroe-islands.png
+159,National Football League,Fiji,,,,159,National Football League,47,Fiji,,https://apiv2.allsportsapi.com/logo/logo_country/47_fiji.png
+160,Kakkonen,Finland,,,,160,Kakkonen,48,Finland,https://apiv2.allsportsapi.com/logo/logo_leagues/160_kakkonen.png,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+161,Suomen Cup,Finland,,,,161,Suomen Cup,48,Finland,https://apiv2.allsportsapi.com/logo/logo_leagues/161_suomen-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+162,National 3,France,,,,162,National 3,3,France,,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+163,National 2,France,,,,163,National 2,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/163_national-2.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+167,National 1,France,,,,167,National 1,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/167_national-1.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+169,Erovnuli Liga 2,Georgia,,,,169,Erovnuli Liga 2,49,Georgia,,https://apiv2.allsportsapi.com/logo/logo_country/49_georgia.png
+170,Erovnuli Liga,Georgia,,,,170,Erovnuli Liga,49,Georgia,https://apiv2.allsportsapi.com/logo/logo_leagues/170_erovnuli-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/49_georgia.png
+174,Oberliga,Germany,,,,174,Oberliga,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/174_oberliga.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+176,3. Liga,Germany,,,,176,3. Liga,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/176_3.-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+180,Gamma Ethniki,Greece,,,,180,Gamma Ethniki,51,Greece,https://apiv2.allsportsapi.com/logo/logo_leagues/180_gamma-ethniki.png,https://apiv2.allsportsapi.com/logo/logo_country/51_greece.png
+181,Football League,Greece,,,,181,Football League,51,Greece,https://apiv2.allsportsapi.com/logo/logo_leagues/181_football-league.png,https://apiv2.allsportsapi.com/logo/logo_country/51_greece.png
+182,Liga Nacional,Guatemala,,,,182,Liga Nacional,52,Guatemala,https://apiv2.allsportsapi.com/logo/logo_leagues/182_liga-nacional.png,https://apiv2.allsportsapi.com/logo/logo_country/52_guatemala.png
+184,Ligue Haïtienne,Haiti,,,,184,Ligue Haïtienne,53,Haiti,,https://apiv2.allsportsapi.com/logo/logo_country/53_haiti.png
+187,HKFA 1st Division,Hong Kong,,,,187,HKFA 1st Division,55,Hong Kong,,https://apiv2.allsportsapi.com/logo/logo_country/55_hong-kong.png
+188,NB II,Hungary,,,,188,NB II,56,Hungary,https://apiv2.allsportsapi.com/logo/logo_leagues/188_nb-ii.png,https://apiv2.allsportsapi.com/logo/logo_country/56_hungary.png
+189,Magyar Kupa,Hungary,,,,189,Magyar Kupa,56,Hungary,https://apiv2.allsportsapi.com/logo/logo_leagues/189_magyar-kupa.png,https://apiv2.allsportsapi.com/logo/logo_country/56_hungary.png
+190,NB III,Hungary,,,,190,NB III,56,Hungary,https://apiv2.allsportsapi.com/logo/logo_leagues/190_nb-iii.png,https://apiv2.allsportsapi.com/logo/logo_country/56_hungary.png
+192,Besta deild,Iceland,,,,192,Besta deild,57,Iceland,https://apiv2.allsportsapi.com/logo/logo_leagues/192_Úrvalsdeild.png,https://apiv2.allsportsapi.com/logo/logo_country/57_iceland.png
+196,Azadegan League,Iran,,,,196,Azadegan League,60,Iran,,https://apiv2.allsportsapi.com/logo/logo_country/60_iran.png
+197,FAI Cup,Ireland,,,,197,FAI Cup,61,Ireland,https://apiv2.allsportsapi.com/logo/logo_leagues/197_fai-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/61_ireland.png
+198,First Division,Ireland,,,,198,First Division,61,Ireland,https://apiv2.allsportsapi.com/logo/logo_leagues/198_first-division.png,https://apiv2.allsportsapi.com/logo/logo_country/61_ireland.png
+200,Premier Division,Ireland,,,,200,Premier Division,61,Ireland,https://apiv2.allsportsapi.com/logo/logo_leagues/200_premier-division.png,https://apiv2.allsportsapi.com/logo/logo_country/61_ireland.png
+201,Liga Leumit,Israel,,,,201,Liga Leumit,62,Israel,https://apiv2.allsportsapi.com/logo/logo_leagues/201_liga-leumit.png,https://apiv2.allsportsapi.com/logo/logo_country/62_israel.png
+203,Toto Cup Ligat Al,Israel,,,,203,Toto Cup Ligat Al,62,Israel,https://apiv2.allsportsapi.com/logo/logo_leagues/203_toto-cup-ligat-al.png,https://apiv2.allsportsapi.com/logo/logo_country/62_israel.png
+210,J-League Cup,Japan,,,,210,J-League Cup,64,Japan,https://apiv2.allsportsapi.com/logo/logo_leagues/210_j-league-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+211,Japan Football League,Japan,,,,211,Japan Football League,64,Japan,,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+212,J2 League,Japan,,,,212,J2 League,64,Japan,https://apiv2.allsportsapi.com/logo/logo_leagues/212_j2-league.png,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+213,League,Jordan,,,,213,League,65,Jordan,https://apiv2.allsportsapi.com/logo/logo_leagues/213_league.png,https://apiv2.allsportsapi.com/logo/logo_country/65_jordan.png
+216,FKF Premier League,Kenya,,,,216,FKF Premier League,67,Kenya,https://apiv2.allsportsapi.com/logo/logo_leagues/216_fkf-premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/67_kenya.png
+217,K3 League,Korea Republic,,,,217,K3 League,68,Korea Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/217_k3-league.png,https://apiv2.allsportsapi.com/logo/logo_country/68_korea-republic.png
+218,K League 2,Korea Republic,,,,218,K League 2,68,Korea Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/218_k-league-2.png,https://apiv2.allsportsapi.com/logo/logo_country/68_korea-republic.png
+221,Division 1,Kuwait,,,,221,Division 1,69,Kuwait,,https://apiv2.allsportsapi.com/logo/logo_country/69_kuwait.png
+222,1. Liga,Latvia,,,,222,1. Liga,70,Latvia,https://apiv2.allsportsapi.com/logo/logo_leagues/222_1.-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/70_latvia.png
+223,Virsliga,Latvia,,,,223,Virsliga,70,Latvia,https://apiv2.allsportsapi.com/logo/logo_leagues/223_virsliga.png,https://apiv2.allsportsapi.com/logo/logo_country/70_latvia.png
+226,1 Lyga,Lithuania,,,,226,1 Lyga,73,Lithuania,https://apiv2.allsportsapi.com/logo/logo_leagues/226_1-lyga.png,https://apiv2.allsportsapi.com/logo/logo_country/73_lithuania.png
+227,A Lyga,Lithuania,,,,227,A Lyga,73,Lithuania,https://apiv2.allsportsapi.com/logo/logo_leagues/227_a-lyga.png,https://apiv2.allsportsapi.com/logo/logo_country/73_lithuania.png
+228,National Division,Luxembourg,,,,228,National Division,74,Luxembourg,https://apiv2.allsportsapi.com/logo/logo_leagues/228_national-division.png,https://apiv2.allsportsapi.com/logo/logo_country/74_luxembourg.png
+233,Challenge League,Malta,,,,233,Challenge League,77,Malta,,https://apiv2.allsportsapi.com/logo/logo_country/77_malta.png
+236,Liga de Expansión MX,Mexico,,,,236,Liga de Expansión MX,78,Mexico,https://apiv2.allsportsapi.com/logo/logo_leagues/236_liga-de-expansión-mx.png,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+241,Botola 2,Morocco,,,,241,Botola 2,80,Morocco,https://apiv2.allsportsapi.com/logo/logo_leagues/241_botola-2.png,https://apiv2.allsportsapi.com/logo/logo_country/80_morocco.png
+242,Derde Divisie,Netherlands,,,,242,Derde Divisie,82,Netherlands,https://apiv2.allsportsapi.com/logo/logo_leagues/242_derde-divisie.png,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+248,NPFL,Nigeria,,,,248,NPFL,85,Nigeria,https://apiv2.allsportsapi.com/logo/logo_leagues/248_npfl.png,https://apiv2.allsportsapi.com/logo/logo_country/85_nigeria.png
+249,Irish Cup,Northern Ireland,,,,249,Irish Cup,86,Northern Ireland,https://apiv2.allsportsapi.com/logo/logo_leagues/249_irish-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/86_northern-ireland.png
+252,NM Cupen,Norway,,,,252,NM Cupen,87,Norway,https://apiv2.allsportsapi.com/logo/logo_leagues/252_nm-cupen.png,https://apiv2.allsportsapi.com/logo/logo_country/87_norway.png
+254,Professional League,Oman,,,,254,Professional League,88,Oman,https://apiv2.allsportsapi.com/logo/logo_leagues/254_professional-league.png,https://apiv2.allsportsapi.com/logo/logo_country/88_oman.png
+256,Division Intermedia,Paraguay,,,,256,Division Intermedia,89,Paraguay,https://apiv2.allsportsapi.com/logo/logo_leagues/256_division-intermedia.png,https://apiv2.allsportsapi.com/logo/logo_country/89_paraguay.png
+258,Liga 2,Peru,,,,258,Liga 2,90,Peru,https://apiv2.allsportsapi.com/logo/logo_leagues/258_segunda-división.png,https://apiv2.allsportsapi.com/logo/logo_country/90_peru.png
+261,II Liga,Poland,,,,261,II Liga,91,Poland,https://apiv2.allsportsapi.com/logo/logo_leagues/261_ii-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+262,III Liga,Poland,,,,262,III Liga,91,Poland,https://apiv2.allsportsapi.com/logo/logo_leagues/262_iii-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+263,I Liga,Poland,,,,263,I Liga,91,Poland,https://apiv2.allsportsapi.com/logo/logo_leagues/263_i-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+264,Campeonato de Portugal Prio,Portugal,,,,264,Campeonato de Portugal Prio,92,Portugal,https://apiv2.allsportsapi.com/logo/logo_leagues/264_campeonato-de-portugal-prio.png,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+270,Liga III,Romania,,,,270,Liga III,94,Romania,,https://apiv2.allsportsapi.com/logo/logo_country/94_romania.png
+271,Liga II,Romania,,,,271,Liga II,94,Romania,https://apiv2.allsportsapi.com/logo/logo_leagues/271_liga-ii.png,https://apiv2.allsportsapi.com/logo/logo_country/94_romania.png
+273,Second League B,Russia,,,,273,Second League B,95,Russia,https://apiv2.allsportsapi.com/logo/logo_leagues/273_pfl.png,https://apiv2.allsportsapi.com/logo/logo_country/95_russia.png
+276,Campionato,San Marino,,,,276,Campionato,96,San Marino,https://apiv2.allsportsapi.com/logo/logo_leagues/276_campionato.png,https://apiv2.allsportsapi.com/logo/logo_country/96_san-marino.png
+283,Challenge Cup,Scotland,,,,283,Challenge Cup,98,Scotland,https://apiv2.allsportsapi.com/logo/logo_leagues/283_challenge-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/98_scotland.png
+286,Highland / Lowland,Scotland,,,,286,Highland / Lowland,98,Scotland,,https://apiv2.allsportsapi.com/logo/logo_country/98_scotland.png
+287,Prva Liga,Serbia,,,,287,Prva Liga,99,Serbia,https://apiv2.allsportsapi.com/logo/logo_leagues/287_prva-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/99_serbia.png
+294,2. SNL,Slovenia,,,,294,2. SNL,102,Slovenia,https://apiv2.allsportsapi.com/logo/logo_leagues/294_2.-snl.png,https://apiv2.allsportsapi.com/logo/logo_country/102_slovenia.png
+298,Tercera División RFEF,Spain,,,,298,Tercera División RFEF,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/298_tercera-division.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+299,Primera División RFEF,Spain,,,,299,Primera División RFEF,6,Spain,https://apiv2.allsportsapi.com/logo/logo_leagues/299_segunda-b.png,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+303,Sudani Premier League,Sudan,,,,303,Sudani Premier League,104,Sudan,https://apiv2.allsportsapi.com/logo/logo_leagues/303_sudani-premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/104_sudan.png
+304,Suriname Major League,Surinam,,,,304,Suriname Major League,105,Surinam,https://apiv2.allsportsapi.com/logo/logo_leagues/304_eerste-divisie.png,https://apiv2.allsportsapi.com/logo/logo_country/105_surinam.png
+305,Superettan,Sweden,,,,305,Superettan,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/305_superettan.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+306,Svenska Cupen,Sweden,,,,306,Svenska Cupen,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/306_svenska-cupen.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+309,Schweizer Pokal,Switzerland,,,,309,Schweizer Pokal,106,Switzerland,https://apiv2.allsportsapi.com/logo/logo_leagues/309_schweizer-pokal.png,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+310,2. Liga Interregional,Switzerland,,,,310,2. Liga Interregional,106,Switzerland,,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+311,1. Liga Classic,Switzerland,,,,311,1. Liga Classic,106,Switzerland,https://apiv2.allsportsapi.com/logo/logo_leagues/311_1.-liga-classic.png,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+315,TT Premier League,Trinidad and Tobago,,,,315,TT Premier League,109,Trinidad and Tobago,https://apiv2.allsportsapi.com/logo/logo_leagues/315_t-&-t-pro-league.png,https://apiv2.allsportsapi.com/logo/logo_country/109_trinidad-and-tobago.png
+318,2. Lig,Turkey,,,,318,2. Lig,111,Turkey,https://apiv2.allsportsapi.com/logo/logo_leagues/318_2.-lig.png,https://apiv2.allsportsapi.com/logo/logo_country/111_turkey.png
+319,1. Lig,Turkey,,,,319,1. Lig,111,Turkey,https://apiv2.allsportsapi.com/logo/logo_leagues/319_1.-lig.png,https://apiv2.allsportsapi.com/logo/logo_country/111_turkey.png
+321,3. Lig,Turkey,,,,321,3. Lig,111,Turkey,https://apiv2.allsportsapi.com/logo/logo_leagues/321_3.-lig.png,https://apiv2.allsportsapi.com/logo/logo_country/111_turkey.png
+324,Persha Liga,Ukraine,,,,324,Persha Liga,112,Ukraine,https://apiv2.allsportsapi.com/logo/logo_leagues/324_persha-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/112_ukraine.png
+327,Druha Liga,Ukraine,,,,327,Druha Liga,112,Ukraine,,https://apiv2.allsportsapi.com/logo/logo_country/112_ukraine.png
+329,USL League Two,USA,,,,329,USL League Two,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+330,USL Championship,USA,,,,330,USL Championship,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+331,USL 2,USA,,,,331,USL 2,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+333,Liga AUF,Uruguay,,,,333,Liga AUF,115,Uruguay,https://apiv2.allsportsapi.com/logo/logo_leagues/333_primera-división.png,https://apiv2.allsportsapi.com/logo/logo_country/115_uruguay.png
+338,V.League 2,Vietnam,,,,338,V.League 2,118,Vietnam,,https://apiv2.allsportsapi.com/logo/logo_country/118_vietnam.png
+339,V.League 1,Vietnam,,,,339,V.League 1,118,Vietnam,,https://apiv2.allsportsapi.com/logo/logo_country/118_vietnam.png
+340,FAW Championship,Wales,,,,340,FAW Championship,119,Wales,https://apiv2.allsportsapi.com/logo/logo_leagues/340_faw-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/119_wales.png
+343,Premier Soccer League,Zimbabwe,,,,343,Premier Soccer League,121,Zimbabwe,,https://apiv2.allsportsapi.com/logo/logo_country/121_zimbabwe.png
+347,AFC Asian Cup,intl,,,,347,AFC Asian Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/347_afc-asian-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+351,DBU Pokalen,Denmark,,,,351,DBU Pokalen,40,Denmark,https://apiv2.allsportsapi.com/logo/logo_leagues/351_dbu-pokalen.png,https://apiv2.allsportsapi.com/logo/logo_country/40_denmark.png
+352,Veikkausliiga,Finland,,,,352,Veikkausliiga,48,Finland,https://apiv2.allsportsapi.com/logo/logo_leagues/352_veikkausliiga.png,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+353,Ykkönen,Finland,,,,353,Ykkönen,48,Finland,https://apiv2.allsportsapi.com/logo/logo_leagues/353_ykkönen.png,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+355,Club Friendlies,intl,,,,355,Club Friendlies,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/355_club-friendlies.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+356,Friendlies,intl,,,,356,Friendlies,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/356_friendlies.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+358,State Cup,Israel,,,,358,State Cup,62,Israel,https://apiv2.allsportsapi.com/logo/logo_leagues/358_state-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/62_israel.png
+360,Emperor Cup,Japan,,,,360,Emperor Cup,64,Japan,https://apiv2.allsportsapi.com/logo/logo_leagues/360_emperor-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+366,Ettan,Sweden,,,,366,Ettan,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/366_ettan.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+367,Division 2,Sweden,,,,367,Division 2,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/367_division-2.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+368,US Open Cup,USA,,,,368,US Open Cup,114,USA,https://apiv2.allsportsapi.com/logo/logo_leagues/368_us-open-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+369,Welsh Cup,Wales,,,,369,Welsh Cup,119,Wales,https://apiv2.allsportsapi.com/logo/logo_leagues/369_welsh-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/119_wales.png
+371,K League Cup,Korea Republic,,,,371,K League Cup,68,Korea Republic,,https://apiv2.allsportsapi.com/logo/logo_country/68_korea-republic.png
+373,Northern Territory Premier League,Australia,,,,373,Northern Territory Premier League,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/373_northern-territory-premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+374,FQPL 3 Metro,Australia,,,,374,FQPL 3 Metro,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/374_brisbane-premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+375,Northern NSW NPL,Australia,,,,375,Northern NSW NPL,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+382,Supercupa,Romania,,,,382,Supercupa,94,Romania,https://apiv2.allsportsapi.com/logo/logo_leagues/382_supercupa.png,https://apiv2.allsportsapi.com/logo/logo_country/94_romania.png
+386,CONMEBOL Recopa,intl,,,,386,CONMEBOL Recopa,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/386_conmebol-recopa.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+388,Division d'Honneur,Guadeloupe,,,,388,Division d'Honneur,123,Guadeloupe,https://apiv2.allsportsapi.com/logo/logo_leagues/388_division-d'honneur.png,https://apiv2.allsportsapi.com/logo/logo_country/123_guadeloupe.png
+389,Trophée des Champions,France,,,,389,Trophée des Champions,3,France,https://apiv2.allsportsapi.com/logo/logo_leagues/389_trophée-des-champions.png,https://apiv2.allsportsapi.com/logo/logo_country/3_france.png
+392,8 Cup,South Africa,,,,392,8 Cup,103,South Africa,https://apiv2.allsportsapi.com/logo/logo_leagues/392_8-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/103_south-africa.png
+393,Emir Cup,Kuwait,,,,393,Emir Cup,69,Kuwait,,https://apiv2.allsportsapi.com/logo/logo_country/69_kuwait.png
+396,Crown Prince Cup,Kuwait,,,,396,Crown Prince Cup,69,Kuwait,,https://apiv2.allsportsapi.com/logo/logo_country/69_kuwait.png
+397,Second Division,Qatar,,,,397,Second Division,93,Qatar,,https://apiv2.allsportsapi.com/logo/logo_country/93_qatar.png
+399,Srpska Liga,Serbia,,,,399,Srpska Liga,99,Serbia,,https://apiv2.allsportsapi.com/logo/logo_country/99_serbia.png
+400,Liga Mayor,Dominican Republic,,,,400,Liga Mayor,124,Dominican Republic,,https://apiv2.allsportsapi.com/logo/logo_country/124_dominican-republic.png
+402,CECAFA Senior Challenge Cup,intl,,,,402,CECAFA Senior Challenge Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+404,OFC Champions League,intl,,,,404,OFC Champions League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+405,Caribbean Cup,intl,,,,405,Caribbean Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+407,Canadian Championship,Canada,,,,407,Canadian Championship,30,Canada,,https://apiv2.allsportsapi.com/logo/logo_country/30_canada.png
+409,David Kipiani Cup,Georgia,,,,409,David Kipiani Cup,49,Georgia,,https://apiv2.allsportsapi.com/logo/logo_country/49_georgia.png
+414,Copa Chile,Chile,,,,414,Copa Chile,31,Chile,https://apiv2.allsportsapi.com/logo/logo_leagues/414_copa-chile.png,https://apiv2.allsportsapi.com/logo/logo_country/31_chile.png
+415,FIFA U17 World Cup,Worldcup,,,,415,FIFA U17 World Cup,8,Worldcup,https://apiv2.allsportsapi.com/logo/logo_leagues/415_u17-world-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+418,Asian Cup Qualification,intl,,,,418,Asian Cup Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+419,Korea Cup,Korea Republic,,,,419,Korea Cup,68,Korea Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/419_fa-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/68_korea-republic.png
+420,2. liga,Slovakia,,,,420,2. liga,101,Slovakia,https://apiv2.allsportsapi.com/logo/logo_leagues/420_2.-liga.png,https://apiv2.allsportsapi.com/logo/logo_country/101_slovakia.png
+421,Capital Territory NPL,Australia,,,,421,Capital Territory NPL,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+425,FIFA U20 World Cup,Worldcup,,,,425,FIFA U20 World Cup,8,Worldcup,,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+429,Cupa României,Romania,,,,429,Cupa României,94,Romania,https://apiv2.allsportsapi.com/logo/logo_leagues/429_cupa-româniei.png,https://apiv2.allsportsapi.com/logo/logo_country/94_romania.png
+430,Copa Bicentenario,Peru,,,,430,Copa Bicentenario,90,Peru,,https://apiv2.allsportsapi.com/logo/logo_country/90_peru.png
+431,Leagues Cup,intl,,,,431,Leagues Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+432,Besta deild Women,Iceland,,,,432,Besta deild Women,57,Iceland,,https://apiv2.allsportsapi.com/logo/logo_country/57_iceland.png
+433,Brasileiro U20 A,Brazil,,,,433,Brasileiro U20 A,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+434,WAFF Championship,Waff Championship,,,,434,WAFF Championship,128,Waff Championship,,https://apiv2.allsportsapi.com/logo/logo_country/128_waff-championship.png
+435,Copa Paraguay,Paraguay,,,,435,Copa Paraguay,89,Paraguay,,https://apiv2.allsportsapi.com/logo/logo_country/89_paraguay.png
+436,Reserve League,Algeria,,,,436,Reserve League,11,Algeria,,https://apiv2.allsportsapi.com/logo/logo_country/11_algeria.png
+437,Liga Premier Serie A,Mexico,,,,437,Liga Premier Serie A,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+438,Reserve Pro League,Belgium,,,,438,Reserve Pro League,23,Belgium,,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+439,Super League 2,Greece,,,,439,Super League 2,51,Greece,,https://apiv2.allsportsapi.com/logo/logo_country/51_greece.png
+440,Friendlies Women,intl,,,,440,Friendlies Women,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+441,COSAFA U20 Championship,intl,,,,441,COSAFA U20 Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+442,Trofeo de Campeones,Argentina,,,,442,Trofeo de Campeones,14,Argentina,,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+443,Federation Cup,Bangladesh,,,,443,Federation Cup,21,Bangladesh,,https://apiv2.allsportsapi.com/logo/logo_country/21_bangladesh.png
+444,Elite Two,Cameroon,,,,444,Elite Two,29,Cameroon,,https://apiv2.allsportsapi.com/logo/logo_country/29_cameroon.png
+445,Supercopa,Peru,,,,445,Supercopa,90,Peru,,https://apiv2.allsportsapi.com/logo/logo_country/90_peru.png
+447,Kakkosen Cup,Finland,,,,447,Kakkosen Cup,48,Finland,,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+448,Supercopa do Brasil,Brazil,,,,448,Supercopa do Brasil,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+449,NISA,USA,,,,449,NISA,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+450,Liga Primera U20,Nicaragua,,,,450,Liga Primera U20,84,Nicaragua,,https://apiv2.allsportsapi.com/logo/logo_country/84_nicaragua.png
+452,Youth League,Turkmenistan,,,,452,Youth League,130,Turkmenistan,,https://apiv2.allsportsapi.com/logo/logo_country/130_turkmenistan.png
+453,Kansallinen Liiga,Finland,,,,453,Kansallinen Liiga,48,Finland,,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+454,NWSL Challenge Cup,USA,,,,454,NWSL Challenge Cup,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+455,Copa por México,Mexico,,,,455,Copa por México,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+456,Lao League,Laos,,,,456,Lao League,131,Laos,,https://apiv2.allsportsapi.com/logo/logo_country/131_laos.png
+457,Curaçao Promé Divishon,Curacao,,,,457,Curaçao Promé Divishon,132,Curacao,,https://apiv2.allsportsapi.com/logo/logo_country/132_curacao.png
+458,Women’s FA Community Shield,England,,,,458,Women’s FA Community Shield,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+459,U21 Divisie 1,Netherlands,,,,459,U21 Divisie 1,82,Netherlands,,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+460,1. Liga Women,Czech Republic,,,,460,1. Liga Women,39,Czech Republic,,https://apiv2.allsportsapi.com/logo/logo_country/39_czech-republic.png
+461,NWSL Fall Series,USA,,,,461,NWSL Fall Series,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+462,I Liga Women,Slovakia,,,,462,I Liga Women,101,Slovakia,,https://apiv2.allsportsapi.com/logo/logo_country/101_slovakia.png
+463,U18 Divisie 1,Netherlands,,,,463,U18 Divisie 1,82,Netherlands,,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+464,I-League 2,India,,,,464,I-League 2,58,India,,https://apiv2.allsportsapi.com/logo/logo_country/58_india.png
+465,Brasileiro de Aspirantes,Brazil,,,,465,Brasileiro de Aspirantes,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+466,Liga Femenina,Colombia,,,,466,Liga Femenina,34,Colombia,,https://apiv2.allsportsapi.com/logo/logo_country/34_colombia.png
+467,Nacional B,Bolivia,,,,467,Nacional B,25,Bolivia,,https://apiv2.allsportsapi.com/logo/logo_country/25_bolivia.png
+468,Copa Paulista,Brazil,,,,468,Copa Paulista,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+469,Diski Challenge,South Africa,,,,469,Diski Challenge,103,South Africa,,https://apiv2.allsportsapi.com/logo/logo_country/103_south-africa.png
+471,Nasjonal U19 Champions League,Norway,,,,471,Nasjonal U19 Champions League,87,Norway,,https://apiv2.allsportsapi.com/logo/logo_country/87_norway.png
+472,Qatar Cup,Qatar,,,,472,Qatar Cup,93,Qatar,,https://apiv2.allsportsapi.com/logo/logo_country/93_qatar.png
+473,Olympic Qualifying Concacaf,World,,,,473,Olympic Qualifying Concacaf,133,World,,https://apiv2.allsportsapi.com/logo/logo_country/133_world.png
+475,Copa Colombia,Colombia,,,,475,Copa Colombia,34,Colombia,https://apiv2.allsportsapi.com/logo/logo_leagues/475_copa-colombia.png,https://apiv2.allsportsapi.com/logo/logo_country/34_colombia.png
+477,Asian Games,intl,,,,477,Asian Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+478,Gulf Cup of Nations,intl,,,,478,Gulf Cup of Nations,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+479,AFF Championship,intl,,,,479,AFF Championship,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/479_aff-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+480,CAF African Nations Championship,intl,,,,480,CAF African Nations Championship,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/480_african-nations-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+481,Eredivisie Women,Netherlands,,,,481,Eredivisie Women,82,Netherlands,,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+482,Kvindeliga,Denmark,,,,482,Kvindeliga,40,Denmark,,https://apiv2.allsportsapi.com/logo/logo_country/40_denmark.png
+484,CONMEBOL U20,intl,,,,484,CONMEBOL U20,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+485,U19 Bundesliga,Germany,,,,485,U19 Bundesliga,4,Germany,https://apiv2.allsportsapi.com/logo/logo_leagues/485_u19-bundesliga.png,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+486,Queensland NPL,Australia,,,,486,Queensland NPL,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+487,Provincial,Belgium,,,,487,Provincial,23,Belgium,,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+491,Mineiro 2,Brazil,,,,491,Mineiro 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+492,Cearense 2,Brazil,,,,492,Cearense 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+494,2. Deild,Iceland,,,,494,2. Deild,57,Iceland,,https://apiv2.allsportsapi.com/logo/logo_country/57_iceland.png
+495,Iraqi League,Iraq,,,,495,Iraqi League,138,Iraq,,https://apiv2.allsportsapi.com/logo/logo_country/138_iraq.png
+496,A Division,Nepal,,,,496,A Division,139,Nepal,,https://apiv2.allsportsapi.com/logo/logo_country/139_nepal.png
+498,Toppserien,Norway,,,,498,Toppserien,87,Norway,https://apiv2.allsportsapi.com/logo/logo_leagues/498_toppserien.png,https://apiv2.allsportsapi.com/logo/logo_country/87_norway.png
+499,UEFA Women's Championship,intl,,,,499,UEFA Women's Championship,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/499_uefa-women's-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+500,Olympics Men,intl,,,,500,Olympics Men,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/500_olympics.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+501,A-League Women,Australia,,,,501,A-League Women,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/501_w-league.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+502,Svenska Cupen Women,Sweden,,,,502,Svenska Cupen Women,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/502_svenska-cupen-women.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+503,Shield Cup,Jordan,,,,503,Shield Cup,65,Jordan,,https://apiv2.allsportsapi.com/logo/logo_country/65_jordan.png
+504,Copa do Nordeste,Brazil,,,,504,Copa do Nordeste,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/504_copa-do-nordeste.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+511,UEFA U21 Championship,intl,,,,511,UEFA U21 Championship,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/511_uefa-u21-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+512,Cupa,Moldova,,,,512,Cupa,79,Moldova,,https://apiv2.allsportsapi.com/logo/logo_country/79_moldova.png
+513,Sultan Cup,Oman,,,,513,Sultan Cup,88,Oman,,https://apiv2.allsportsapi.com/logo/logo_country/88_oman.png
+516,Presidents Cup,United Arab Emirates,,,,516,Presidents Cup,113,United Arab Emirates,,https://apiv2.allsportsapi.com/logo/logo_country/113_united-arab-emirates.png
+521,Copa MX,Mexico,,,,521,Copa MX,78,Mexico,https://apiv2.allsportsapi.com/logo/logo_leagues/521_copa-mx.png,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+522,Olympics Women,intl,,,,522,Olympics Women,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+523,1. Liga Promotion,Switzerland,,,,523,1. Liga Promotion,106,Switzerland,https://apiv2.allsportsapi.com/logo/logo_leagues/523_1.-liga-promotion.png,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+525,Super Copa,Argentina,,,,525,Super Copa,14,Argentina,https://apiv2.allsportsapi.com/logo/logo_leagues/525_super-copa.png,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+526,EAFF E-1 Football Championship,intl,,,,526,EAFF E-1 Football Championship,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/526_eaff-e-1-football-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+528,Concacaf U20,intl,,,,528,Concacaf U20,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+529,Coupe Nationale,Algeria,,,,529,Coupe Nationale,11,Algeria,,https://apiv2.allsportsapi.com/logo/logo_country/11_algeria.png
+534,Youth Championship,Russia,,,,534,Youth Championship,95,Russia,https://apiv2.allsportsapi.com/logo/logo_leagues/534_youth-championship.png,https://apiv2.allsportsapi.com/logo/logo_country/95_russia.png
+535,Premier League Asia Trophy,intl,,,,535,Premier League Asia Trophy,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+538,UEFA Youth League,eurocups,,,,538,UEFA Youth League,1,eurocups,https://apiv2.allsportsapi.com/logo/logo_leagues/538_uefa-youth-league.png,
+543,Coppa Titano,San Marino,,,,543,Coppa Titano,96,San Marino,,https://apiv2.allsportsapi.com/logo/logo_country/96_san-marino.png
+545,Ligue A,Burundi,,,,545,Ligue A,143,Burundi,,https://apiv2.allsportsapi.com/logo/logo_country/143_burundi.png
+546,LFA First Division,Liberia,,,,546,LFA First Division,144,Liberia,,https://apiv2.allsportsapi.com/logo/logo_country/144_liberia.png
+547,Reykjavik Cup,Iceland,,,,547,Reykjavik Cup,57,Iceland,https://apiv2.allsportsapi.com/logo/logo_leagues/547_reykjavik-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/57_iceland.png
+548,Copa Constitució,Andorra,,,,548,Copa Constitució,12,Andorra,,https://apiv2.allsportsapi.com/logo/logo_country/12_andorra.png
+549,Championnat National,Benin,,,,549,Championnat National,145,Benin,,https://apiv2.allsportsapi.com/logo/logo_country/145_benin.png
+551,Ligi kuu Bara,Tanzania,,,,551,Ligi kuu Bara,147,Tanzania,,https://apiv2.allsportsapi.com/logo/logo_country/147_tanzania.png
+552,GFA League,Gambia,,,,552,GFA League,148,Gambia,,https://apiv2.allsportsapi.com/logo/logo_country/148_gambia.png
+557,Mauritian League,Mauritius,,,,557,Mauritian League,153,Mauritius,,https://apiv2.allsportsapi.com/logo/logo_country/153_mauritius.png
+558,Première Division,Mali,,,,558,Première Division,154,Mali,,https://apiv2.allsportsapi.com/logo/logo_country/154_mali.png
+561,FAI President's Cup,Ireland,,,,561,FAI President's Cup,61,Ireland,https://apiv2.allsportsapi.com/logo/logo_leagues/561_fai-president's-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/61_ireland.png
+563,Copa Inca,Peru,,,,563,Copa Inca,90,Peru,,https://apiv2.allsportsapi.com/logo/logo_country/90_peru.png
+567,Somali Premier League,Somalia,,,,567,Somali Premier League,158,Somalia,,https://apiv2.allsportsapi.com/logo/logo_country/158_somalia.png
+568,Copa Verde,Brazil,,,,568,Copa Verde,27,Brazil,https://apiv2.allsportsapi.com/logo/logo_leagues/568_copa-verde.png,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+569,Vysshaya Liga,Tajikistan,,,,569,Vysshaya Liga,159,Tajikistan,,https://apiv2.allsportsapi.com/logo/logo_country/159_tajikistan.png
+570,AFC U23 Asian Cup,intl,,,,570,AFC U23 Asian Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/570_afc-u23-asian-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+571,Pacific Games,intl,,,,571,Pacific Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+572,International Champions Cup,intl,,,,572,International Champions Cup,2,intl,https://apiv2.allsportsapi.com/logo/logo_leagues/572_international-champions-cup.png,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+575,Premier League (Crimea),Europe,,,,575,Premier League (Crimea),160,Europe,https://apiv2.allsportsapi.com/logo/logo_leagues/575_premier-league-(crimea).png,https://apiv2.allsportsapi.com/logo/logo_country/160_europe.png
+576,Hazfi Cup,Iran,,,,576,Hazfi Cup,60,Iran,,https://apiv2.allsportsapi.com/logo/logo_country/60_iran.png
+580,Fotbolti.net Cup A,Iceland,,,,580,Fotbolti.net Cup A,57,Iceland,,https://apiv2.allsportsapi.com/logo/logo_country/57_iceland.png
+581,Victoria NPL,Australia,,,,581,Victoria NPL,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+582,Ýokary Liga,Turkmenistan,,,,582,Ýokary Liga,130,Turkmenistan,,https://apiv2.allsportsapi.com/logo/logo_country/130_turkmenistan.png
+584,Tweede Divisie,Netherlands,,,,584,Tweede Divisie,82,Netherlands,https://apiv2.allsportsapi.com/logo/logo_leagues/584_tweede-divisie.png,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+586,First Amateur Division,Belgium,,,,586,First Amateur Division,23,Belgium,https://apiv2.allsportsapi.com/logo/logo_leagues/586_first-amateur-division.png,https://apiv2.allsportsapi.com/logo/logo_country/23_belgium.png
+588,1. Liga U19,Czech Republic,,,,588,1. Liga U19,39,Czech Republic,https://apiv2.allsportsapi.com/logo/logo_leagues/588_1.-liga-u19.png,https://apiv2.allsportsapi.com/logo/logo_country/39_czech-republic.png
+591,Malaysia Cup,Malaysia,,,,591,Malaysia Cup,76,Malaysia,,https://apiv2.allsportsapi.com/logo/logo_country/76_malaysia.png
+592,U21 League,Ukraine,,,,592,U21 League,112,Ukraine,,https://apiv2.allsportsapi.com/logo/logo_country/112_ukraine.png
+593,Premier League 2,England,,,,593,Premier League 2,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/593_premier-league-2-division-one.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+597,Copa Centroamericana,intl,,,,597,Copa Centroamericana,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+598,Santosh Trophy,India,,,,598,Santosh Trophy,58,India,,https://apiv2.allsportsapi.com/logo/logo_country/58_india.png
+600,SAFF Championship,intl,,,,600,SAFF Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+601,J3 League,Japan,,,,601,J3 League,64,Japan,,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+602,Thai League 2,Thailand,,,,602,Thai League 2,108,Thailand,,https://apiv2.allsportsapi.com/logo/logo_country/108_thailand.png
+604,King's Cup,Saudi Arabia,,,,604,King's Cup,97,Saudi Arabia,,https://apiv2.allsportsapi.com/logo/logo_country/97_saudi-arabia.png
+606,Premier Intermediate League,Northern Ireland,,,,606,Premier Intermediate League,86,Northern Ireland,,https://apiv2.allsportsapi.com/logo/logo_country/86_northern-ireland.png
+607,Elitettan,Sweden,,,,607,Elitettan,7,Sweden,https://apiv2.allsportsapi.com/logo/logo_leagues/607_elitettan.png,https://apiv2.allsportsapi.com/logo/logo_country/7_sweden.png
+608,Tasmania NPL,Australia,,,,608,Tasmania NPL,17,Australia,https://apiv2.allsportsapi.com/logo/logo_leagues/608_tasmania-npl.png,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+609,3. SNL,Slovenia,,,,609,3. SNL,102,Slovenia,,https://apiv2.allsportsapi.com/logo/logo_country/102_slovenia.png
+610,Liga Alef,Israel,,,,610,Liga Alef,62,Israel,,https://apiv2.allsportsapi.com/logo/logo_country/62_israel.png
+611,UEFA U19 Championship,eurocups,,,,611,UEFA U19 Championship,1,eurocups,,
+612,Coppa Italia Primavera,Italy,,,,612,Coppa Italia Primavera,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+613,Super Cup Primavera,Italy,,,,613,Super Cup Primavera,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+614,Professional Development League,England,,,,614,Professional Development League,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+615,Copa Federacion,Spain,,,,615,Copa Federacion,6,Spain,,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+617,West Bank Premier League,Palestine,,,,617,West Bank Premier League,163,Palestine,,https://apiv2.allsportsapi.com/logo/logo_country/163_palestine.png
+619,Africa U20 Cup of Nations,intl,,,,619,Africa U20 Cup of Nations,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+620,Dhivehi Premier League,Maldives,,,,620,Dhivehi Premier League,164,Maldives,,https://apiv2.allsportsapi.com/logo/logo_country/164_maldives.png
+621,Løgmanssteypid,Faroe Islands,,,,621,Løgmanssteypid,46,Faroe Islands,,https://apiv2.allsportsapi.com/logo/logo_country/46_faroe-islands.png
+622,U18 Premier League,England,,,,622,U18 Premier League,44,England,https://apiv2.allsportsapi.com/logo/logo_leagues/622_u18-premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+623,PFL,Philippines,,,,623,PFL,165,Philippines,,https://apiv2.allsportsapi.com/logo/logo_country/165_philippines.png
+624,Concacaf League,intl,,,,624,Concacaf League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+625,Frauenliga,Austria,,,,625,Frauenliga,18,Austria,,https://apiv2.allsportsapi.com/logo/logo_country/18_austria.png
+626,Super League Women,Switzerland,,,,626,Super League Women,106,Switzerland,,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+627,Central Youth League,Poland,,,,627,Central Youth League,91,Poland,,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+628,Campionato Primavera 1,Italy,,,,628,Campionato Primavera 1,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+629,DFB Junioren Pokal,Germany,,,,629,DFB Junioren Pokal,4,Germany,,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+630,Campionato Primavera 2,Italy,,,,630,Campionato Primavera 2,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+632,São Paulo Youth Cup,Brazil,,,,632,São Paulo Youth Cup,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+634,CONMEBOL Libertadores U20,intl,,,,634,CONMEBOL Libertadores U20,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+635,Concacaf Nations League Qualification,intl,,,,635,Concacaf Nations League Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+636,Copa do Brasil U20,Brazil,,,,636,Copa do Brasil U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+637,AIFF Super Cup,India,,,,637,AIFF Super Cup,58,India,,https://apiv2.allsportsapi.com/logo/logo_country/58_india.png
+638,China Cup,intl,,,,638,China Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+639,WK-League,Korea Republic,,,,639,WK-League,68,Korea Republic,,https://apiv2.allsportsapi.com/logo/logo_country/68_korea-republic.png
+643,Liga MX Femenil,Mexico,,,,643,Liga MX Femenil,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+644,Liga Revelação U23,Portugal,,,,644,Liga Revelação U23,92,Portugal,,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+645,Liga 1 Feminin,Romania,,,,645,Liga 1 Feminin,94,Romania,,https://apiv2.allsportsapi.com/logo/logo_country/94_romania.png
+646,Arab Club Champions Cup,intl,,,,646,Arab Club Champions Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+647,QSL Cup,Qatar,,,,647,QSL Cup,93,Qatar,,https://apiv2.allsportsapi.com/logo/logo_country/93_qatar.png
+648,Senior Shield,Hong Kong,,,,648,Senior Shield,55,Hong Kong,,https://apiv2.allsportsapi.com/logo/logo_country/55_hong-kong.png
+650,Women's FA Cup,England,,,,650,Women's FA Cup,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+651,Women's Super League,England,,,,651,Women's Super League,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+652,WSL 2,England,,,,652,WSL 2,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+653,USL League One,USA,,,,653,USL League One,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+655,FA Women's League Cup,England,,,,655,FA Women's League Cup,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+656,Piala Indonesia,Indonesia,,,,656,Piala Indonesia,59,Indonesia,,https://apiv2.allsportsapi.com/logo/logo_country/59_indonesia.png
+659,Canadian Premier League,Canada,,,,659,Canadian Premier League,30,Canada,https://apiv2.allsportsapi.com/logo/logo_leagues/659_canadian-premier-league.png,https://apiv2.allsportsapi.com/logo/logo_country/30_canada.png
+660,Brasileiro Feminino A1,Brazil,,,,660,Brasileiro Feminino A1,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+661,Concacaf Caribbean Club Shield,intl,,,,661,Concacaf Caribbean Club Shield,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+662,Copa de la Superliga,Argentina,,,,662,Copa de la Superliga,14,Argentina,,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+663,Superliga Women,Russia,,,,663,Superliga Women,95,Russia,,https://apiv2.allsportsapi.com/logo/logo_country/95_russia.png
+664,Concacaf Nations League,intl,,,,664,Concacaf Nations League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+665,OFC Nations Cup,intl,,,,665,OFC Nations Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+666,UEFA U21 Championship Qualification,intl,,,,666,UEFA U21 Championship Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+669,Taça Revelação U23,Portugal,,,,669,Taça Revelação U23,92,Portugal,,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+670,QFA Cup,Qatar,,,,670,QFA Cup,93,Qatar,,https://apiv2.allsportsapi.com/logo/logo_country/93_qatar.png
+674,NWSL,USA,,,,674,NWSL,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+675,Rock Cup,Gibraltar,,,,675,Rock Cup,122,Gibraltar,,https://apiv2.allsportsapi.com/logo/logo_country/122_gibraltar.png
+676,Women's Olympic Qualifying Asia,intl,,,,676,Women's Olympic Qualifying Asia,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+678,Queensland Premier League,Australia,,,,678,Queensland Premier League,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+679,Victoria PL 1,Australia,,,,679,Victoria PL 1,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+680,South Australia State League 1,Australia,,,,680,South Australia State League 1,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+681,NSW League One,Australia,,,,681,NSW League One,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+682,Carioca A2,Brazil,,,,682,Carioca A2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+684,Arab Cup,intl,,,,684,Arab Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+685,Supercopa de Ecuador,Ecuador,,,,685,Supercopa de Ecuador,41,Ecuador,,https://apiv2.allsportsapi.com/logo/logo_country/41_ecuador.png
+686,WE League,Japan,,,,686,WE League,64,Japan,,https://apiv2.allsportsapi.com/logo/logo_country/64_japan.png
+687,Baltic Cup,intl,,,,687,Baltic Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+688,COSAFA Cup,intl,,,,688,COSAFA Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+689,Concacaf Gold Cup Qualification,intl,,,,689,Concacaf Gold Cup Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+690,Concacaf Caribbean Cup,intl,,,,690,Concacaf Caribbean Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+692,Supercopa MX,Mexico,,,,692,Supercopa MX,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+694,Liga Premier Serie B,Mexico,,,,694,Liga Premier Serie B,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+695,Coppa Italia Serie D,Italy,,,,695,Coppa Italia Serie D,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+696,Copa Paulino Alcantara,Philippines,,,,696,Copa Paulino Alcantara,165,Philippines,,https://apiv2.allsportsapi.com/logo/logo_country/165_philippines.png
+697,U20 League,Mexico,,,,697,U20 League,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+699,Liga 3,Portugal,,,,699,Liga 3,92,Portugal,,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+700,Segunda División RFEF,Spain,,,,700,Segunda División RFEF,6,Spain,,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+701,Second Division A,Egypt,,,,701,Second Division A,42,Egypt,,https://apiv2.allsportsapi.com/logo/logo_country/42_egypt.png
+703,AFC U23 Asian Cup Qualification,intl,,,,703,AFC U23 Asian Cup Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+704,Women's WC Qualification Europe,Worldcup,,,,704,Women's WC Qualification Europe,8,Worldcup,,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+706,UEFA U17 Championship Qualification,intl,,,,706,UEFA U17 Championship Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+707,UEFA U19 Championship Qualification,eurocups,,,,707,UEFA U19 Championship Qualification,1,eurocups,,
+710,Copa Perú,Peru,,,,710,Copa Perú,90,Peru,,https://apiv2.allsportsapi.com/logo/logo_country/90_peru.png
+713,Australia Cup,Australia,,,,713,Australia Cup,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+714,CECAFA Club Cup,intl,,,,714,CECAFA Club Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+716,Premier League Cup,England,,,,716,Premier League Cup,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+717,Women's Asian Cup Qualification,Worldcup,,,,717,Women's Asian Cup Qualification,8,Worldcup,,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+718,Thai Champions Cup,Thailand,,,,718,Thai Champions Cup,108,Thailand,,https://apiv2.allsportsapi.com/logo/logo_country/108_thailand.png
+719,U20 Elite League,eurocups,,,,719,U20 Elite League,1,eurocups,,
+720,Coppa Italia Serie C,Italy,,,,720,Coppa Italia Serie C,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+722,MLS All-Star,USA,,,,722,MLS All-Star,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+723,Campeones Cup,intl,,,,723,Campeones Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+5494,Brasileiro Women,Brazil,,,,5494,Brasileiro Women,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+7090,The Atlantic Cup,intl,,,,7090,The Atlantic Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7093,Tipsport Malta Cup,intl,,,,7093,Tipsport Malta Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7094,Ykköscup,Finland,,,,7094,Ykköscup,48,Finland,,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+7096,Torneo Proyección,Argentina,,,,7096,Torneo Proyección,14,Argentina,,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+7097,MLS Next Pro,USA,,,,7097,MLS Next Pro,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+7098,Africa Cup of Nations Qualification,intl,,,,7098,Africa Cup of Nations Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7099,UEFA U17 Championship,intl,,,,7099,UEFA U17 Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7101,Youth Viareggio Cup,intl,,,,7101,Youth Viareggio Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7102,Algarve Cup,intl,,,,7102,Algarve Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7104,Concacaf Women's U17,intl,,,,7104,Concacaf Women's U17,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7105,AFC Women's Asian Cup,intl,,,,7105,AFC Women's Asian Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7106,Southeast Asian Games,intl,,,,7106,Southeast Asian Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7107,NASL,USA,,,,7107,NASL,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+7109,SheBelieves Cup,intl,,,,7109,SheBelieves Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7110,ASEAN U23 Championship,intl,,,,7110,ASEAN U23 Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7534,Emirates Cup,intl,,,,7534,Emirates Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7535,Tournoi Maurice Revello,intl,,,,7535,Tournoi Maurice Revello,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7536,Kirin Cup,intl,,,,7536,Kirin Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7537,Copa Ecuador,Ecuador,,,,7537,Copa Ecuador,41,Ecuador,,https://apiv2.allsportsapi.com/logo/logo_country/41_ecuador.png
+7539,1. Division Women,Norway,,,,7539,1. Division Women,87,Norway,,https://apiv2.allsportsapi.com/logo/logo_country/87_norway.png
+7540,CONMEBOL/UEFA Finalissima,intl,,,,7540,CONMEBOL/UEFA Finalissima,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7541,League 1 Ontario,Canada,,,,7541,League 1 Ontario,30,Canada,,https://apiv2.allsportsapi.com/logo/logo_country/30_canada.png
+7542,Copa Uruguay,Uruguay,,,,7542,Copa Uruguay,115,Uruguay,,https://apiv2.allsportsapi.com/logo/logo_country/115_uruguay.png
+7544,Catarinense 2,Brazil,,,,7544,Catarinense 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+7545,U20 Arab Championship,intl,,,,7545,U20 Arab Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7546,Chinese Football League 2,China,,,,7546,Chinese Football League 2,32,China,,https://apiv2.allsportsapi.com/logo/logo_country/32_china.png
+7547,CAF Women's Africa Cup of Nations,intl,,,,7547,CAF Women's Africa Cup of Nations,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7548,FIFA U20 Women's World Cup,intl,,,,7548,FIFA U20 Women's World Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7549,Mediterranean Games,intl,,,,7549,Mediterranean Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7550,ASEAN U19 Championship,intl,,,,7550,ASEAN U19 Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7551,UEFA U19 Championship Women,intl,,,,7551,UEFA U19 Championship Women,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7552,Piala Presiden,Indonesia,,,,7552,Piala Presiden,59,Indonesia,,https://apiv2.allsportsapi.com/logo/logo_country/59_indonesia.png
+7553,CONMEBOL Copa America Femenina,intl,,,,7553,CONMEBOL Copa America Femenina,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+7554,Diski Shield,South Africa,,,,7554,Diski Shield,103,South Africa,,https://apiv2.allsportsapi.com/logo/logo_country/103_south-africa.png
+7555,Concacaf Women's World Cup Qualifiers,intl,,,,7555,Concacaf Women's World Cup Qualifiers,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8201,Africa U23 Cup of Nations Qualification,intl,,,,8201,Africa U23 Cup of Nations Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8204,Second NL,Croatia,,,,8204,Second NL,37,Croatia,,https://apiv2.allsportsapi.com/logo/logo_country/37_croatia.png
+8205,South American Youth Games,intl,,,,8205,South American Youth Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8206,CONMEBOL Libertadores Femenina,intl,,,,8206,CONMEBOL Libertadores Femenina,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8207,DFB Pokal Women,Germany,,,,8207,DFB Pokal Women,4,Germany,,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+8209,FIFA U17 Women's World Cup,intl,,,,8209,FIFA U17 Women's World Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8211,COTIF Tournament,intl,,,,8211,COTIF Tournament,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8212,Islamic Solidarity Games,intl,,,,8212,Islamic Solidarity Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8213,Women's International Champions Cup,intl,,,,8213,Women's International Champions Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+8214,1a Divisão Women,Portugal,,,,8214,1a Divisão Women,92,Portugal,,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+10209,2. Bundesliga Women,Germany,,,,10209,2. Bundesliga Women,4,Germany,,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+10212,Copa Bolivia,Bolivia,,,,10212,Copa Bolivia,25,Bolivia,,https://apiv2.allsportsapi.com/logo/logo_country/25_bolivia.png
+10214,AFC U20 Asian Cup,intl,,,,10214,AFC U20 Asian Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10219,CAFA Nations Cup,intl,,,,10219,CAFA Nations Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10220,AFC U17 Asian Cup,intl,,,,10220,AFC U17 Asian Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10221,All-Island Cup,intl,,,,10221,All-Island Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10222,U23 League,Mexico,,,,10222,U23 League,78,Mexico,,https://apiv2.allsportsapi.com/logo/logo_country/78_mexico.png
+10224,Premier League Summer Series,England,,,,10224,Premier League Summer Series,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+10225,UEFA/CONMEBOL Club Challenge,intl,,,,10225,UEFA/CONMEBOL Club Challenge,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10226,Second League A,Russia,,,,10226,Second League A,95,Russia,,https://apiv2.allsportsapi.com/logo/logo_country/95_russia.png
+10227,Concacaf Central American Cup,intl,,,,10227,Concacaf Central American Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10229,Goiano 2,Brazil,,,,10229,Goiano 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10231,UEFA Women's Nations League,intl,,,,10231,UEFA Women's Nations League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10232,Copa Rio,Brazil,,,,10232,Copa Rio,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10233,Copa Santa Catarina,Brazil,,,,10233,Copa Santa Catarina,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10234,Paraibano 2,Brazil,,,,10234,Paraibano 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10235,Premier League International Cup,intl,,,,10235,Premier League International Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10237,Júniores U19,Portugal,,,,10237,Júniores U19,92,Portugal,,https://apiv2.allsportsapi.com/logo/logo_country/92_portugal.png
+10238,Women's WC Qualification Intercontinental Play-offs,intl,,,,10238,Women's WC Qualification Intercontinental Play-offs,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10239,Championnat D1,Gabon,,,,10239,Championnat D1,294,Gabon,,
+10241,Club Friendlies Women,intl,,,,10241,Club Friendlies Women,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10243,CONMEBOL U17,intl,,,,10243,CONMEBOL U17,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10244,Concacaf Women's U20,intl,,,,10244,Concacaf Women's U20,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10245,Copa Costa Rica,Costa Rica,,,,10245,Copa Costa Rica,35,Costa Rica,,https://apiv2.allsportsapi.com/logo/logo_country/35_costa-rica.png
+10246,Concacaf U17,intl,,,,10246,Concacaf U17,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10247,Charity Shield,Northern Ireland,,,,10247,Charity Shield,86,Northern Ireland,,https://apiv2.allsportsapi.com/logo/logo_country/86_northern-ireland.png
+10248,CAF U23 Cup of Nations,intl,,,,10248,CAF U23 Cup of Nations,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10249,Calcutta Premier Division,India,,,,10249,Calcutta Premier Division,58,India,,https://apiv2.allsportsapi.com/logo/logo_country/58_india.png
+10250,Ekstraliga Women,Poland,,,,10250,Ekstraliga Women,91,Poland,,https://apiv2.allsportsapi.com/logo/logo_country/91_poland.png
+10251,CAC Games,intl,,,,10251,CAC Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10252,Primeira Divisão,Macao,,,,10252,Primeira Divisão,295,Macao,,
+10253,CAF U17 Cup of Nations,intl,,,,10253,CAF U17 Cup of Nations,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10575,African Football League,intl,,,,10575,African Football League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10576,Erste Liga Cup,Switzerland,,,,10576,Erste Liga Cup,106,Switzerland,,https://apiv2.allsportsapi.com/logo/logo_country/106_switzerland.png
+10577,Concacaf W Gold Cup Qualification,intl,,,,10577,Concacaf W Gold Cup Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10579,HKPL Cup,Honkg Kong,,,,10579,HKPL Cup,300,Honkg Kong,,
+10581,Concacaf W Gold Cup,intl,,,,10581,Concacaf W Gold Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10582,Recopa Catarinense,Brazil,,,,10582,Recopa Catarinense,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10583,Supercopa Femenina,Spain,,,,10583,Supercopa Femenina,6,Spain,,https://apiv2.allsportsapi.com/logo/logo_country/6_spain.png
+10585,Pan American Games,intl,,,,10585,Pan American Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10587,Women's Olympic Qualifying CAF,intl,,,,10587,Women's Olympic Qualifying CAF,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10608,CONMEBOL Pre-Olympic Tournament,intl,,,,10608,CONMEBOL Pre-Olympic Tournament,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10609,Paulista A4,Brazil,,,,10609,Paulista A4,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10611,Copa Alagoas,Brazil,,,,10611,Copa Alagoas,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10613,Paulista Série B,Brazil,,,,10613,Paulista Série B,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10793,Yemeni League,Yemen,,,,10793,Yemeni League,301,Yemen,,
+10794,FA Youth Cup,England,,,,10794,FA Youth Cup,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+10795,SWPL Cup,Scotland,,,,10795,SWPL Cup,98,Scotland,,https://apiv2.allsportsapi.com/logo/logo_country/98_scotland.png
+10796,U19 League,Ukraine,,,,10796,U19 League,112,Ukraine,,https://apiv2.allsportsapi.com/logo/logo_country/112_ukraine.png
+10797,Concacaf U20 Qualification,intl,,,,10797,Concacaf U20 Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10798,Torneo Promocional Amateur,Argentina,,,,10798,Torneo Promocional Amateur,14,Argentina,,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+10800,Goiano U20,Brazil,,,,10800,Goiano U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10801,Paranaense U20,Brazil,,,,10801,Paranaense U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10803,AFC U20 Women's Asian Cup,intl,,,,10803,AFC U20 Women's Asian Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10804,African Games,intl,,,,10804,African Games,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+10805,Baiano U20,Brazil,,,,10805,Baiano U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+10806,SWF Scottish Cup,Scotland,,,,10806,SWF Scottish Cup,98,Scotland,,https://apiv2.allsportsapi.com/logo/logo_country/98_scotland.png
+10807,CONMEBOL U17 Femenino,intl,,,,10807,CONMEBOL U17 Femenino,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11488,Catarinense U20,Brazil,,,,11488,Catarinense U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11489,WAFF Championship U23,intl,,,,11489,WAFF Championship U23,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11490,Copa Rio U20,Brazil,,,,11490,Copa Rio U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11491,UEFA Women's Championship Qualification,intl,,,,11491,UEFA Women's Championship Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11492,Qatar-UAE Super Cup,intl,,,,11492,Qatar-UAE Super Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11493,Paulista U20,Brazil,,,,11493,Paulista U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11494,Capital Territory NPL 2,Australia,,,,11494,Capital Territory NPL 2,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+11495,Western Australia State League 1,Australia,,,,11495,Western Australia State League 1,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+11496,UAE-Qatar Super Shield,intl,,,,11496,UAE-Qatar Super Shield,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11497,NNSW League 1,Australia,,,,11497,NNSW League 1,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+11498,Tasmania Southern Championship,Australia,,,,11498,Tasmania Southern Championship,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+11499,Pernambucano U20,Brazil,,,,11499,Pernambucano U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11500,Tasmania Northern Championship,Australia,,,,11500,Tasmania Northern Championship,17,Australia,,https://apiv2.allsportsapi.com/logo/logo_country/17_australia.png
+11501,Ykkösliiga,Finland,,,,11501,Ykkösliiga,48,Finland,,https://apiv2.allsportsapi.com/logo/logo_country/48_finland.png
+11502,USL Cup,USA,,,,11502,USL Cup,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+11503,Matogrossense 2,Brazil,,,,11503,Matogrossense 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11504,Copa Espírito Santo,Brazil,,,,11504,Copa Espírito Santo,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11505,Brasiliense U20,Brazil,,,,11505,Brasiliense U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11506,AFC U17 Women's Asian Cup,intl,,,,11506,AFC U17 Women's Asian Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11507,Premiership Women,Northern Ireland,,,,11507,Premiership Women,86,Northern Ireland,,https://apiv2.allsportsapi.com/logo/logo_country/86_northern-ireland.png
+11508,Olympics Intercontinental Play-offs,intl,,,,11508,Olympics Intercontinental Play-offs,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11510,Carioca C,Brazil,,,,11510,Carioca C,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11511,Mineiro U20,Brazil,,,,11511,Mineiro U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11512,Sergipano U20,Brazil,,,,11512,Sergipano U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11514,Alagoano U20,Brazil,,,,11514,Alagoano U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11516,Cearense U20,Brazil,,,,11516,Cearense U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11517,WPSL,USA,,,,11517,WPSL,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+11518,NPSL,USA,,,,11518,NPSL,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+11519,NWSL x Liga MXF Summer Cup,USA,,,,11519,NWSL x Liga MXF Summer Cup,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+11520,USL W League,USA,,,,11520,USL W League,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+11521,Paraense B2,Brazil,,,,11521,Paraense B2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11522,Carioca U20,Brazil,,,,11522,Carioca U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11523,Paraibano U20,Brazil,,,,11523,Paraibano U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11524,Cearense 3,Brazil,,,,11524,Cearense 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11525,Pernambucano 2,Brazil,,,,11525,Pernambucano 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11526,Chatham Cup,New Zealand,,,,11526,Chatham Cup,83,New Zealand,,https://apiv2.allsportsapi.com/logo/logo_country/83_new-zealand.png
+11527,Esiliiga B,Estonia,,,,11527,Esiliiga B,45,Estonia,,https://apiv2.allsportsapi.com/logo/logo_country/45_estonia.png
+11528,Brasileiro U17,Brazil,,,,11528,Brasileiro U17,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11529,Recopa,Costa Rica,,,,11529,Recopa,35,Costa Rica,,https://apiv2.allsportsapi.com/logo/logo_country/35_costa-rica.png
+11530,USL Super League,USA,,,,11530,USL Super League,114,USA,,https://apiv2.allsportsapi.com/logo/logo_country/114_usa.png
+11531,Copa Venezuela,Venezuela,,,,11531,Copa Venezuela,117,Venezuela,,https://apiv2.allsportsapi.com/logo/logo_country/117_venezuela.png
+11532,OFC U19 Championship,intl,,,,11532,OFC U19 Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11534,UEFA U17 Championship Women,intl,,,,11534,UEFA U17 Championship Women,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11535,CONMEBOL U20 Femenino,intl,,,,11535,CONMEBOL U20 Femenino,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11697,ASEAN Club Championship,intl,,,,11697,ASEAN Club Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11699,AFC Challenge League,intl,,,,11699,AFC Challenge League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11700,Goiano 3,Brazil,,,,11700,Goiano 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11701,Amazonense 2,Brazil,,,,11701,Amazonense 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11703,Concacaf W Champions Cup,intl,,,,11703,Concacaf W Champions Cup,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11704,Sergipano 2,Brazil,,,,11704,Sergipano 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11705,Paranaense 3,Brazil,,,,11705,Paranaense 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11706,Potiguar U20,Brazil,,,,11706,Potiguar U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11707,Supercup der Frauen,Germany,,,,11707,Supercup der Frauen,4,Germany,,https://apiv2.allsportsapi.com/logo/logo_country/4_germany.png
+11708,AFC Women's Champions League,intl,,,,11708,AFC Women's Champions League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11709,Brasiliense B,Brazil,,,,11709,Brasiliense B,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11710,Mineiro 3,Brazil,,,,11710,Mineiro 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11711,Estadual Junior U20,Brazil,,,,11711,Estadual Junior U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11713,Alagoano 2,Brazil,,,,11713,Alagoano 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11714,Capixaba B,Brazil,,,,11714,Capixaba B,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11715,Paraense B1,Brazil,,,,11715,Paraense B1,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11716,Maranhense 2,Brazil,,,,11716,Maranhense 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11717,AFC U20 Asian Cup Qualification,intl,,,,11717,AFC U20 Asian Cup Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+11718,Pernambucano 3,Brazil,,,,11718,Pernambucano 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11719,Potiguar 2,Brazil,,,,11719,Potiguar 2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11720,Gaúcho 3,Brazil,,,,11720,Gaúcho 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+11721,U19 Divisie 1,Netherlands,,,,11721,U19 Divisie 1,82,Netherlands,,https://apiv2.allsportsapi.com/logo/logo_country/82_netherlands.png
+11722,Catarinense 3,Brazil,,,,11722,Catarinense 3,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12586,Super Copa International,Argentina,,,,12586,Super Copa International,14,Argentina,,https://apiv2.allsportsapi.com/logo/logo_country/14_argentina.png
+12587,Carioca B2,Brazil,,,,12587,Carioca B2,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12588,National League Cup,England,,,,12588,National League Cup,44,England,,https://apiv2.allsportsapi.com/logo/logo_country/44_england.png
+12589,Paraense U20,Brazil,,,,12589,Paraense U20,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12590,Copa Gaúcha,Brazil,,,,12590,Copa Gaúcha,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12591,CECAFA U20 Championship,intl,,,,12591,CECAFA U20 Championship,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12592,Sapling Cup,Hong Kong,,,,12592,Sapling Cup,55,Hong Kong,,https://apiv2.allsportsapi.com/logo/logo_country/55_hong-kong.png
+12593,AFC U17 Asian Cup Qualification,intl,,,,12593,AFC U17 Asian Cup Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12594,AGCFF Gulf Champions League,intl,,,,12594,AGCFF Gulf Champions League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12595,Copa Fares Lopes,Brazil,,,,12595,Copa Fares Lopes,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12596,CAF Women's Champions League,intl,,,,12596,CAF Women's Champions League,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12598,MFL Cup,Malaysia,,,,12598,MFL Cup,76,Malaysia,,https://apiv2.allsportsapi.com/logo/logo_country/76_malaysia.png
+12599,EAFF Football Championship Qualification,intl,,,,12599,EAFF Football Championship Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12600,Coppa Italia Women,Italy,,,,12600,Coppa Italia Women,5,Italy,,https://apiv2.allsportsapi.com/logo/logo_country/5_italy.png
+12601,Torneo Amistoso de Verano,Bolivia,,,,12601,Torneo Amistoso de Verano,25,Bolivia,,https://apiv2.allsportsapi.com/logo/logo_country/25_bolivia.png
+12602,Concacaf Women's U20 Qualification,intl,,,,12602,Concacaf Women's U20 Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png
+12603,Copa LDF,Dominican Republic,,,,12603,Copa LDF,124,Dominican Republic,,https://apiv2.allsportsapi.com/logo/logo_country/124_dominican-republic.png
+12605,Hun Sen Cup,Cambodia,,,,12605,Hun Sen Cup,137,Cambodia,,https://apiv2.allsportsapi.com/logo/logo_country/137_cambodia.png
+12606,Northern Super League,Canada,,,,12606,Northern Super League,30,Canada,,https://apiv2.allsportsapi.com/logo/logo_country/30_canada.png
+12607,Women's President's Cup,Ireland,,,,12607,Women's President's Cup,61,Ireland,,https://apiv2.allsportsapi.com/logo/logo_country/61_ireland.png
+12608,Copa do Brasil U17,Brazil,,,,12608,Copa do Brasil U17,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12610,Brasileiro U20 B,Brazil,,,,12610,Brasileiro U20 B,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12611,Copa Grão Pará,Brazil,,,,12611,Copa Grão Pará,27,Brazil,,https://apiv2.allsportsapi.com/logo/logo_country/27_brazil.png
+12614,FIFA Club World Cup,Worldcup,,,,12614,FIFA Club World Cup,8,Worldcup,,https://apiv2.allsportsapi.com/logo/logo_country/8_worldcup.png
+12618,African Nations Championship Qualification,intl,,,,12618,African Nations Championship Qualification,2,intl,,https://apiv2.allsportsapi.com/logo/logo_country/2_intl.png

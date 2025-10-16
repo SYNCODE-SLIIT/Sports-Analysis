@@ -103,6 +103,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 export default function LeaguesPage() {
   const { user, supabase, bumpPreferences, bumpInteractions } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
+  const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
   const [standings, setStandings] = useState<Array<{ position?: number; team?: string; played?: number; points?: number }>>([]);
@@ -179,6 +180,46 @@ export default function LeaguesPage() {
       active = false;
     };
   }, []);
+
+  // Read initial ?league=... param on first render so we can preselect a league when the
+  // page is opened via a link. We store it separately and reconcile once `allLeagues` loads.
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const l = params.get('league');
+      if (l) setInitialLeagueParam(decodeURIComponent(l));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  // When the leagues list arrives, try to resolve an initial param into a canonical league name.
+  useEffect(() => {
+    if (!initialLeagueParam) return;
+    if (!allLeagues || allLeagues.length === 0) return;
+    if (selectedLeague) return; // already selected by user
+
+    const param = initialLeagueParam.trim();
+    if (!param) return;
+
+    const paramL = param.toLowerCase();
+    // Try exact match by league_name or id, then substring match
+    let found = allLeagues.find(l => l.league_name.toLowerCase() === paramL || l.id.toLowerCase() === paramL);
+    if (!found) {
+      found = allLeagues.find(l => l.league_name.toLowerCase().includes(paramL) || l.id.toLowerCase().includes(paramL));
+    }
+
+    if (found) {
+      setSelectedLeague(found.league_name);
+      try { ensureLeagueItemAndSend(found.league_name, 'view'); } catch {}
+      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(found.league_name)}`); } catch {}
+    } else {
+      // No canonical match — still set the param value so panels will attempt to load by name
+      setSelectedLeague(param);
+      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(param)}`); } catch {}
+    }
+  }, [allLeagues, initialLeagueParam]);
 
   // Load user preferences for boosting
   useEffect(() => {
