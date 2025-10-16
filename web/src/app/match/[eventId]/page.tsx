@@ -283,16 +283,16 @@ export default function MatchPage() {
         : `/match/${encodeURIComponent(match.eventId)}?sid=share`;
       const title = `${match.homeTeam} vs ${match.awayTeam}`;
       const text = `Check out ${title} on Sports Analysis`;
-      if (typeof navigator !== 'undefined' && (navigator as any).share) {
+  if (typeof navigator !== 'undefined' && 'share' in navigator) {
         try {
-          await (navigator as any).share({ title, text, url });
+          await (navigator as Navigator & { share?: (data: { title: string; text: string; url: string }) => Promise<void> }).share?.({ title, text, url });
           toast.success('Shared');
           await ensureMatchItemAndSend('share');
           try { bumpInteractions(); } catch {}
           return;
-        } catch (err: any) {
+  } catch (err) {
           // user cancelled share - do not show error
-          if (err && err.name === 'AbortError') return;
+          if (typeof err === 'object' && err !== null && 'name' in err && (err as { name?: string }).name === 'AbortError') return;
         }
       }
       // Fallback to copy link
@@ -718,6 +718,35 @@ export default function MatchPage() {
         </Card>
       </div>
 
+      {/* Match Summary */}
+      <MatchSummaryCard
+        event={{
+          eventId: match.eventId,
+          homeTeam: match.homeTeam,
+          awayTeam: match.awayTeam,
+          homeScore: match.homeScore,
+          awayScore: match.awayScore,
+          status: match.status,
+          venue: match.venue,
+          date: match.date,
+        }}
+        rawEvent={eventRaw}
+      />
+
+      {/* Match Timeline */}
+      <Card>
+        <CardContent className="p-4">
+          <RichTimeline
+            items={timeline}
+            homeTeam={match.homeTeam}
+            awayTeam={match.awayTeam}
+            matchRaw={eventRaw}
+            players={playersExtra}
+            teams={teamsExtra}
+          />
+        </CardContent>
+      </Card>
+
       {/* Win Probabilities */}
       <div>
         <Card>
@@ -848,32 +877,11 @@ export default function MatchPage() {
           </TabsContent>
 
           <TabsContent value="events" className="space-y-4">
-            <Card>
-              <CardContent className="p-4">
-                {/* Rich horizontal timeline */}
-                <RichTimeline items={timeline} homeTeam={match.homeTeam} awayTeam={match.awayTeam}
-                  matchRaw={eventRaw} players={playersExtra} teams={teamsExtra} />
-              </CardContent>
-            </Card>
             <BestPlayerCard best={best} />
             <LeadersCard leaders={leaders} />
           </TabsContent>
 
           <TabsContent value="analysis" className="space-y-6">
-            <MatchSummaryCard
-              event={{
-                eventId: match.eventId,
-                homeTeam: match.homeTeam,
-                awayTeam: match.awayTeam,
-                homeScore: match.homeScore,
-                awayScore: match.awayScore,
-                status: match.status,
-                venue: match.venue,
-                date: match.date,
-              }}
-              rawEvent={eventRaw}
-            />
-
             <HighlightsCarousel highlights={highlights} isLoading={false} />
 
             <MatchExtrasTabs
