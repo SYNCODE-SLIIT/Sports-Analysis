@@ -14,7 +14,12 @@ router = APIRouter(prefix="/chatbot", tags=["chatbot"])
 @router.post("/web-search", response_model=ChatbotResponse)
 async def chatbot_web_search(payload: ChatbotRequest) -> ChatbotResponse:
     try:
-        result = await run_in_threadpool(ask_with_web_search, payload.question, top_k=payload.top_k)
+        result = await run_in_threadpool(
+            ask_with_web_search,
+            payload.question,
+            top_k=payload.top_k,
+            history=[msg.model_dump() for msg in payload.history],
+        )
     except ChatbotServiceError as exc:
         status_map = {
             "invalid_request": 400,
