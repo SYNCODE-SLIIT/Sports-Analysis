@@ -55,7 +55,7 @@ ALLSPORTS_BASE_URL=https://apiv2.allsportsapi.com/football/
 
 ### 2.4 Run the API Server
 ```bash
-python run_server.py --port 8000 --reload
+python run_server.py --port 8000
 ```
 Visit:
 - Health: http://127.0.0.1:8000/health
