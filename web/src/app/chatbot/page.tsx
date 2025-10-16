@@ -9,14 +9,16 @@ export const metadata: Metadata = {
 
 export default function ChatbotPage() {
   return (
-    <div className="container py-16 space-y-10">
-      <section className="space-y-4 text-center sm:text-left">
-        <h1 className="text-4xl font-bold tracking-tight">Sports Insight Assistant</h1>
-        <p className="text-lg text-muted-foreground">
+    <div className="container py-2 flex flex-col h-[calc(100vh-1rem)]">
+      <section className="space-y-1 text-center sm:text-left flex-shrink-0 mb-2">
+        <h1 className="text-2xl font-bold tracking-tight">Sports Insight Assistant</h1>
+        <p className="text-xs text-muted-foreground">
           Combine web search with Groq models to get fast, cited answers about ongoing sports stories.
         </p>
       </section>
-      <ChatbotPanel />
+      <div className="flex-1 min-h-0">
+        <ChatbotPanel />
+      </div>
     </div>
   );
 }
