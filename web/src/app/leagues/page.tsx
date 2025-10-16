@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import rawLeagueMetadata from "./league-metadata.json";
+import rawCategoryMetadata from "./category-metadata.json";
 
 type LeagueLite = {
   id: string;
@@ -28,6 +29,7 @@ type LeagueMetadata = {
   confederation?: string;
   type?: string;
   category?: string;
+  categories?: string[];
   fame_rank?: number;
   aliases?: string[];
   active?: boolean;
@@ -39,7 +41,7 @@ type DisplayLeague = LeagueLite & {
   displayName: string;
   displayCountry?: string;
   displayLabel: string;
-  metadata?: LeagueMetadata;
+  metadata?: ResolvedMetadata;
 };
 
 type FeaturedSection = {
@@ -52,86 +54,126 @@ type FeaturedSection = {
 type NavigatorWithShare = Navigator & { share?: (data: ShareData) => Promise<void> };
 
 const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
+type CategoryMetadata = { id: string; title?: string; description?: string };
+const CATEGORY_METADATA_LIST: CategoryMetadata[] = rawCategoryMetadata as CategoryMetadata[];
+const CATEGORY_PRIORITY = new Map<string, number>();
+const CATEGORY_LOOKUP = new Map<string, CategoryMetadata>();
+CATEGORY_METADATA_LIST.forEach((item, index) => {
+  CATEGORY_PRIORITY.set(item.id, index);
+  CATEGORY_LOOKUP.set(item.id, item);
+});
+const CATEGORY_PRIORITY_DEFAULT = Number.MAX_SAFE_INTEGER;
+const getCategoryPriority = (id: string) => CATEGORY_PRIORITY.get(id) ?? CATEGORY_PRIORITY_DEFAULT;
 
-const CATEGORY_DEFINITIONS: Array<{ id: string; title: string; description?: string }> = [
-  { id: "top_europe", title: "Top European Leagues", description: "Premier domestic competitions from England, Spain, Italy, Germany, and France." },
-  { id: "global_tournament", title: "Global Tournaments", description: "Flagship events where national teams compete on the world stage." },
-  { id: "european_competition", title: "European Cups & Competitions", description: "UEFA club tournaments with elite continental matchups." },
-  { id: "other_europe", title: "Other European Leagues", description: "High-quality European leagues beyond the traditional top five." },
-  { id: "south_america", title: "South American Leagues", description: "Historic leagues from CONMEBOL nations." },
-  { id: "north_america", title: "North American Leagues", description: "Competitive leagues across the USA, Canada, and Mexico." },
-  { id: "north_america_competition", title: "North American Competitions" },
-  { id: "asia", title: "Asian Leagues" },
-  { id: "asia_competition", title: "Asian Continental Competitions" },
-  { id: "africa_competition", title: "African Competitions" },
-];
+const normalizeValue = (value: string | undefined | null) => {
+  if (!value) return "";
+  return value.trim().toLowerCase().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ");
+};
 
-const normalizeKey = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]/g, "");
+type AggregatedMetadata = {
+  primary: LeagueMetadata;
+  categories: Set<string>;
+  fameRank: number;
+  aliasKeys: Set<string>;
+  countryKeys: Set<string>;
+};
 
-const buildMetadataLookup = (metadata: LeagueMetadata[]) => {
-  const map = new Map<string, LeagueMetadata>();
+type ResolvedMetadata = {
+  primary: LeagueMetadata;
+  categories: string[];
+  fameRank: number;
+};
 
-  const register = (item: LeagueMetadata, value: string | undefined | null) => {
-    if (!value) return;
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    const key = normalizeKey(trimmed);
-    if (key && !map.has(key)) {
-      map.set(key, item);
+const buildMetadataIndex = () => {
+  const aggregated = new Map<string, AggregatedMetadata>();
+
+  const ensureEntry = (item: LeagueMetadata) => {
+    const nameKey = normalizeValue(item.name);
+    if (!nameKey) return null;
+    const countryKey = normalizeValue(item.country);
+    const mapKey = `${countryKey}|${nameKey}`;
+    let entry = aggregated.get(mapKey);
+    if (!entry) {
+      entry = {
+        primary: item,
+        categories: new Set<string>(),
+        fameRank: item.fame_rank ?? Number.MAX_SAFE_INTEGER,
+        aliasKeys: new Set<string>(),
+        countryKeys: new Set<string>(),
+      };
+      aggregated.set(mapKey, entry);
+    } else {
+      const currentRank = entry.primary.fame_rank ?? Number.MAX_SAFE_INTEGER;
+      const nextRank = item.fame_rank ?? Number.MAX_SAFE_INTEGER;
+      const currentPopular = entry.primary.category === "popular";
+      const nextPopular = item.category === "popular";
+      if ((nextPopular && !currentPopular) || (!nextPopular && currentPopular ? false : nextRank < currentRank)) {
+        entry.primary = item;
+      }
+      entry.fameRank = Math.min(entry.fameRank, nextRank);
     }
+
+    const categoriesValue = Array.isArray(item.categories) && item.categories.length
+      ? item.categories
+      : item.category
+        ? [item.category]
+        : [];
+    categoriesValue.forEach(cat => { if (cat) entry?.categories.add(cat); });
+
+    const addAlias = (alias: string | undefined | null) => {
+      const aliasKey = normalizeValue(alias);
+      if (!aliasKey) return;
+      entry?.aliasKeys.add(aliasKey);
+    };
+    addAlias(item.name);
+    (item.aliases ?? []).forEach(addAlias);
+
+    const addCountryVariant = (country: string | undefined | null) => {
+      const variant = normalizeValue(country);
+      entry?.countryKeys.add(variant);
+      if (variant.includes("/")) {
+        variant.split("/").forEach(part => entry?.countryKeys.add(part));
+      }
+    };
+    addCountryVariant(item.country);
+    if (!item.country) {
+      entry?.countryKeys.add("");
+    }
+
+    return entry;
   };
 
-  metadata.forEach(item => {
-    if (!item) return;
-    const candidates = new Set<string>();
+  LEAGUE_METADATA.forEach(item => {
+    ensureEntry(item);
+  });
 
-    register(item, item.name);
-    if (item.slug) {
-      candidates.add(item.slug);
-      candidates.add(item.slug.replace(/_/g, " "));
-    }
-    (item.aliases ?? []).forEach(alias => {
-      candidates.add(alias);
-      candidates.add(alias.replace(/_/g, " "));
+  const aliasIndex = new Map<string, AggregatedMetadata>();
+  aggregated.forEach(entry => {
+    const countries = entry.countryKeys.size ? entry.countryKeys : new Set<string>([""]);
+    countries.forEach(countryKey => {
+      entry.aliasKeys.forEach(aliasKey => {
+        const key = `${countryKey}|${aliasKey}`;
+        const existing = aliasIndex.get(key);
+        if (!existing || entry.fameRank < existing.fameRank) {
+          aliasIndex.set(key, entry);
+        }
+      });
     });
-
-    candidates.forEach(candidate => {
-      register(item, candidate);
-      if (item.country) {
-        register(item, `${item.country} ${candidate}`);
-        register(item, `${candidate} ${item.country}`);
-      }
-    });
-
-    if (item.country && item.name) {
-      register(item, `${item.country} ${item.name}`);
-      register(item, `${item.name} ${item.country}`);
+    if (entry.countryKeys.has("")) {
+      entry.aliasKeys.forEach(aliasKey => {
+        const key = `|${aliasKey}`;
+        const existing = aliasIndex.get(key);
+        if (!existing || entry.fameRank < existing.fameRank) {
+          aliasIndex.set(key, entry);
+        }
+      });
     }
   });
 
-  return map;
+  return { aliasIndex };
 };
 
-const expandNameCandidates = (value: string): string[] => {
-  if (!value) return [];
-  const trimmed = value.trim();
-  if (!trimmed) return [];
-  const variants = new Set<string>([trimmed]);
-  const noParentheses = trimmed.replace(/\([^)]*\)/g, "").trim();
-  if (noParentheses) variants.add(noParentheses);
-  const colonParts = trimmed.split(":");
-  if (colonParts.length > 1) colonParts.forEach(part => variants.add(part.trim()));
-  const dashParts = trimmed.split(/[-–—]/);
-  if (dashParts.length > 1) dashParts.forEach(part => variants.add(part.trim()));
-  const withoutLeague = trimmed.replace(/\bleague\b/i, "").trim();
-  if (withoutLeague) variants.add(withoutLeague);
-  return Array.from(variants).filter(Boolean);
-};
+const useMetadataIndex = () => useMemo(buildMetadataIndex, []);
 
 const formatCategoryTitle = (id: string) =>
   id
@@ -139,10 +181,12 @@ const formatCategoryTitle = (id: string) =>
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 
+const getCategoryTitle = (id: string) => CATEGORY_LOOKUP.get(id)?.title ?? formatCategoryTitle(id);
+
 const sortLeaguesWithinCategory = (leagues: DisplayLeague[]) =>
   [...leagues].sort((a, b) => {
-    const rankA = a.metadata?.fame_rank ?? Number.MAX_SAFE_INTEGER;
-    const rankB = b.metadata?.fame_rank ?? Number.MAX_SAFE_INTEGER;
+    const rankA = a.metadata?.fameRank ?? Number.MAX_SAFE_INTEGER;
+    const rankB = b.metadata?.fameRank ?? Number.MAX_SAFE_INTEGER;
     if (rankA !== rankB) return rankA - rankB;
     return a.displayName.localeCompare(b.displayName);
   });
@@ -170,7 +214,7 @@ function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: Leag
   ]
     .filter(Boolean)
     .join(" ");
-  const subtitle = [league.metadata?.confederation, league.rawName !== league.displayName ? league.rawName : undefined]
+  const subtitle = [league.metadata?.primary.confederation, league.rawName !== league.displayName ? league.rawName : undefined]
     .filter(Boolean)
     .join(" • ");
 
@@ -399,36 +443,57 @@ export default function LeaguesPage() {
   const [favTeams, setFavTeams] = useState<string[]>([]);
   const [favLeagues, setFavLeagues] = useState<string[]>([]);
 
-  const metadataLookup = useMemo(() => buildMetadataLookup(LEAGUE_METADATA), []);
+  const metadataIndex = useMetadataIndex();
 
   const findMetadataForLeague = useCallback(
-    (league: LeagueLite): LeagueMetadata | undefined => {
+    (league: LeagueLite): ResolvedMetadata | undefined => {
       if (!league) return undefined;
-      const candidates = new Set<string>();
-      if (league.league_name) {
-        expandNameCandidates(league.league_name).forEach(candidate => candidates.add(candidate));
-      }
-      if (league.id) candidates.add(league.id);
-      if (league.league_name && league.country_name) {
-        candidates.add(`${league.country_name} ${league.league_name}`);
-        candidates.add(`${league.league_name} ${league.country_name}`);
-      }
-      for (const candidate of candidates) {
-        const key = normalizeKey(candidate);
-        if (key && metadataLookup.has(key)) {
-          return metadataLookup.get(key);
+      const nameKey = normalizeValue(league.league_name);
+      if (!nameKey) return undefined;
+      const countryKey = normalizeValue(league.country_name);
+
+      const keysToTry: string[] = [];
+      if (countryKey) {
+        keysToTry.push(`${countryKey}|${nameKey}`);
+        if (countryKey.includes("/")) {
+          countryKey.split("/").forEach(part => {
+            const variant = normalizeValue(part);
+            if (variant) keysToTry.push(`${variant}|${nameKey}`);
+          });
         }
+      } else {
+        keysToTry.push(`|${nameKey}`);
       }
-      return undefined;
+
+      let entry: AggregatedMetadata | undefined;
+      for (const key of keysToTry) {
+        entry = metadataIndex.aliasIndex.get(key);
+        if (entry) break;
+      }
+      if (!entry) return undefined;
+
+      const categories = Array.from(entry.categories)
+        .filter(Boolean)
+        .sort((a, b) => {
+          const order = getCategoryPriority(a) - getCategoryPriority(b);
+          if (order !== 0) return order;
+          return a.localeCompare(b);
+        });
+
+      return {
+        primary: entry.primary,
+        categories,
+        fameRank: entry.fameRank,
+      };
     },
-    [metadataLookup]
+    [metadataIndex]
   );
 
   const createDisplayLeague = useCallback(
     (league: LeagueLite): DisplayLeague => {
       const metadata = findMetadataForLeague(league);
       const displayName = league.league_name;
-      const displayCountry = league.country_name || metadata?.country;
+      const displayCountry = league.country_name || metadata?.primary.country;
       const displayLabel = displayCountry ? `${displayCountry} • ${displayName}` : displayName;
       return {
         ...league,
@@ -468,43 +533,56 @@ export default function LeaguesPage() {
   const displayLeagues = useMemo(() => visibleLeagues.map(createDisplayLeague), [visibleLeagues, createDisplayLeague]);
 
   const { featuredSections, remainingLeagues } = useMemo(() => {
-    const map = new Map<string, DisplayLeague[]>();
-    const remainder: DisplayLeague[] = [];
+    const categoryMap = new Map<string, DisplayLeague[]>();
+    const uncategorized: DisplayLeague[] = [];
 
     displayLeagues.forEach(league => {
-      const category = league.metadata?.category;
-      if (category) {
-        const existing = map.get(category) ?? [];
-        existing.push(league);
-        map.set(category, existing);
-      } else {
-        remainder.push(league);
+      const categories = league.metadata?.categories ?? [];
+      if (categories.length === 0) {
+        uncategorized.push(league);
+        return;
       }
-    });
-
-    const orderedSections: FeaturedSection[] = [];
-    CATEGORY_DEFINITIONS.forEach(def => {
-      const leagues = map.get(def.id);
-      if (leagues && leagues.length) {
-        orderedSections.push({
-          ...def,
-          leagues: sortLeaguesWithinCategory(leagues),
-        });
-        map.delete(def.id);
-      }
-    });
-
-    map.forEach((leagues, id) => {
-      orderedSections.push({
-        id,
-        title: formatCategoryTitle(id),
-        leagues: sortLeaguesWithinCategory(leagues),
+      categories.forEach(category => {
+        const bucket = categoryMap.get(category) ?? [];
+        bucket.push(league);
+        categoryMap.set(category, bucket);
       });
     });
 
+    const sections: FeaturedSection[] = [];
+
+    CATEGORY_METADATA_LIST.forEach(meta => {
+      const leagues = categoryMap.get(meta.id);
+      if (leagues && leagues.length) {
+        sections.push({
+          id: meta.id,
+          title: meta.title ?? formatCategoryTitle(meta.id),
+          description: meta.description,
+          leagues: sortLeaguesWithinCategory(leagues),
+        });
+        categoryMap.delete(meta.id);
+      }
+    });
+
+    Array.from(categoryMap.entries())
+      .sort((a, b) => {
+        const priorityDiff = getCategoryPriority(a[0]) - getCategoryPriority(b[0]);
+        if (priorityDiff !== 0) return priorityDiff;
+        return getCategoryTitle(a[0]).localeCompare(getCategoryTitle(b[0]));
+      })
+      .forEach(([id, leagues]) => {
+        const info = CATEGORY_LOOKUP.get(id);
+        sections.push({
+          id,
+          title: info?.title ?? formatCategoryTitle(id),
+          description: info?.description,
+          leagues: sortLeaguesWithinCategory(leagues),
+        });
+      });
+
     return {
-      featuredSections: orderedSections,
-      remainingLeagues: remainder,
+      featuredSections: sections,
+      remainingLeagues: uncategorized,
     };
   }, [displayLeagues]);
 
@@ -519,7 +597,7 @@ export default function LeaguesPage() {
   }, [allLeagues, selectedLeague, createDisplayLeague]);
 
   const selectedDisplayName = selectedDisplayLeague?.displayName ?? selectedLeague;
-  const selectedDisplayContext = [selectedDisplayLeague?.displayCountry, selectedDisplayLeague?.metadata?.confederation]
+  const selectedDisplayContext = [selectedDisplayLeague?.displayCountry, selectedDisplayLeague?.metadata?.primary.confederation]
     .filter(Boolean)
     .join(" • ");
   const selectedDisplayLabel = selectedDisplayLeague?.displayLabel ?? selectedDisplayName;
