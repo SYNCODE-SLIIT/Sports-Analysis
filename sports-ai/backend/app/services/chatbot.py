@@ -36,6 +36,7 @@ class ChatbotServiceError(Exception):
 # Temperatures read once; override via env if desired.
 PLANNER_TEMPERATURE = float(os.getenv("GROQ_PLANNER_TEMPERATURE", "0.1"))
 WRITER_TEMPERATURE = float(os.getenv("GROQ_WRITER_TEMPERATURE", "0.2"))
+MAX_HISTORY_MESSAGES = int(os.getenv("CHATBOT_HISTORY_LIMIT", "12"))
 
 
 def _get_tavily_api_key() -> str:
@@ -254,14 +255,62 @@ def _collect_unique_citations(groups: Iterable[Dict[str, Any]]) -> List[Dict[str
     return citations
 
 
-def _plan_search_queries(question: str, *, user_top_k: int) -> Dict[str, Any]:
+def _sanitize_history(raw_history: Optional[List[Dict[str, Any]]]) -> List[Dict[str, str]]:
+    """Normalize chat history entries to a bounded list with stable roles."""
+    if not raw_history:
+        return []
+
+    cleaned: List[Dict[str, str]] = []
+    for item in raw_history:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if role not in {"user", "assistant"}:
+            continue
+        if not content:
+            continue
+        cleaned.append({"role": role, "content": content})
+
+    if not cleaned:
+        return []
+
+    limit = max(1, MAX_HISTORY_MESSAGES)
+    if len(cleaned) > limit:
+        cleaned = cleaned[-limit:]
+    return cleaned
+
+
+def _format_history(history: List[Dict[str, str]]) -> str:
+    """Render history (oldest first) into a readable transcript for prompts."""
+    if not history:
+        return ""
+    lines: List[str] = []
+    for msg in history:
+        speaker = "User" if msg["role"] == "user" else "Assistant"
+        lines.append(f"{speaker}: {msg['content']}")
+    return "\n".join(lines)
+
+
+def _plan_search_queries(question: str, *, user_top_k: int, history_text: str) -> Dict[str, Any]:
     """Use the planner model to determine web search strategy."""
     system_msg = (
         "You are an expert research planner for a sports-focused assistant. "
+        "You focus on the sport soccer/football. "
         "Break complex sports questions into targeted web searches. "
         "All searches and reasoning must stay within sports topics."
     )
+
+    conversation_section = ""
+    if history_text:
+        conversation_section = (
+            "Conversation so far (oldest first, most recent last):\n"
+            f"{history_text}\n\n"
+            "Use the conversation to resolve references such as pronouns or 'that match'.\n\n"
+        )
+
     user_prompt = (
+        f"{conversation_section}"
         "Plan the research steps for the following user request.\n"
         "Return strict JSON with keys:\n"
         '  "queries": list of objects { "query": string, "max_results": int between 3 and 10 };\n'
@@ -279,7 +328,7 @@ def _plan_search_queries(question: str, *, user_top_k: int) -> Dict[str, Any]:
         '  "writer_instructions": "Compare performances across leagues, highlight standout players, cite each league separately.",\n'
         '  "notes": "Focus on results within the last 7 days."\n'
         '}\n'
-        "User question:\n"
+        "Latest user question:\n"
         f"{question}"
     )
     messages = [
@@ -344,6 +393,7 @@ def _ask_writer(
     plan: Dict[str, Any],
     context: str,
     citations: List[Dict[str, Any]],
+    history_text: str,
 ) -> str:
     """Call the writer model to craft the final response."""
     writer_instructions = plan.get("writer_instructions", "")
@@ -354,8 +404,17 @@ def _ask_writer(
         "If information is missing, say so. Do not make up fauls information"
     )
     citations_text = "\n".join(f"- {c.get('url')}" for c in citations if c.get("url"))
+    conversation_section = ""
+    if history_text:
+        conversation_section = (
+            "Conversation so far (oldest first, most recent last):\n"
+            f"{history_text}\n\n"
+            "Respond to the latest user question using this context.\n\n"
+        )
+
     user_content = (
-        f"User question:\n{question}\n\n"
+        f"{conversation_section}"
+        f"Latest user question:\n{question}\n\n"
         f"Planner guidance:\n{writer_instructions}\n\n"
         + (f"Additional planner notes: {notes}\n\n" if notes else "")
         + "Web search context:\n"
@@ -371,16 +430,30 @@ def _ask_writer(
     return _call_groq_chat(messages, model=_get_writer_model(), temperature=WRITER_TEMPERATURE)
 
 
-def ask_with_web_search(user_query: str, *, top_k: int = 5) -> Dict[str, Any]:
+def ask_with_web_search(
+    user_query: str,
+    *,
+    top_k: int = 5,
+    history: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Run planner → multi-search → writer pipeline and return the answer."""
     if not isinstance(top_k, int):
         raise ChatbotServiceError("top_k must be an integer.", code="invalid_request")
     top_k_clamped = max(1, min(top_k, 10))
 
-    plan = _plan_search_queries(user_query, user_top_k=top_k_clamped)
+    history_clean = _sanitize_history(history)
+    history_text = _format_history(history_clean)
+
+    plan = _plan_search_queries(user_query, user_top_k=top_k_clamped, history_text=history_text)
     groups, citations = _execute_search_plan(plan)
     context = _build_writer_context(groups)
-    answer = _ask_writer(user_query, plan=plan, context=context, citations=citations)
+    answer = _ask_writer(
+        user_query,
+        plan=plan,
+        context=context,
+        citations=citations,
+        history_text=history_text,
+    )
 
     limited_citations = citations[:top_k_clamped]
     return {
@@ -390,5 +463,7 @@ def ask_with_web_search(user_query: str, *, top_k: int = 5) -> Dict[str, Any]:
         "meta": {
             "unique_citations": len(citations),
             "groups": len(groups),
+            "history_messages_used": len(history_clean),
+            "history_truncated": bool(history) and len(history or []) > len(history_clean),
         },
     }
