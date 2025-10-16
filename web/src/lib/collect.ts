@@ -91,6 +91,18 @@ export async function getEventResults(eventId: string) {
   return postCollect<{ event?: DataObject; stats?: DataObject; score?: DataObject }>("event.results", { eventId: String(eventId) });
 }
 
+/**
+ * Single match details from AllSports (raw) with optional augmentation.
+ * This calls the AllSports-first router intent 'event.get' so we can leverage
+ * the RAW provider payload including optional synthesized timeline and tags.
+ */
+export async function getEventAllSports(eventId: string, opts?: { augmentTags?: boolean; includeBest?: boolean }) {
+  const a: Record<string, Json> = { eventId: String(eventId) };
+  if (opts?.augmentTags) a["augment_tags"] = true;
+  if (opts?.includeBest) a["include_best_player"] = true;
+  return postCollect<Record<string, Json> | { result?: DataObject[] }>("event.get", a);
+}
+
 /** Highlights for a match */
 export async function getHighlights(eventId: string) {
   return postCollect<{ videos?: DataObject[] }>("video.highlights", { eventId: String(eventId) });

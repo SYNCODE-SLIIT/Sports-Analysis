@@ -355,6 +355,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               findTeamLogo={findTeamLogo}
               homeTeam={homeTeam}
               awayTeam={awayTeam}
+              raw={matchRaw}
               onHover={(html, ev) => {
                 setTooltip({ x: ev.clientX + 8, y: ev.clientY - 10, html });
               }}
@@ -405,7 +406,7 @@ function tickX(minute: number, clusters: { minute: number; group: TLItem[] }[], 
   return xs[xs.length - 1] ?? cfg.leftPad;
 }
 
-function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeamLogo, homeTeam, awayTeam }: { x: number; minute: number; group: TLItem[]; onHover: (html: string, ev: MouseEvent | React.MouseEvent) => void; onLeave: () => void; findPlayerImage: (name?: string) => string; findTeamLogo: (side: 'home'|'away', name?: string) => string; homeTeam?: string; awayTeam?: string; }) {
+function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeamLogo, homeTeam, awayTeam, raw }: { x: number; minute: number; group: TLItem[]; onHover: (html: string, ev: MouseEvent | React.MouseEvent) => void; onLeave: () => void; findPlayerImage: (name?: string) => string; findTeamLogo: (side: 'home'|'away', name?: string) => string; homeTeam?: string; awayTeam?: string; raw?: unknown; }) {
   const home = group.filter((g) => g.team === "home");
   const away = group.filter((g) => g.team === "away");
   const stackGap = 18;
@@ -419,7 +420,32 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       const teamLogo = typeof findTeamLogo === 'function' ? findTeamLogo(g.team as any, g.team === 'home' ? homeTeam : awayTeam) : '';
       const imgBox = (src: string) => src ? `<div style="width:36px;height:36px;overflow:hidden;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);border:2px solid white;margin-right:8px"><img src="${src}" style="width:100%;height:100%;object-fit:cover;display:block" onerror="this.remove()"/></div>` : '';
       const left = imgBox(pImg || teamLogo);
-      return `<div style="display:flex;gap:8px;align-items:center">${left}<div style="display:flex;flex-direction:row;gap:8px;align-items:center"><span style=\"font-size:16px;\">${icon}</span><span>${who || '<i>Event</i>'}</span></div></div>`;
+      // Build tag chips from type + any predicted_tags present on raw timeline entries
+      const chips: string[] = [];
+      const typeToTag: Record<string, string> = { goal: 'GOAL', own_goal: 'OWN GOAL', pen_miss: 'PEN MISS', pen_score: 'PEN GOAL', yellow: 'YELLOW CARD', red: 'RED CARD', sub: 'SUBSTITUTION' };
+      if (typeToTag[g.type]) chips.push(typeToTag[g.type]);
+      try {
+        const rawTL = (raw as any)?.timeline || (raw as any)?.timeline_items || (raw as any)?.events || (raw as any)?.event_timeline;
+        if (Array.isArray(rawTL)) {
+          const mt = (g.minute ?? 0);
+          const cand = rawTL.find((it: any) => {
+            const m = (it?.minute ?? it?.time ?? it?.elapsed ?? '').toString();
+            const mm = Number(String(m).replace(/[^0-9]/g, '')) || 0;
+            return mm === (Number(mt) || 0);
+          });
+          const tags = Array.isArray(cand?.predicted_tags) ? cand.predicted_tags : [];
+          for (const t of tags) {
+            const up = String(t).toUpperCase();
+            if (!chips.includes(up)) chips.push(up);
+          }
+        }
+      } catch {}
+
+      const tagHtml = chips.length
+        ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${chips.map(t => `<span style=\"background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:2px 8px;font-size:10px;color:#374151\">${escapeHtml(t)}</span>`).join('')}</div>`
+        : '';
+
+      return `<div style="display:flex;gap:8px;align-items:center">${left}<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start"><div style=\"display:flex;flex-direction:row;gap:8px;align-items:center\"><span style=\"font-size:16px;\">${icon}</span><span>${who || '<i>Event</i>'}</span></div>${tagHtml}</div></div>`;
     }).join('');
     return `<div><div style="font-weight:700;margin-bottom:6px">${minute}'</div>${rows}</div>`;
   };

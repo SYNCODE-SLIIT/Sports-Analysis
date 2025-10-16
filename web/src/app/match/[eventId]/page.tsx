@@ -17,6 +17,7 @@ import { buildTimeline, computeLeaders, computeBestPlayer } from "@/lib/match-ma
 import type { TLItem } from "@/lib/match-mappers";
 import {
   getEventResults,
+  getEventAllSports,
   getHighlights,
   DataObject,
   searchEventHighlight,
@@ -342,30 +343,72 @@ export default function MatchPage() {
   useEffect(() => {
     let active = true;
     if (!eventId) return;
-    getEventResults(String(eventId)).then(env => {
-      if (!active) return;
-      const d = env.data as { event?: DataObject } | DataObject;
-      const core = (d && typeof d === 'object' && 'event' in d) ? (d as { event?: DataObject }).event : (d as DataObject);
-      if (!core) return;
-      const coreObj = core as DataObject;
-      const normalized: RenderEvent = {
-        eventId: getString(coreObj, ['eventId', 'id', 'event_id'], String(eventId))!,
-        homeTeam: getString(coreObj, ['homeTeam', 'home_team', 'home'], 'Home')!,
-        awayTeam: getString(coreObj, ['awayTeam', 'away_team', 'away'], 'Away')!,
-        homeScore: getNumber(coreObj, ['homeScore', 'home_score', 'score.home'], 0) || 0,
-        awayScore: getNumber(coreObj, ['awayScore', 'away_score', 'score.away'], 0) || 0,
-        status: getString(coreObj, ['status'], '') || '',
-        league: getString(coreObj, ['league', 'competition']) || undefined,
-        venue: getString(coreObj, ['venue', 'stadium']) || undefined,
-        date: getString(coreObj, ['date', 'datetime', 'kickoff'], new Date().toISOString())!,
-        attendance: getNumber(coreObj, ['attendance']) || undefined,
-        winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
-        stats: (coreObj['stats'] as MatchStats) || undefined,
-        events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
-      };
-      setEventRaw(coreObj);
-      setEvent(normalized);
-    }).catch(() => {});
+    // Prefer AllSports RAW event for richer timeline + tags
+    getEventAllSports(String(eventId), { augmentTags: true, includeBest: true })
+      .then(env => {
+        if (!active) return;
+        const d = env.data as Record<string, unknown> | undefined;
+        let coreObj: DataObject | null = null;
+        if (d && typeof d === 'object') {
+          const result = (d as Record<string, unknown>).result;
+          if (Array.isArray(result) && result.length && typeof result[0] === 'object') {
+            coreObj = result[0] as DataObject;
+          } else if ((d as Record<string, unknown>).event && typeof (d as Record<string, unknown>).event === 'object') {
+            coreObj = (d as Record<string, unknown>).event as DataObject;
+          } else {
+            // last resort: assume it's the event object if it has typical keys
+            const keys = Object.keys(d);
+            if (keys.some(k => /event_|home_|away_|league|timeline|fixtures|result/i.test(k))) {
+              coreObj = d as unknown as DataObject;
+            }
+          }
+        }
+        if (!coreObj) return;
+        const normalized: RenderEvent = {
+          eventId: getString(coreObj, ['eventId', 'id', 'event_id', 'event_key', 'match_id', 'fixture_id'], String(eventId))!,
+          homeTeam: getString(coreObj, ['homeTeam', 'home_team', 'event_home_team', 'strHomeTeam', 'home'], 'Home')!,
+          awayTeam: getString(coreObj, ['awayTeam', 'away_team', 'event_away_team', 'strAwayTeam', 'away'], 'Away')!,
+          homeScore: getNumber(coreObj, ['homeScore', 'home_score', 'score.home', 'event_final_result_home', 'home_result'], 0) || 0,
+          awayScore: getNumber(coreObj, ['awayScore', 'away_score', 'score.away', 'event_final_result_away', 'away_result'], 0) || 0,
+          status: getString(coreObj, ['status', 'event_status'], '') || '',
+          league: getString(coreObj, ['league', 'league_name', 'competition']) || undefined,
+          venue: getString(coreObj, ['venue', 'stadium']) || undefined,
+          date: getString(coreObj, ['date', 'datetime', 'kickoff', 'event_date'], new Date().toISOString())!,
+          attendance: getNumber(coreObj, ['attendance']) || undefined,
+          winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
+          stats: (coreObj['stats'] as MatchStats) || undefined,
+          events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
+        };
+        setEventRaw(coreObj);
+        setEvent(normalized);
+      })
+      .catch(() => {
+        // Fallback to TSDB event.results
+        getEventResults(String(eventId)).then(env => {
+          if (!active) return;
+          const d = env.data as { event?: DataObject } | DataObject;
+          const core = (d && typeof d === 'object' && 'event' in d) ? (d as { event?: DataObject }).event : (d as DataObject);
+          if (!core) return;
+          const coreObj = core as DataObject;
+          const normalized: RenderEvent = {
+            eventId: getString(coreObj, ['eventId', 'id', 'event_id'], String(eventId))!,
+            homeTeam: getString(coreObj, ['homeTeam', 'home_team', 'home'], 'Home')!,
+            awayTeam: getString(coreObj, ['awayTeam', 'away_team', 'away'], 'Away')!,
+            homeScore: getNumber(coreObj, ['homeScore', 'home_score', 'score.home'], 0) || 0,
+            awayScore: getNumber(coreObj, ['awayScore', 'away_score', 'score.away'], 0) || 0,
+            status: getString(coreObj, ['status'], '') || '',
+            league: getString(coreObj, ['league', 'competition']) || undefined,
+            venue: getString(coreObj, ['venue', 'stadium']) || undefined,
+            date: getString(coreObj, ['date', 'datetime', 'kickoff'], new Date().toISOString())!,
+            attendance: getNumber(coreObj, ['attendance']) || undefined,
+            winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
+            stats: (coreObj['stats'] as MatchStats) || undefined,
+            events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
+          };
+          setEventRaw(coreObj);
+          setEvent(normalized);
+        }).catch(() => {});
+      });
     getHighlights(String(eventId)).then(env => {
       if (!active) return;
       const d = env.data as { videos?: Array<DataObject> } | undefined;
