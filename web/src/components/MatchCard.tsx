@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { pickEventId } from "@/lib/collect";
 import { useAuth } from "@/components/AuthProvider";
 import { Calendar, Clock } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,10 +80,36 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
 
           {/* Teams */}
           <div className="space-y-3">
-            <div className="text-center space-y-2">
-              <div className="font-semibold">{fixture.home_team}</div>
+            <div className="flex items-center justify-center space-x-4">
+              <div className="flex items-center space-x-3">
+                <Avatar className="size-8">
+                  {fixture.home_team_logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <AvatarImage src={fixture.home_team_logo} alt={fixture.home_team} />
+                  ) : (
+                    <AvatarFallback>{fixture.home_team.slice(0,2).toUpperCase()}</AvatarFallback>
+                  )}
+                </Avatar>
+                <div className="text-left">
+                  <div className="font-semibold">{fixture.home_team}</div>
+                </div>
+              </div>
+
               <div className="text-sm text-muted-foreground">vs</div>
-              <div className="font-semibold">{fixture.away_team}</div>
+
+              <div className="flex items-center space-x-3">
+                <div className="text-right">
+                  <div className="font-semibold">{fixture.away_team}</div>
+                </div>
+                <Avatar className="size-8">
+                  {fixture.away_team_logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <AvatarImage src={fixture.away_team_logo} alt={fixture.away_team} />
+                  ) : (
+                    <AvatarFallback>{fixture.away_team.slice(0,2).toUpperCase()}</AvatarFallback>
+                  )}
+                </Avatar>
+              </div>
             </div>
           </div>
 
@@ -152,7 +179,7 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
                 }
               }}
             >
-              View Analysis
+              View Details
             </Button>
           </div>
         </CardContent>

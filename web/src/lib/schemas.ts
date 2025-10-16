@@ -48,7 +48,9 @@ export const zHighlight = z.object({
 export const zFixture = z.object({
   id: z.string(),
   home_team: z.string(),
+  home_team_logo: z.string().optional(),
   away_team: z.string(),
+  away_team_logo: z.string().optional(),
   date: z.string(),
   time: z.string().optional(),
   league: z.string().optional(),
@@ -103,10 +105,39 @@ export function parseFixtures(data: unknown): Fixture[] {
     const league = pick(item, ['league', 'league_name', 'strLeague']);
     const status = pick(item, ['status', 'event_status']);
     const venue = pick(item, ['venue', 'stadium', 'event_venue', 'strVenue', 'location']);
+    // image/logo candidates (some providers embed team objects)
+    const imgKeys = ['home_team_logo','team_home_badge','strHomeTeamBadge','homeBadge','home_logo','homeBadge','home_team_badge','team_logo','logo','team_logo','logo_url','team_logo_url','team_image','image','strTeamBadge'];
+    const pickImage = (obj: unknown, keys: string[]) => {
+      const rec = (obj as Record<string, unknown>) || {};
+      for (const k of keys) {
+        const v = rec[k];
+        if (typeof v === 'string' && v.trim() !== '') return v;
+      }
+      // nested shapes: home_team: { name, logo }
+      for (const cand of ['home_team', 'away_team']) {
+        const nested = rec[cand];
+        if (nested && typeof nested === 'object') {
+          for (const k of keys) {
+            const v = (nested as Record<string, unknown>)[k];
+            if (typeof v === 'string' && v.trim() !== '') return v;
+          }
+          // common nested key
+          const common = (nested as Record<string, unknown>)['logo'] || (nested as Record<string, unknown>)['badge'] || (nested as Record<string, unknown>)['image'];
+          if (typeof common === 'string' && common.trim() !== '') return common;
+        }
+      }
+      return undefined;
+    };
+    const homeLogo = pickImage(item, imgKeys) ?? undefined;
+    // for away logo try keys adapted for away
+    const imgKeysAway = imgKeys.map(k => k.replace(/^home_/, 'away_'));
+    const awayLogo = pickImage(item, imgKeysAway) ?? pickImage(item, imgKeys) ?? undefined;
     return {
       id: id ?? '',
       home_team: home ?? '',
+      home_team_logo: homeLogo,
       away_team: away ?? '',
+      away_team_logo: awayLogo,
       date: date ?? new Date().toISOString().split('T')[0],
       time,
       league,

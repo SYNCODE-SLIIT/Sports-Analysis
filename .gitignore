@@ -30,3 +30,4 @@ node_modules/
 **/node_modules/
 .next/
 .env
+requirements-clean.txt
