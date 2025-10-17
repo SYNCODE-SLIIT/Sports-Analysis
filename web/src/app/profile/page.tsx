@@ -3,13 +3,12 @@
 import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import type { LucideIcon } from "lucide-react";
 import {
-  Activity,
   Bookmark,
   Camera,
   Clock,
   Heart,
+  LineChart,
   Loader2,
   RefreshCcw,
   Settings,
@@ -240,11 +239,9 @@ type RecentView = {
   teams: string[];
 };
 
-type Suggestion = {
-  key: string;
-  title: string;
-  description: string;
-  icon: LucideIcon;
+type InteractionEvent = {
+  event: string;
+  created_at: string;
 };
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
@@ -277,6 +274,7 @@ export default function ProfilePage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [recentViews, setRecentViews] = useState<RecentView[]>([]);
   const [recentViewsLoading, setRecentViewsLoading] = useState(false);
+  const [interactionLog, setInteractionLog] = useState<InteractionEvent[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -341,24 +339,32 @@ export default function ProfilePage() {
         try {
           const { data: interactions } = await supabase
             .from("user_interactions")
-            .select("item_id, event")
+            .select("item_id, event, created_at")
             .eq("user_id", user.id);
           if (!mounted) return;
           const liked: Record<string, boolean> = {};
           const saved: Record<string, boolean> = {};
+          const timeline: InteractionEvent[] = [];
           (interactions ?? []).forEach((entry: any) => {
             if (!entry) return;
             const id = String(entry.item_id ?? "");
             if (!id) return;
             if (entry.event === "like") liked[id] = true;
             if (entry.event === "save") saved[id] = true;
+            if (typeof entry.created_at === "string" && typeof entry.event === "string") {
+              timeline.push({ event: entry.event, created_at: entry.created_at });
+            }
           });
           setLocalLiked(liked);
           setLocalSaved(saved);
+          setInteractionLog(
+            timeline.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+          );
         } catch {
           if (!mounted) return;
           setLocalLiked({});
           setLocalSaved({});
+          setInteractionLog([]);
         }
       } catch (error) {
         if (!mounted) return;
@@ -783,8 +789,150 @@ export default function ProfilePage() {
 
   const likedCount = useMemo(() => Object.values(localLiked).filter(Boolean).length, [localLiked]);
   const savedPickCount = useMemo(() => Object.values(localSaved).filter(Boolean).length, [localSaved]);
-  const savedMatchesTotal = savedMatchesCount ?? 0;
-  const recentViewCount = useMemo(() => recentViews.length, [recentViews]);
+
+  const engagementWindow = useMemo(() => {
+    const clampKey = (date: Date) => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    };
+
+    const normalizeDate = (value: string) => {
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) return null;
+      parsed.setHours(0, 0, 0, 0);
+      return parsed;
+    };
+
+    const windowSize = 7;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const points = Array.from({ length: windowSize }, (_, index) => {
+      const day = new Date(today);
+      day.setDate(today.getDate() - (windowSize - 1 - index));
+      return {
+        key: clampKey(day),
+        date: day,
+        label: day.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        likes: 0,
+        saves: 0,
+        views: 0,
+        total: 0,
+      };
+    });
+
+    const pointMap = new Map(points.map((point) => [point.key, point]));
+
+    interactionLog.forEach(({ event, created_at }) => {
+      const normalized = normalizeDate(created_at);
+      if (!normalized) return;
+      const point = pointMap.get(clampKey(normalized));
+      if (!point) return;
+      if (event === "like") point.likes += 1;
+      if (event === "save") point.saves += 1;
+      if (event !== "like" && event !== "save") point.total += 1;
+    });
+
+    recentViews.forEach(({ viewedAt }) => {
+      const normalized = normalizeDate(viewedAt);
+      if (!normalized) return;
+      const point = pointMap.get(clampKey(normalized));
+      if (!point) return;
+      point.views += 1;
+    });
+
+    let maxVolume = 0;
+    let likesSum = 0;
+    let savesSum = 0;
+    let viewsSum = 0;
+    points.forEach((point) => {
+      likesSum += point.likes;
+      savesSum += point.saves;
+      viewsSum += point.views;
+      point.total += point.likes + point.saves + point.views;
+      if (point.total > maxVolume) maxVolume = point.total;
+    });
+
+    return {
+      points,
+      maxVolume,
+      hasData: maxVolume > 0,
+      totals: {
+        likes: likesSum,
+        saves: savesSum,
+        views: viewsSum,
+      },
+    };
+  }, [interactionLog, recentViews]);
+
+  const sparkline = useMemo(() => {
+    const { points, maxVolume } = engagementWindow;
+    if (!points.length) {
+      return { areaPath: "", linePoints: "", coordinates: [] as { x: number; y: number; value: number }[] };
+    }
+
+    const effectiveMax = maxVolume || 1;
+    const baseCoords = points.map((point, index) => {
+      const ratio = points.length === 1 ? 0.5 : index / (points.length - 1);
+      const x = Number((ratio * 100).toFixed(2));
+      const y = Number((100 - (point.total / effectiveMax) * 100).toFixed(2));
+      return { x, y, value: point.total };
+    });
+
+    const coordinates = baseCoords.length === 1
+      ? [
+          { x: 0, y: baseCoords[0].y, value: baseCoords[0].value },
+          { x: 100, y: baseCoords[0].y, value: baseCoords[0].value },
+        ]
+      : baseCoords;
+
+    let areaPath = "M 0 100 ";
+    coordinates.forEach((coord) => {
+      areaPath += `L ${coord.x} ${coord.y} `;
+    });
+    areaPath += "L 100 100 Z";
+
+    const linePoints = coordinates.map((coord) => `${coord.x},${coord.y}`).join(" ");
+
+    return { areaPath: areaPath.trim(), linePoints, coordinates };
+  }, [engagementWindow]);
+
+  const likeEvents = engagementWindow.totals.likes;
+  const saveEvents = engagementWindow.totals.saves;
+  const viewWindowCount = engagementWindow.totals.views;
+  const totalTouchpoints = likeEvents + saveEvents + viewWindowCount;
+
+  const activeDays = useMemo(
+    () => engagementWindow.points.filter((point) => point.total > 0).length,
+    [engagementWindow],
+  );
+
+  const lastActivityIso = useMemo(() => {
+    let latest = 0;
+    let iso = "";
+
+    interactionLog.forEach(({ created_at }) => {
+      const timestamp = Date.parse(created_at);
+      if (Number.isNaN(timestamp)) return;
+      if (timestamp > latest) {
+        latest = timestamp;
+        iso = created_at;
+      }
+    });
+
+    recentViews.forEach(({ viewedAt }) => {
+      const timestamp = Date.parse(viewedAt);
+      if (Number.isNaN(timestamp)) return;
+      if (timestamp > latest) {
+        latest = timestamp;
+        iso = viewedAt;
+      }
+    });
+
+    return iso;
+  }, [interactionLog, recentViews]);
 
   const formatRelativeTime = useCallback((iso: string) => {
     const date = new Date(iso);
@@ -807,57 +955,11 @@ export default function ProfilePage() {
     return date.toLocaleDateString();
   }, []);
 
-  const engagementSuggestions = useMemo<Suggestion[]>(() => {
-    const suggestions: Suggestion[] = [];
-    if (!preferences.favorite_teams.length) {
-      suggestions.push({
-        key: "teams",
-        title: "Add your favourite teams",
-        description: "Pick a few clubs so we can surface fixtures and stats you care about.",
-        icon: Heart,
-      });
-    }
-    if (!preferences.favorite_leagues.length) {
-      suggestions.push({
-        key: "leagues",
-        title: "Follow a couple of leagues",
-        description: "League follow lists unlock standings, news, and tailored recaps.",
-        icon: Trophy,
-      });
-    }
-    if (!savedMatchesTotal) {
-      suggestions.push({
-        key: "saves",
-        title: "Save matches to rewatch later",
-        description: "Use the bookmark action on any match card to build your watchlist.",
-        icon: Bookmark,
-      });
-    } else {
-      suggestions.push({
-        key: "refresh",
-        title: "Refresh your picks",
-        description: "Regenerate recommendations whenever you want fresh match ideas.",
-        icon: RefreshCcw,
-      });
-    }
-    if (!recentViewCount) {
-      suggestions.push({
-        key: "views",
-        title: "Open a match analysis",
-        description: "Jump into any match detail page to start building a watch history.",
-        icon: Clock,
-      });
-    }
-    if (!suggestions.length) {
-      suggestions.push({
-        key: "share",
-        title: "Share a highlight",
-        description: "Send a favourite pick to friends straight from the recommendations.",
-        icon: Share2,
-      });
-    }
-    return suggestions.slice(0, 3);
-  }, [preferences.favorite_leagues.length, preferences.favorite_teams.length, recentViewCount, savedMatchesTotal]);
+  const lastActiveDisplay = useMemo(() => {
+    if (!lastActivityIso) return "No activity yet";
+    const label = formatRelativeTime(lastActivityIso);
+    return label || "Just now";
+  }, [formatRelativeTime, lastActivityIso]);
 
   if (loading) {
     return <div className="container py-16 min-h-[60vh] flex items-center justify-center">Loading…</div>;
@@ -1087,7 +1189,7 @@ export default function ProfilePage() {
           <Card className="neon-card h-full">
             <CardHeader>
               <div className="flex items-center gap-2">
-                <ThumbsUp className="h-5 w-5 text-primary" />
+                <LineChart className="h-5 w-5 text-primary" />
                 <CardTitle className="text-foreground">Engagement snapshot</CardTitle>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -1096,54 +1198,95 @@ export default function ProfilePage() {
               </p>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-border/40 bg-background/60 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Activity · last 7 days</p>
+                    <p className="text-sm font-medium text-foreground">{lastActiveDisplay}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-[var(--primary,#ef4444)]" aria-hidden /> Likes {likeEvents}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-muted-foreground/60" aria-hidden /> Saves {saveEvents}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-foreground/70" aria-hidden /> Views {viewWindowCount}
+                    </span>
+                  </div>
+                </div>
+                {engagementWindow.hasData ? (
+                  <>
+                    <div className="mt-4 h-32">
+                      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+                        <defs>
+                          <linearGradient id="engagementFill" x1="0" x2="0" y1="0" y2="1">
+                            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.6" />
+                            <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0.05" />
+                          </linearGradient>
+                        </defs>
+                        <path d={sparkline.areaPath} fill="url(#engagementFill)" opacity="0.55" />
+                        <polyline
+                          points={sparkline.linePoints}
+                          fill="none"
+                          stroke="var(--primary)"
+                          strokeWidth="1.8"
+                          strokeLinejoin="round"
+                          strokeLinecap="round"
+                        />
+                        {sparkline.coordinates.map((coord, index) => (
+                          <circle
+                            key={`spark-${coord.x}-${index}`}
+                            cx={coord.x}
+                            cy={coord.y}
+                            r={1.6}
+                            fill="var(--primary)"
+                            stroke="var(--background)"
+                            strokeWidth="0.6"
+                          />
+                        ))}
+                      </svg>
+                    </div>
+                    <div className="mt-4 flex justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {engagementWindow.points.map((point, index) => {
+                        const isEdge = index === 0 || index === engagementWindow.points.length - 1;
+                        const middle = Math.floor(engagementWindow.points.length / 2);
+                        if (!isEdge && index !== middle) return <span key={point.key} />;
+                        return (
+                          <span key={point.key} className="min-w-[3ch] text-center">
+                            {point.label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">No engagement yet — start exploring matches to build your activity.</p>
+                )}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-3">
+                  <p className="text-2xl font-semibold text-foreground">{totalTouchpoints}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Total touchpoints</p>
+                </div>
                 <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-3">
                   <p className="text-2xl font-semibold text-foreground">{likedCount}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Picks liked</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Items liked</p>
                 </div>
                 <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-3">
                   <p className="text-2xl font-semibold text-foreground">{savedPickCount}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Picks saved</p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-3">
-                  <p className="text-2xl font-semibold text-foreground">{savedMatchesTotal}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Matches bookmarked</p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-background/60 px-3 py-3">
-                  <p className="text-2xl font-semibold text-foreground">{recentViewCount || "—"}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Recent views</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Items saved</p>
                 </div>
               </div>
-              <div className="space-y-3">
-                {engagementSuggestions.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.key} className="flex items-start gap-3 rounded-lg border border-border/50 bg-background/60 px-3 py-3">
-                      <Icon className="mt-[2px] h-4 w-4 text-primary" />
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
-                        <p className="text-xs text-muted-foreground">{item.description}</p>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="flex flex-col gap-2 text-xs uppercase tracking-wide text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  Active days this week: <span className="font-semibold text-foreground">{activeDays}</span>
+                </span>
+                <span>
+                  Last active: <span className="font-semibold text-foreground">{lastActiveDisplay}</span>
+                </span>
               </div>
-              {recentViews.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Latest activity</p>
-                  <ul className="space-y-2">
-                    {recentViews.slice(0, 3).map((view) => (
-                      <li key={`${view.itemId}-activity`} className="flex items-center gap-3 rounded-lg border border-border/40 bg-background/60 px-3 py-2 text-sm text-foreground">
-                        <Activity className="h-4 w-4 text-primary" />
-                        <div className="flex-1">
-                          <p className="font-medium leading-tight">{view.title}</p>
-                          <p className="text-xs text-muted-foreground">{formatRelativeTime(view.viewedAt)}</p>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </CardContent>
           </Card>
         </motion.div>

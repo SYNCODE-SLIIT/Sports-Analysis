@@ -2,10 +2,12 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from 'react-dom';
+import { useTheme } from "next-themes";
 import { getEventBrief, postCollect, getComments } from "@/lib/collect";
 import { summarizeEventBriefs } from "@/lib/summarizer";
 import { resolvePlayerImageByName, resolvePlayerImageFromObj, getTeamRoster } from "@/lib/roster";
 import type { TLItem } from "@/lib/match-mappers";
+import { cn } from "@/lib/utils";
 
 type Props = {
   items: TLItem[];
@@ -147,6 +149,31 @@ function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>) {
 }
 
 export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, players, teams }: Props) {
+  const { resolvedTheme } = useTheme();
+  const prefersDark = useMemo(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    try {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch (_err) {
+      return false;
+    }
+  }, []);
+  const isDark = resolvedTheme ? resolvedTheme === "dark" : prefersDark;
+
+  const surfaceStyles = useMemo(() => {
+    if (isDark) {
+      return {
+        background: "linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9))",
+        boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 32px rgba(15, 23, 42, 0.45)",
+      } as const;
+    }
+    return {
+      // Pure white surface for light mode so it blends with the app background
+      background: "white",
+      boxShadow: "0 8px 20px rgba(15,23,42,0.04)",
+    } as const;
+  }, [isDark]);
+
   // Ensure we always have at least HT/FT anchors so the track is meaningful
   const baseItems = useMemo<TLItem[]>(() => {
     const arr = Array.isArray(items) ? items.filter(Boolean) : [];
@@ -431,17 +458,28 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
 
   return (
     <div className="space-y-6">
-      <div className="text-lg font-bold text-white flex items-center gap-3">
-        <div className="w-1 h-6 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full shadow-lg shadow-blue-500/50"></div>
+      <div className={cn("text-lg font-bold flex items-center gap-3 transition-colors duration-300", isDark ? "text-white" : "text-slate-900")}
+      >
+        <div
+          className={cn(
+            "w-1 h-6 rounded-full shadow-lg transition-colors duration-300",
+            isDark
+              ? "bg-gradient-to-b from-blue-500 to-purple-600 shadow-blue-500/50"
+              : "bg-gradient-to-b from-blue-500/80 to-purple-500/70 shadow-blue-400/40"
+          )}
+        ></div>
         Match Timeline
       </div>
       <div 
         ref={scrollerRef} 
-        className="relative w-full overflow-x-auto overflow-y-hidden px-4 py-6 rounded-2xl border border-gray-700/50 backdrop-blur-sm" 
+        className={cn(
+          "relative w-full overflow-x-auto overflow-y-hidden px-4 py-6 rounded-2xl backdrop-blur-sm transition-all duration-300",
+          isDark ? "border border-slate-700/60" : "border border-slate-200/80 shadow-lg"
+        )}
         style={{ 
           scrollBehavior: "smooth",
-          background: "linear-gradient(135deg, rgba(15, 23, 42, 0.8), rgba(30, 41, 59, 0.8))",
-          boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 30px rgba(0, 0, 0, 0.3)"
+          background: surfaceStyles.background,
+          boxShadow: surfaceStyles.boxShadow
         }}
       >
         <div 
@@ -493,10 +531,10 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               {/* away logo removed per user request */}
           {/* Sparse ticks for 0,45,90(+ET) rendered on baseline */}
           {[0, 45, 90].map((t) => (
-            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}'`} />
+            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}'`} isDark={isDark} />
           ))}
           {maxMinute > 90 && (
-            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}'`} />
+            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}'`} isDark={isDark} />
           )}
 
           {/* Markers per cluster */}
@@ -504,7 +542,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
             const cx = positions.xs[i];
             const showLabel = true;
             return (
-            <Cluster
+        <Cluster
               key={`c-${c.minute}-${i}`}
               x={cx}
               minute={c.minute}
@@ -519,6 +557,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               playerImgCacheRef={playerImgCacheRef}
               sessionPrefix={sessionPrefix}
               showLabel={showLabel}
+          isDark={isDark}
               onHover={(html, ev) => {
                 // Prefer to position tooltip relative to the hovered element's bounding rect
                 const anyEv = ev as any;
@@ -563,8 +602,21 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               if (isTickMinute) return null;
               // Place label so its bottom aligns just above the baseline (avoid overlapping the line)
               return (
-                <div key={`lbl-${i}`} className="absolute text-[12px] font-semibold text-white select-none" style={{ left: cx, top: '50%', zIndex: 60, transform: 'translateX(-50%) translateY(230%)' }}>
-                  <div className="px-2 py-0.5 rounded-md bg-gray-800/60 border border-gray-700/50" style={{ backdropFilter: 'blur(6px)' }}>
+                <div
+                  key={`lbl-${i}`}
+                  className={cn(
+                    "absolute text-[12px] font-semibold select-none transition-colors duration-200",
+                    isDark ? "text-white" : "text-slate-700"
+                  )}
+                  style={{ left: cx, top: '50%', zIndex: 60, transform: 'translateX(-50%) translateY(230%)' }}
+                >
+                  <div
+                    className={cn(
+                      "px-2 py-0.5 rounded-md border transition-colors duration-200",
+                      isDark ? "bg-slate-900/60 border-slate-700/50" : "bg-white border-slate-200 shadow-sm"
+                    )}
+                    style={{ backdropFilter: 'blur(6px)' }}
+                  >
                     {formatMinuteLabel(c.minute)}'
                   </div>
                 </div>
@@ -589,27 +641,40 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               return (
                 <div className="pointer-events-none fixed z-[9999]" style={{ left: px, top, width: preferredWidth, maxWidth: Math.min(preferredWidth, vw - 40), transform: 'translateX(-50%)' }}>
                   <div style={{ position: 'relative', transform: `translateY(${translateY})` }}>
-                    <div
-                      className="relative rounded-2xl border backdrop-blur-md shadow-2xl p-4 text-sm leading-6"
-                      style={{
-                        background: "linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95))",
-                        borderColor: "rgba(148, 163, 184, 0.3)",
-                        boxShadow: `0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(148,163,184,0.1), 0 0 20px rgba(59,130,246,0.12)`,
-                        color: "white",
-                        width: '100%'
-                      }}
-                      dangerouslySetInnerHTML={{ __html: tooltip.html }}
-                    />
+                      <div
+                        className={cn(
+                          "relative rounded-2xl border backdrop-blur-md shadow-2xl p-4 text-sm leading-6 rt-tooltip",
+                          isDark ? "rt-tooltip-dark neon-card" : "rt-tooltip-light"
+                        )}
+                        style={(() => {
+                          if (isDark) return {
+                            background: "linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95))",
+                            borderColor: "rgba(148, 163, 184, 0.3)",
+                            boxShadow: `0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(148,163,184,0.1), 0 0 20px rgba(59,130,246,0.12)`,
+                            color: "white",
+                            width: '100%'
+                          };
+                          return {
+                            // visual fallback in case CSS is not loaded; primary styling lives in globals.css
+                            background: 'white',
+                            borderColor: 'rgba(226,232,240,0.9)',
+                            boxShadow: `0 14px 30px rgba(15,23,42,0.06)`,
+                            color: '#0f172a',
+                            width: '100%'
+                          };
+                        })()}
+                        dangerouslySetInnerHTML={{ __html: tooltip.html }}
+                      />
                     {/* Arrow */}
                     <div style={{ position: 'absolute', left: '50%', top: arrowTop, transform: arrowTransform, width: 16, height: 8, overflow: 'visible' }}>
                       <svg width="16" height="8" viewBox="0 0 16 8" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M8 0L16 8H0L8 0Z" fill="rgba(15,23,42,0.95)" />
+                        <path d="M8 0L16 8H0L8 0Z" fill={isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.98)"} />
                       </svg>
                     </div>
                     <div
                       className="absolute inset-0 rounded-2xl opacity-60"
                       style={{
-                        background: "linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(147, 51, 234, 0.04))",
+                        background: isDark ? "linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(147, 51, 234, 0.04))" : "linear-gradient(180deg, rgba(255,255,255,0.6), rgba(240,243,246,0.6))",
                         filter: "blur(8px)",
                         zIndex: -1
                       }}
@@ -624,28 +689,44 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
       </div>
       {/* Enhanced Legend with professional icons */}
       <div className="flex flex-wrap gap-6 text-sm">
-        <LegendItem color="#00ff88" label="Goal" type="goal" />
-        <LegendItem color="#ffdd00" label="Yellow Card" type="yellow" />
-        <LegendItem color="#ff0044" label="Red Card" type="red" />
-        <LegendItem color="#8844ff" label="Substitution" type="sub" />
-        <LegendItem color="#ff0066" label="Penalty Miss" type="pen_miss" />
-        <LegendItem color="#00d4ff" label="Own Goal" type="own_goal" />
+        <LegendItem color="#00ff88" label="Goal" type="goal" isDark={isDark} />
+        <LegendItem color="#ffdd00" label="Yellow Card" type="yellow" isDark={isDark} />
+        <LegendItem color="#ff0044" label="Red Card" type="red" isDark={isDark} />
+        <LegendItem color="#8844ff" label="Substitution" type="sub" isDark={isDark} />
+        <LegendItem color="#ff0066" label="Penalty Miss" type="pen_miss" isDark={isDark} />
+        <LegendItem color="#00d4ff" label="Own Goal" type="own_goal" isDark={isDark} />
       </div>
     </div>
   );
 }
 
-function Tick({ x, label }: { x: number; label: string }) {
+function Tick({ x, label, isDark }: { x: number; label: string; isDark: boolean }) {
   return (
-    <div data-label-type="tick" className="absolute text-xs font-semibold text-gray-300 select-none" style={{ left: x - 16, top: '50%', transform: 'translateY(-50%)' }}>
+    <div
+      data-label-type="tick"
+      className={cn(
+        "absolute text-xs font-semibold select-none transition-colors duration-200",
+        isDark ? "text-slate-300" : "text-slate-500"
+      )}
+      style={{ left: x - 16, top: '50%', transform: 'translateY(-50%)' }}
+    >
       {/* small vertical tick line above the baseline */}
       <div style={{ position: 'absolute', left: '50%', top: '-28px', transform: 'translateX(-50%)' }}>
-        <div 
-          className="h-5 w-0.5 bg-gradient-to-b from-gray-400 to-gray-600 mx-auto rounded-full shadow-lg" 
-          style={{ boxShadow: "0 0 8px rgba(156, 163, 175, 0.5)" }}
+        <div
+          className={cn(
+            "h-5 w-0.5 mx-auto rounded-full shadow-lg",
+            isDark ? "bg-gradient-to-b from-gray-400 to-gray-600" : "bg-gradient-to-b from-slate-300 to-slate-400"
+          )}
+          style={{ boxShadow: isDark ? "0 0 8px rgba(156, 163, 175, 0.5)" : "0 0 6px rgba(148, 163, 184, 0.35)" }}
         />
       </div>
-      <div className="text-center px-2 py-0.5 rounded-md bg-gray-800/60 border border-gray-700/50" style={{ backdropFilter: 'blur(6px)', margin: '0 auto' }}>
+      <div
+        className={cn(
+          "text-center px-2 py-0.5 rounded-md border transition-colors duration-200",
+          isDark ? "bg-slate-900/60 border-slate-700/50" : "bg-white border-slate-200 shadow-sm"
+        )}
+        style={{ backdropFilter: 'blur(6px)', margin: '0 auto' }}
+      >
         {label}
       </div>
     </div>
@@ -664,7 +745,7 @@ function tickX(minute: number, clusters: { minute: number; group: TLItem[] }[], 
   return xs[xs.length - 1] ?? cfg.leftPad;
 }
 
-function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeamLogo, homeTeam, awayTeam, raw, briefCacheRef, eventId, playerImgCacheRef, sessionPrefix, showLabel, clusterIndex }: { x: number; minute: number; group: TLItem[]; onHover: (html: string, ev: MouseEvent | React.MouseEvent) => void; onLeave: () => void; findPlayerImage: (name?: string, team?: string) => string; findTeamLogo: (side: 'home'|'away', name?: string) => string; homeTeam?: string; awayTeam?: string; raw?: unknown; briefCacheRef?: React.MutableRefObject<Record<string,string>>; eventId?: string; playerImgCacheRef?: React.MutableRefObject<Record<string,string>>; sessionPrefix?: string; showLabel?: boolean; clusterIndex?: number; }) {
+function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeamLogo, homeTeam, awayTeam, raw, briefCacheRef, eventId, playerImgCacheRef, sessionPrefix, showLabel, clusterIndex, isDark }: { x: number; minute: number; group: TLItem[]; onHover: (html: string, ev: MouseEvent | React.MouseEvent) => void; onLeave: () => void; findPlayerImage: (name?: string, team?: string) => string; findTeamLogo: (side: 'home'|'away', name?: string) => string; homeTeam?: string; awayTeam?: string; raw?: unknown; briefCacheRef?: React.MutableRefObject<Record<string,string>>; eventId?: string; playerImgCacheRef?: React.MutableRefObject<Record<string,string>>; sessionPrefix?: string; showLabel?: boolean; clusterIndex?: number; isDark?: boolean; }) {
   const home = group.filter((g) => g.team === "home");
   const away = group.filter((g) => g.team === "away");
   // increased gap to avoid overlapping icons / minute badge
@@ -905,7 +986,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
     <div className="absolute" style={{ left: x }}>
       {/* Home side (top) */}
       {home.map((g, i) => (
-        <Marker key={`h-${i}`} y={40 - i * stackGap} color={colorFor(g.type)} icon={iconFor(g.type)} type={g.type}
+        <Marker key={`h-${i}`} y={40 - i * stackGap} color={colorFor(g.type)} icon={iconFor(g.type)} type={g.type} isDark={isDark}
           onMouseEnter={async (ev) => { 
             onHover(makeHtml(undefined, true), ev); 
             await ensureBrief(ev); 
@@ -918,7 +999,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
 
       {/* Away side (bottom) */}
       {away.map((g, i) => (
-        <Marker key={`a-${i}`} y={112 + i * stackGap} color={colorFor(g.type)} icon={iconFor(g.type)} type={g.type}
+        <Marker key={`a-${i}`} y={112 + i * stackGap} color={colorFor(g.type)} icon={iconFor(g.type)} type={g.type} isDark={isDark}
           onMouseEnter={async (ev) => { 
             onHover(makeHtml(undefined, true), ev); 
             await ensureBrief(ev); 
@@ -930,7 +1011,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
   );
 }
 
-function Marker({ y, color, icon, onMouseEnter, onMouseLeave, type }: { y: number; color: string; icon: string; type?: TLItem["type"]; onMouseEnter: (ev: React.MouseEvent<HTMLDivElement>) => void; onMouseLeave: () => void; }) {
+function Marker({ y, color, icon, onMouseEnter, onMouseLeave, type, isDark }: { y: number; color: string; icon: string; type?: TLItem["type"]; onMouseEnter: (ev: React.MouseEvent<HTMLDivElement>) => void; onMouseLeave: () => void; isDark?: boolean; }) {
   const glowRGB = type ? glowColorFor(type) : "107, 114, 128";
   
   return (
@@ -956,11 +1037,11 @@ function Marker({ y, color, icon, onMouseEnter, onMouseLeave, type }: { y: numbe
           }}
         >
           {/* Icon container with proper SVG rendering */}
-          <div 
-            className="text-white drop-shadow-lg"
-            style={{ color: "white", filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.8))" }}
-            dangerouslySetInnerHTML={{ __html: icon }}
-          />
+            <div 
+              className={cn("drop-shadow-lg", isDark ? "text-white" : "text-slate-800")}
+              style={{ color: isDark ? "white" : "#0f172a", filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.08))" }}
+              dangerouslySetInnerHTML={{ __html: icon }}
+            />
           
           {/* Pulsing glow ring */}
           <div
@@ -979,15 +1060,22 @@ function Marker({ y, color, icon, onMouseEnter, onMouseLeave, type }: { y: numbe
   );
 }
 
-function LegendItem({ color, label, type }: { color: string; label: string; type: TLItem["type"] }) {
+function LegendItem({ color, label, type, isDark }: { color: string; label: string; type: TLItem["type"]; isDark: boolean }) {
   const glowRGB = glowColorFor(type);
   const icon = iconFor(type);
   
   return (
-    <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 hover:border-gray-600/50 transition-all duration-300">
+    <div
+      className={cn(
+        "flex items-center gap-3 px-3 py-2 rounded-lg border backdrop-blur-sm transition-all duration-300",
+        isDark
+          ? "bg-slate-900/50 border-slate-700/60 hover:border-slate-600/50"
+          : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+      )}
+    >
       {/* Icon with glow */}
       <div 
-        className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
+        className={cn("w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold", isDark ? "text-white" : "text-slate-800")}
         style={{ 
           background: `linear-gradient(135deg, ${color}, ${color}dd)`,
           boxShadow: `0 0 10px rgba(${glowRGB}, 0.6), inset 0 0 5px rgba(255, 255, 255, 0.2)`,
@@ -995,12 +1083,12 @@ function LegendItem({ color, label, type }: { color: string; label: string; type
         }}
       >
         <div 
-          className="text-white"
-          style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.8))" }}
+          className={isDark ? "text-white" : "text-slate-800"}
+          style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.06))" }}
           dangerouslySetInnerHTML={{ __html: icon }}
         />
       </div>
-      <span className="text-gray-200 font-medium">{label}</span>
+      <span className={cn("font-medium transition-colors duration-200", isDark ? "text-slate-200" : "text-slate-700")}>{label}</span>
     </div>
   );
 }

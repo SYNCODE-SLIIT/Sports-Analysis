@@ -168,10 +168,10 @@
   position: relative;
   border-radius: var(--radius-xl);
   background: var(--card);
-  border: 1px solid rgba(8, 247, 254, 0.28);
+  border: 1px solid rgba(255, 72, 88, 0.42);
   overflow: hidden;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
-  box-shadow: 0 14px 32px rgba(15, 30, 70, 0.12);
+  box-shadow: 0 14px 32px rgba(48, 8, 16, 0.24);
 }
 
 .neon-card::before {
@@ -188,7 +188,7 @@
   inset: 0;
   border-radius: inherit;
   padding: 1.5px;
-  background: linear-gradient(110deg, rgba(8, 247, 254, 0.92), rgba(255, 45, 165, 0.9));
+  background: linear-gradient(110deg, rgba(255, 72, 88, 0.95), rgba(255, 255, 255, 0.85), rgba(18, 18, 18, 0.85));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -204,12 +204,12 @@
 
 .neon-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 18px 38px rgba(15, 30, 70, 0.16);
+  box-shadow: 0 18px 38px rgba(48, 8, 16, 0.32);
 }
 
 .neon-avatar {
   position: relative;
-  box-shadow: 0 0 0 2px rgba(8, 247, 254, 0.35);
+  box-shadow: 0 0 0 2px rgba(255, 72, 88, 0.45);
 }
 
 .neon-avatar::after {
@@ -231,7 +231,7 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(90deg, rgba(8, 247, 254, 0.12), rgba(255, 45, 165, 0.2), rgba(8, 247, 254, 0.12));
+  background: linear-gradient(90deg, rgba(255, 72, 88, 0.16), rgba(255, 255, 255, 0.24), rgba(0, 0, 0, 0.28));
   z-index: -1;
 }
 
@@ -239,7 +239,7 @@
   content: "";
   position: absolute;
   inset: -150%;
-  background: linear-gradient(90deg, rgba(8, 247, 254, 0.35), rgba(255, 45, 165, 0.55), rgba(8, 247, 254, 0.35));
+  background: linear-gradient(90deg, rgba(255, 72, 88, 0.55), rgba(255, 255, 255, 0.5), rgba(26, 26, 26, 0.6));
   opacity: 0.9;
   animation: neon-swipe 4s linear infinite;
   mix-blend-mode: screen;
@@ -248,26 +248,26 @@
 .neon-button:hover::after {
   animation-duration: 2s;
 }
-
+ 
 .neon-chip {
-  background: linear-gradient(120deg, rgba(8, 247, 254, 0.65), rgba(255, 45, 165, 0.55));
-  border: 1px solid rgba(8, 247, 254, 0.5);
-  color: rgba(16, 24, 45, 0.92);
-  box-shadow: 0 8px 20px rgba(8, 247, 254, 0.2);
+  background: linear-gradient(120deg, rgba(255, 72, 88, 0.85), rgba(255, 255, 255, 0.85));
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: rgba(18, 18, 18, 0.9);
+  box-shadow: 0 8px 20px rgba(255, 72, 88, 0.28);
   font-weight: 600;
 }
 
 .dark .neon-chip {
-  background: linear-gradient(120deg, rgba(8, 247, 254, 0.4), rgba(255, 45, 165, 0.6));
-  border-color: rgba(255, 45, 165, 0.5);
-  color: rgba(255, 255, 255, 0.95);
-  box-shadow: 0 0 18px rgba(255, 45, 165, 0.35);
+  background: linear-gradient(120deg, rgba(255, 48, 79, 0.6), rgba(255, 255, 255, 0.2));
+  border-color: rgba(255, 72, 88, 0.6);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 0 18px rgba(255, 72, 88, 0.4);
 }
 
 .neon-tile {
   position: relative;
   border-radius: var(--radius-lg);
-  border: 1px solid rgba(8, 247, 254, 0.24);
+  border: 1px solid rgba(255, 72, 88, 0.35);
   background: var(--card);
   transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
   overflow: hidden;
@@ -284,7 +284,7 @@
 
 .neon-tile::after {
   padding: 1px;
-  background: linear-gradient(120deg, rgba(8, 247, 254, 0.9), rgba(255, 45, 165, 0.85));
+  background: linear-gradient(120deg, rgba(255, 72, 88, 0.9), rgba(255, 255, 255, 0.75), rgba(18, 18, 18, 0.85));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -298,31 +298,33 @@
 
 .neon-tile:hover {
   transform: translateY(-4px);
-  box-shadow: 0 18px 34px rgba(15, 30, 70, 0.15);
-  border-color: rgba(255, 45, 165, 0.4);
+  box-shadow: 0 18px 34px rgba(48, 8, 16, 0.3);
+  border-color: rgba(255, 72, 88, 0.55);
 }
 
 .dark .neon-card {
-  background: rgba(5, 12, 24, 0.94);
-  border: 1px solid rgba(8, 247, 254, 0.42);
-  box-shadow: 0 18px 42px rgba(4, 18, 46, 0.4);
+  background: rgba(10, 10, 14, 0.94);
+  border: 1px solid rgba(255, 72, 88, 0.6);
+  box-shadow: 0 18px 42px rgba(8, 0, 6, 0.48);
 }
 
 .dark .neon-card:hover {
-  box-shadow: 0 24px 52px rgba(4, 18, 46, 0.5);
+  box-shadow: 0 24px 52px rgba(8, 0, 6, 0.6);
 }
 
 .dark .neon-avatar {
-  box-shadow: 0 0 0 2px rgba(8, 247, 254, 0.5);
+  box-shadow: 0 0 0 2px rgba(255, 72, 88, 0.6);
 }
 
 .dark .neon-tile {
-  background: rgba(9, 18, 38, 0.9);
-  border: 1px solid rgba(8, 247, 254, 0.32);
+  background: rgba(12, 12, 18, 0.9);
+  border: 1px solid rgba(255, 72, 88, 0.45);
+  box-shadow: 0 22px 44px rgba(8, 0, 6, 0.4);
 }
 
 .dark .neon-tile:hover {
-  box-shadow: 0 22px 44px rgba(4, 18, 46, 0.45);
+  box-shadow: 0 26px 52px rgba(8, 0, 6, 0.52);
+  border-color: rgba(255, 72, 88, 0.65);
 }
 
 @keyframes neon-pulse {
@@ -360,3 +362,56 @@
     opacity: 0.9;
   }
 }
+
+/* RichTimeline tooltip adjustments */
+.rt-tooltip {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+/* Light mode tooltip: white background, dark text, subtle neon border */
+.rt-tooltip-light {
+  background: white !important;
+  color: var(--foreground) !important;
+  border: 1px solid rgba(226,232,240,0.9) !important;
+  box-shadow: 0 12px 30px rgba(15,23,42,0.04) !important;
+}
+
+/* Dark mode tooltip: keep existing dark look but reuse neon-card border treatment */
+.rt-tooltip-dark {
+  background: rgba(15,23,42,0.95) !important;
+  color: white !important;
+  border: 1px solid rgba(148,163,184,0.16) !important;
+}
+
+/* Add neon border accent similar to profile cards: a thin colorful strip on the left */
+
+/* make room so the neon strip is never covered by content */
+/* (left padding removed for tooltips) */
+
+/* Ensure inner HTML content of tooltip (dangerouslySetInnerHTML) is readable in light mode */
+.rt-tooltip-light * {
+  color: inherit !important;
+}
+
+/* ensure content sits above the neon strip */
+.rt-tooltip > * { position: relative; z-index: 1; }
+
+/* Add the full neon framed border (same overlay as .neon-card::after) to light tooltips */
+.rt-tooltip-light::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  /* copy the neon-card overlay gradient so light tooltips have the same framed neon border */
+  background: linear-gradient(110deg, rgba(255, 72, 88, 0.95), rgba(255, 255, 255, 0.85), rgba(18, 18, 18, 0.85));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 1;
+  z-index: 0;
+}
+
