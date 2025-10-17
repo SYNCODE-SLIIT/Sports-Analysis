@@ -8,7 +8,10 @@ import { LeagueInfoHero, LeagueHeroInfo } from "@/components/league/LeagueInfoHe
 import { LeagueStandingsCard, StandingRow, SelectOption } from "@/components/league/LeagueStandingsCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getLeagueTable, getLeagueDetails, listSeasons, postCollect, DataObject, Json } from "@/lib/collect";
+import { getLeagueTable, listSeasons, postCollect, DataObject, Json } from "@/lib/collect";
+import { parseFixtures } from "@/lib/schemas";
+import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
+import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 
 type LeagueListEntry = {
   id?: string;
@@ -322,6 +325,10 @@ export default function LeagueDetailPage() {
   const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [selectedStage, setSelectedStage] = useState<string>(ALL_STAGE_KEY);
 
+  // Live matches moved to LeagueLiveMatches component
+
+  // Season matches moved to LeagueSeasonMatches component
+
   // ---- Load league metadata from list (logos, base info) ----
   useEffect(() => {
     let cancelled = false;
@@ -353,61 +360,7 @@ export default function LeagueDetailPage() {
   }, [providerLeagueId, initialNameParam, leagueName]);
 
   // ---- Detailed league info (TSDB lookupleague) ----
-  useEffect(() => {
-    if (!leagueName && !providerLeagueId) return;
-    let cancelled = false;
-    setInfoLoading(true);
-    setInfoError(null);
-    getLeagueDetails({ leagueName: leagueName || undefined, leagueId: providerLeagueId })
-      .then(resp => {
-        if (cancelled) return;
-        const league = resp?.data?.league;
-        const leagueObj =
-          (Array.isArray(league) ? (league[0] as DataObject | undefined) : (league as DataObject | undefined)) ?? undefined;
-        if (leagueObj) {
-          const record = leagueObj as Record<string, unknown>;
-          const name = pickFirstString(record, ["strLeague", "league_name", "name"]) ?? leagueName;
-          const country = pickFirstString(record, ["strCountry", "country"]);
-          const leagueLogo = pickFirstString(record, ["strBadge", "strLogo", "logo"]);
-          const countryLogo = pickFirstString(record, ["strFanart1", "country_logo", "strCountryBadge"]);
-          const alternateRaw = pickFirstString(record, ["strLeagueAlternate"]) ?? "";
-          const alternateNames = alternateRaw
-            ? alternateRaw
-                .split(/[;,]/)
-                .map(item => item.trim())
-                .filter(Boolean)
-            : [];
-          const founded = pickFirstString(record, ["intFormedYear", "formed"]);
-          const currentSeason = pickFirstString(record, ["strCurrentSeason", "current_season"]);
-          const website = pickFirstString(record, ["strWebsite", "website"]);
-          const description =
-            pickFirstString(record, ["strDescriptionEN", "description", "strDescription"]) ?? undefined;
-          setHeroInfo(prev =>
-            mergeHeroInfo(prev, {
-              name,
-              country,
-              leagueLogo,
-              countryLogo,
-              alternateNames,
-              founded,
-              currentSeason,
-              website,
-              description,
-            })
-          );
-        }
-      })
-      .catch(error => {
-        if (!cancelled) setInfoError(error instanceof Error ? error.message : "Failed to load league info");
-      })
-      .finally(() => {
-        if (!cancelled) setInfoLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [leagueName, providerLeagueId]);
-
+  
   // ---- Seasons list for selector ----
   useEffect(() => {
     if (!leagueName && !providerLeagueId) return;
@@ -448,7 +401,14 @@ export default function LeagueDetailPage() {
           options.season = seasonParam;
         }
         if (providerLeagueId) options.leagueId = providerLeagueId;
-        const resp = await getLeagueTable(leagueName || "", options);
+        const params: { leagueId?: string; leagueName?: string; season?: string } = {};
+        if (options.leagueId) {
+          params.leagueId = options.leagueId;
+        } else {
+          params.leagueName = leagueName || undefined;
+        }
+        if (options.season) params.season = options.season;
+        const resp = await getLeagueTable(params);
         const raw = resp?.data;
         const rowsRaw = extractStandingsRows(raw);
         if (!rowsRaw.length) {
@@ -551,6 +511,9 @@ export default function LeagueDetailPage() {
     const seasonParam = selectedSeason === CURRENT_SEASON_KEY ? null : selectedSeason;
     fetchStandings(selectedSeason, seasonParam);
   }, [selectedSeason, seasonCache, fetchStandings]);
+
+  // Live matches logic is encapsulated in LeagueLiveMatches
+
 
   const seasonOptions: SelectOption[] = useMemo(() => {
     const entries = Object.entries(seasonLabels);
@@ -656,6 +619,15 @@ export default function LeagueDetailPage() {
         selectedStage={selectedStage}
         onSelectStage={setSelectedStage}
         lastUpdated={lastUpdated}
+      />
+
+      {/* Live matches for this league */}
+      <LeagueLiveMatches leagueName={leagueName || heroInfo?.name} />
+
+      {/* Season matches for selected season */}
+      <LeagueSeasonMatches
+        leagueName={leagueName || heroInfo?.name}
+        seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
       />
     </div>
   );
