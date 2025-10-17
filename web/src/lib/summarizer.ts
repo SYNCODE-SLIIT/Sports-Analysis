@@ -19,6 +19,23 @@ export type EventBriefOut = {
   player_id?: string | null;
 };
 
+type SummarizerEvent = {
+  minute?: string | number | null;
+  type?: string | null;
+  player?: string | null;
+  note?: string | null;
+  player_image?: string | null;
+  team_logo?: string | null;
+};
+
+type SummarizerResponse = {
+  ok?: boolean;
+  items?: EventBriefOut[];
+  key_events?: SummarizerEvent[];
+  player_image?: string | null;
+  team_logo?: string | null;
+};
+
 export async function summarizeEventBriefs(payload: {
   eventId?: string;
   eventName?: string;
@@ -33,9 +50,12 @@ export async function summarizeEventBriefs(payload: {
   });
   if (!r.ok) throw new Error(`summarizer failed: ${r.status}`);
 
-  const json: any = await r.json();
+  const rawJson: unknown = await r.json();
+  const json: SummarizerResponse = (typeof rawJson === "object" && rawJson !== null)
+    ? (rawJson as SummarizerResponse)
+    : {};
   // If already in the items shape, return as-is
-  if (json && Array.isArray(json.items)) return json as { ok: boolean; items: EventBriefOut[] };
+  if (json && Array.isArray(json.items)) return { ok: Boolean(json.ok ?? true), items: json.items };
 
   const shorten = (txt: string, maxSentences = 3, maxLines = 4) => {
     if (!txt) return '';
@@ -60,7 +80,7 @@ export async function summarizeEventBriefs(payload: {
 
       // Prefer selecting the best key_event for this event if provided
       if (json && Array.isArray(json.key_events) && json.key_events.length) {
-        let best: any = null;
+        let best: SummarizerEvent | null = null;
         let bestScore = -1;
         for (const ke of json.key_events) {
           const km = ke?.minute != null ? String(ke.minute) : undefined;
@@ -134,7 +154,7 @@ export async function summarizeEventBriefs(payload: {
         outItems.push({ minute, type, brief, player, player_image: undefined, team_logo: undefined, player_id: undefined });
       }
     }
-  } catch (_e) {
+  } catch {
     // swallow and return what we have
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { ChevronRight, Search } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -898,9 +899,11 @@ export default function LeaguesPage() {
                         >
                           <div className="flex items-start gap-3">
                             {article.imageUrl ? (
-                              <img
+                              <Image
                                 src={article.imageUrl}
                                 alt={article.title || 'news image'}
+                                width={112}
+                                height={80}
                                 className="h-20 w-28 flex-shrink-0 rounded-md object-cover"
                                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                               />

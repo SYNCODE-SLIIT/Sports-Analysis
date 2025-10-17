@@ -29,12 +29,16 @@ export function useRecommendations() {
           limit_count: 20,
         });
         if (!rpcError && Array.isArray(rpcData) && rpcData.length) {
-          const items: RecItem[] = rpcData.map((r: any) => ({
-            item_id: r.item_id,
-            score: Number(r.score ?? 0),
-            reason: r.reason ?? null,
-            item: r.item ?? null,
-          }));
+          type RpcRow = { item_id: string; score?: number | string | null; reason?: string | null; item?: Record<string, unknown> | null };
+          const items: RecItem[] = (rpcData as unknown[]).map((rec: unknown) => {
+            const r = rec as Partial<RpcRow>;
+            return {
+              item_id: String(r.item_id ?? ''),
+              score: Number(r.score ?? 0),
+              reason: typeof r.reason === 'string' ? r.reason : null,
+              item: (r.item && typeof r.item === 'object') ? (r.item as Record<string, unknown>) : null,
+            };
+          });
           return { items };
         }
       } catch {

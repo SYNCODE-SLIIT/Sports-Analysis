@@ -53,8 +53,8 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
   // Module-scoped in-flight promise map and cache to dedupe and cache results across
   // component remounts (helps in dev StrictMode and HMR). We store the request
   // Promise so subsequent mounts can await the same work and receive the result.
-  const inflightMap: Map<string, Promise<SummaryContent | null>> = (globalThis as any).__sa_inflight_summaries ||= new Map<string, Promise<SummaryContent | null>>();
-  const resultCache: Map<string, SummaryContent> = (globalThis as any).__sa_summary_cache ||= new Map<string, SummaryContent>();
+  const inflightMap = useMemo(() => globalThis.__sa_inflight_summaries ||= new Map<string, Promise<SummaryContent | null>>(), []);
+  const resultCache = useMemo(() => globalThis.__sa_summary_cache ||= new Map<string, SummaryContent>(), []);
 
   // Stable key for this event — prefer eventId when available, otherwise fall
   // back to a composed key from teams+date. We only re-run when this key changes.
@@ -62,7 +62,7 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
     if (!event) return null;
     if (event.eventId) return String(event.eventId);
     return `${event.homeTeam ?? ''}::${event.awayTeam ?? ''}::${event.date ?? ''}`;
-  }, [event?.eventId, event?.homeTeam, event?.awayTeam, event?.date]);
+  }, [event]);
 
   useEffect(() => {
     let active = true;
@@ -97,9 +97,9 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
             setState({ data: fallback, status: "error" });
           }
           return;
-        } catch (e) {
+        } catch {
           if (!active) return;
-          setState({ data: fallback, status: "error", error: e instanceof Error ? e.message : String(e) });
+          setState({ data: fallback, status: "error" });
           return;
         }
       }
@@ -120,24 +120,24 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
           let raw: SummaryResponse | undefined | null = undefined;
           try {
             raw = await summarize(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string });
-          } catch (e) {
+          } catch {
             try {
               const response = await postCollect<{ summary?: SummaryResponse }>("analysis.match_summary", payload);
               raw = response.data?.summary ?? (response.data as SummaryResponse | undefined);
-            } catch (e2) {
+            } catch {
               raw = undefined;
             }
           }
 
           const normalized = normalizeSummary(raw) ?? fallback;
           // cache the successful result for this key
-          try { if (normalized) resultCache.set(stableEventKey, normalized); } catch (_) {}
+          try { if (normalized) resultCache.set(stableEventKey, normalized); } catch {}
           return normalized;
-        } catch (err) {
+        } catch {
           return null;
         } finally {
           // ensure we clean the inflight entry (after promise settles)
-          setTimeout(() => { try { inflightMap.delete(stableEventKey); } catch (_) {} }, 0);
+          setTimeout(() => { try { inflightMap.delete(stableEventKey); } catch {} }, 0);
         }
       })();
 
@@ -148,9 +148,9 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
         if (!active) return;
         if (res) setState({ data: res, status: "ready" });
         else setState({ data: fallback, status: "error" });
-      } catch (e) {
+      } catch {
         if (!active) return;
-        setState({ data: fallback, status: "error", error: e instanceof Error ? e.message : String(e) });
+        setState({ data: fallback, status: "error" });
       }
     };
 
@@ -158,7 +158,7 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
     return () => {
       active = false;
     };
-  }, [event, fallback]);
+  }, [event, fallback, inflightMap, resultCache, stableEventKey]);
 
   const summary = state.data;
 

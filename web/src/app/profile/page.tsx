@@ -40,7 +40,7 @@ export default function ProfilePage() {
         if (!error && mounted) {
           setSavedMatchesCount(typeof count === 'number' ? count : 0);
         }
-      } catch (e) {
+      } catch {
         if (mounted) setSavedMatchesCount(0);
       }
       // initialize local liked/saved states for recommendations
@@ -49,9 +49,16 @@ export default function ProfilePage() {
         if (!mounted) return;
         const likedMap: Record<string, boolean> = {};
         const savedMap: Record<string, boolean> = {};
-        (interactions ?? []).forEach((r: any) => {
-          if (r.event === 'like') likedMap[String(r.item_id)] = true;
-          if (r.event === 'save') savedMap[String(r.item_id)] = true;
+  type InteractionRow = { item_id: string | number; event: string };
+        (interactions ?? []).forEach((r: unknown) => {
+          const rec = r as Partial<InteractionRow>;
+          if (!rec || typeof rec !== 'object') return;
+          const evt = typeof rec.event === 'string' ? rec.event : '';
+          const id = rec.item_id as string | number | undefined;
+          if (!id) return;
+          const key = String(id);
+          if (evt === 'like') likedMap[key] = true;
+          if (evt === 'save') savedMap[key] = true;
         });
         setLocalLiked(likedMap);
         setLocalSaved(savedMap);
@@ -66,7 +73,7 @@ export default function ProfilePage() {
     try {
       recs.refetch?.();
     } catch {}
-  }, [prefsVersion]);
+  }, [prefsVersion, recs, user]);
 
   const handleSave = async () => {
     if (!user || !preferences) return;
@@ -77,7 +84,7 @@ export default function ProfilePage() {
       toast.success("Profile saved");
       setEditing(false);
       recs.refetch();
-    } catch (err) {
+    } catch {
       toast.error("Failed to save profile");
     } finally {
       setSaving(false);
@@ -120,20 +127,22 @@ export default function ProfilePage() {
     }
   };
 
-  const shareRecommendation = async (itemId: string, item: any) => {
-    const title = item?.title || 'Sports Analysis';
+  const shareRecommendation = async (itemId: string, item: unknown) => {
+    const title = (item && typeof item === 'object' && 'title' in item && typeof (item as Record<string, unknown>).title === 'string')
+      ? (item as Record<string, unknown>).title as string
+      : 'Sports Analysis';
     const url = typeof window !== 'undefined' ? window.location.origin : '';
     const link = `${url}/`;
     try {
-      const nav: any = typeof navigator !== 'undefined' ? navigator : undefined;
+      const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { share?: (data: ShareData) => Promise<void> }) : undefined;
       if (nav?.share) {
         try {
           await nav.share({ title, text: 'Check this out', url: link });
           await sendInteraction(itemId, 'share');
           toast.success('Shared');
           return;
-        } catch (err: any) {
-          if (err && err.name === 'AbortError') return;
+        } catch (err: unknown) {
+          if (err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'AbortError') return;
         }
       }
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -274,7 +283,7 @@ export default function ProfilePage() {
                 {recs.data.items.map((r) => (
                   <div key={r.item_id} className="p-3 border rounded flex items-start justify-between gap-4">
                     <div>
-                      <div className="font-medium">{(r.item as any)?.title ?? r.item_id}</div>
+                      <div className="font-medium">{(r.item && typeof r.item === 'object' && 'title' in r.item ? (r.item as Record<string, unknown>).title as string : r.item_id)}</div>
                       <div className="text-sm text-muted-foreground">{r.reason ?? `Score: ${Math.round(r.score)}`}</div>
                     </div>
                     <div className="flex items-center gap-2">
