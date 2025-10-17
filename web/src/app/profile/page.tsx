@@ -1,5 +1,5 @@
 "use client";
-
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
@@ -267,7 +267,7 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 export default function ProfilePage() {
   const { user, supabase, loading, prefsVersion, interactionsVersion } = useAuth();
   const recs = useRecommendations();
-  const router = require('next/navigation').useRouter();
+  const router = useRouter();
 
   const [profile, setProfile] = useState<ProfileState>({ full_name: "", avatar_url: null });
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
