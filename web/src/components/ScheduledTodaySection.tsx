@@ -22,11 +22,11 @@ export function ScheduledTodaySection() {
   if (error) {
     return (
       <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Scheduled for Today</h2>
+        <h2 className="text-xl font-semibold">Upcoming Fixtures</h2>
         <EmptyState
           type="error"
-          title="Unable to load today&apos;s schedule"
-          description="We couldn&apos;t load the list of fixtures scheduled for today. Please retry."
+          title="Unable to load the upcoming schedule"
+          description="We couldn&apos;t load the list of upcoming fixtures. Please retry."
           onAction={() => {
             void refetch();
           }}
@@ -37,7 +37,7 @@ export function ScheduledTodaySection() {
 
   return (
     <section className="space-y-4">
-      <h2 className="text-xl font-semibold">Scheduled for Today</h2>
+      <h2 className="text-xl font-semibold">Upcoming Fixtures</h2>
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -48,8 +48,8 @@ export function ScheduledTodaySection() {
       ) : matches.length === 0 ? (
         <EmptyState
           type="no-matches"
-          title="No fixtures scheduled today"
-          description="There are no matches on today&apos;s calendar. Try another day or league."
+          title="No upcoming fixtures found"
+          description="We couldn&apos;t find any upcoming fixtures in the current window. Try another league or check back soon."
         />
       ) : (
         <motion.div
