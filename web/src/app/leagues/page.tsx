@@ -467,7 +467,7 @@ export default function LeaguesPage() {
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const [remainingVisibleCount, setRemainingVisibleCount] = useState<number>(INITIAL_REMAINING_COUNT);
-  const [favLeagues, setFavLeagues] = useState<string[]>([]);
+  // local placeholder for optimistic UI updates removed; preferences are sourced from Profile
 
   const skeletonCount = useMemo(() => (news.length ? Math.min(news.length, 6) : 4), [news.length]);
 
@@ -780,15 +780,12 @@ export default function LeaguesPage() {
       const existingTeams: string[] = (prefs?.favorite_teams ?? []) as string[];
       if (existingLeagues.includes(selectedLeague)) {
         toast.success(`${selectedDisplayLabel} is already in your favorites`);
-        // still update local state to reflect db
-        setFavLeagues(existingLeagues);
         return;
       }
       const newLeagues = [...existingLeagues, selectedLeague];
       // upsert preferences
       await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
-      // update local state so UI updates immediately
-      setFavLeagues(newLeagues);
+  // preferences updated server-side; Profile will refresh via bumpPreferences
       // notify other components (Profile) to refresh preferences
       try { bumpPreferences(); } catch {}
       toast.success(`${selectedDisplayLabel} saved to your favorites`);
@@ -796,7 +793,7 @@ export default function LeaguesPage() {
       console.error('save league', err);
       toast.error('Failed to save league');
     }
-  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences, setFavLeagues]);
+  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences]);
 
   const handleLeagueShare = useCallback(async () => {
     if (!selectedLeague) return;
@@ -853,7 +850,7 @@ export default function LeaguesPage() {
     } catch {
       // Ignore share failures
     }
-  }, [selectedLeague, selectedDisplayLabel, ensureLeagueItemAndSend]);
+  }, [selectedLeague, selectedDisplayLabel, ensureLeagueItemAndSend, selectedDisplayLeague?.logo, supabase, user]);
 
   const fetchLeagueNews = useCallback(async (leagueName: string) => {
     if (!leagueName) return;

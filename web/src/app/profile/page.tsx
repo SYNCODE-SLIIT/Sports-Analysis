@@ -244,6 +244,11 @@ type InteractionEvent = {
   created_at: string;
 };
 
+// Navigator with optional Web Share API
+type NavigatorWithShare = Navigator & {
+  share?: (data: { title?: string; text?: string; url?: string }) => Promise<unknown>;
+};
+
 const readFileAsDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -345,9 +350,10 @@ export default function ProfilePage() {
           const liked: Record<string, boolean> = {};
           const saved: Record<string, boolean> = {};
           const timeline: InteractionEvent[] = [];
-          (interactions ?? []).forEach((entry: any) => {
-            if (!entry) return;
-            const id = String(entry.item_id ?? "");
+          (interactions ?? []).forEach((entry) => {
+              if (!entry) return;
+              const row = entry as Record<string, unknown>;
+              const id = String(row.item_id ?? "");
             if (!id) return;
             if (entry.event === "like") liked[id] = true;
             if (entry.event === "save") saved[id] = true;
@@ -415,12 +421,13 @@ export default function ProfilePage() {
       const table = kind === "team" ? "cached_teams" : "cached_leagues";
 
       try {
-        const { data: cached } = await supabase.from(table).select("name, logo").in("name", pending as any);
-        (cached ?? []).forEach((row: any) => {
+        const { data: cached } = await supabase.from(table).select("name, logo").in("name", pending as unknown[]);
+        (cached ?? []).forEach((row) => {
           if (!row) return;
-          const candidateName = typeof row.name === "string" ? row.name : "";
+          const r = row as Record<string, unknown>;
+          const candidateName = typeof r.name === "string" ? r.name : "";
           const display = lookup.get(normalizeKey(candidateName));
-          const clean = sanitizeLogoUrl(row.logo);
+          const clean = sanitizeLogoUrl(r.logo);
           if (display && clean) {
             results[display] = clean;
           }
@@ -675,9 +682,10 @@ export default function ProfilePage() {
         if (!active) return;
         const seen = new Set<string>();
         const mapped: RecentView[] = [];
-        (data ?? []).forEach((row: any) => {
+        (data ?? []).forEach((row) => {
           if (!row) return;
-          const itemId = typeof row.item_id === "string" ? row.item_id : String(row.item_id ?? "").trim();
+          const r = row as Record<string, unknown>;
+          const itemId = typeof r.item_id === "string" ? r.item_id : String(r.item_id ?? "").trim();
           if (!itemId || seen.has(itemId)) return;
           seen.add(itemId);
           const details = (row.items ?? null) as ItemDetails | null;
@@ -716,7 +724,7 @@ export default function ProfilePage() {
     return () => {
       active = false;
     };
-  }, [supabase, user, interactionsVersion]);
+  }, [supabase, user, interactionsVersion, recs]);
 
   const shareRecommendation = useCallback(
     async (itemId: string, item: Record<string, unknown> | undefined) => {
@@ -724,15 +732,16 @@ export default function ProfilePage() {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
       const link = `${origin}/`;
       try {
-        const nav: any = typeof navigator !== "undefined" ? navigator : undefined;
+        const nav = (typeof navigator !== "undefined" ? (navigator as Navigator) : undefined) as NavigatorWithShare | undefined;
         if (nav?.share) {
           try {
             await nav.share({ title, text: "Check this out", url: link });
             await sendInteraction(itemId, "share");
             toast.success("Shared");
             return;
-          } catch (error: any) {
-            if (error?.name === "AbortError") return;
+          } catch (error) {
+            const err = error as unknown as { name?: string };
+            if (err?.name === "AbortError") return;
           }
         }
         if (navigator?.clipboard?.writeText) {
@@ -1460,7 +1469,7 @@ export default function ProfilePage() {
                   const reason = rec.reason ? rec.reason : `Score: ${Math.round(rec.score ?? 0)}`;
                   const isLiked = !!localLiked[rec.item_id];
                   const isSaved = !!localSaved[rec.item_id];
-                  const title = (rec.item as any)?.title ?? rec.item_id;
+                  const title = ((rec.item as Record<string, unknown> | undefined)?.title as string | undefined) ?? rec.item_id;
                   return (
                     <motion.div
                       key={rec.item_id}

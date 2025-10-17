@@ -307,7 +307,8 @@ export default function MatchPage() {
           const v = obj[k];
           if (typeof v === 'string' && v.trim()) return v.trim();
           if (v && typeof v === 'object') {
-            const r = (v as any).url || (v as any).src || (v as any).image || (v as any).path;
+            const rv = v as Record<string, unknown>;
+            const r = rv.url || rv.src || rv.image || rv.path;
             if (typeof r === 'string' && r.trim()) return r.trim();
           }
         }
@@ -318,7 +319,8 @@ export default function MatchPage() {
             for (const item of mv) {
               if (typeof item === 'string' && item.trim()) return item.trim();
               if (item && typeof item === 'object') {
-                const r = (item as any).url || (item as any).src || (item as any).image || (item as any).path;
+                const it = item as Record<string, unknown>;
+                const r = it.url || it.src || it.image || it.path;
                 if (typeof r === 'string' && r.trim()) return r.trim();
               }
             }
@@ -736,7 +738,7 @@ export default function MatchPage() {
     let active = true;
     setExtrasLoading(true);
 
-    const requests = [
+    const requests: [Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>] = [
       event.homeTeam ? getTeam(event.homeTeam) : Promise.resolve(null),
       event.awayTeam ? getTeam(event.awayTeam) : Promise.resolve(null),
       event.homeTeam ? listTeamPlayers(event.homeTeam) : Promise.resolve(null),
@@ -746,30 +748,29 @@ export default function MatchPage() {
       Promise.resolve(null),
       event.eventId ? getForm(event.eventId) : Promise.resolve(null),
       event.homeTeam && event.awayTeam ? getH2HByTeams(event.homeTeam, event.awayTeam) : Promise.resolve(null),
-    ] as const;
+    ];
 
     Promise.allSettled(requests)
       .then(results => {
         if (!active) return;
         const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, , formRes, h2hRes] = results;
 
-        const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value) : null;
-        const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value) : null;
-        setTeamsExtra({ home: homeTeamData, away: awayTeamData });
+  const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
+  const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
+  setTeamsExtra({ home: homeTeamData, away: awayTeamData });
 
-        const homePlayers = isFulfilled(homePlayersRes) ? parsePlayersResponse(homePlayersRes.value) : [];
-        const awayPlayers = isFulfilled(awayPlayersRes) ? parsePlayersResponse(awayPlayersRes.value) : [];
-        setPlayersExtra({ home: homePlayers, away: awayPlayers });
+  const homePlayers = isFulfilled(homePlayersRes) ? parsePlayersResponse(homePlayersRes.value as Awaited<ReturnType<typeof listTeamPlayers>> | null) : [];
+  const awayPlayers = isFulfilled(awayPlayersRes) ? parsePlayersResponse(awayPlayersRes.value as Awaited<ReturnType<typeof listTeamPlayers>> | null) : [];
+  setPlayersExtra({ home: homePlayers, away: awayPlayers });
 
-        const listedOdds = isFulfilled(oddsListRes) ? parseOddsResponse(oddsListRes.value) : [];
-        const liveOdds = isFulfilled(oddsLiveRes) ? parseOddsResponse(oddsLiveRes.value) : [];
-        setOddsExtra({ listed: listedOdds, live: liveOdds });
+  const listedOdds = isFulfilled(oddsListRes) ? parseOddsResponse(oddsListRes.value as { data?: unknown } | null) : [];
+  const liveOdds = isFulfilled(oddsLiveRes) ? parseOddsResponse(oddsLiveRes.value as { data?: unknown } | null) : [];
+  setOddsExtra({ listed: listedOdds, live: liveOdds });
 
-        const formData = isFulfilled(formRes) ? parseFormResponse(formRes.value) : { home: [], away: [] };
-        setFormExtra(formData);
-
-        const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value) : null;
-        setH2hExtra(h2hData);
+  const formData = isFulfilled(formRes) ? parseFormResponse(formRes.value as unknown) : { home: [], away: [] };
+  setFormExtra(formData);
+  const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value as unknown) : null;
+  setH2hExtra(h2hData);
       })
       .catch(() => {
         // Silently handle errors

@@ -2,6 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable react/no-unescaped-entities */
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from 'react-dom';
@@ -361,9 +362,11 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     // If still empty, try to synthesize from comments list if present on raw
     if (out.length === 0) {
       try {
-        const comments = (m?.comments || m?.comments_list || m?.all_comments || []) as any[];
-        for (const cm of comments) {
-          const minute = toMinuteNumber(cm.minute ?? cm.time ?? cm.elapsed ?? cm.match_minute);
+        const comments = (m?.comments || m?.comments_list || m?.all_comments || []) as unknown[];
+        for (const cmRaw of comments) {
+          const cm = cmRaw as Record<string, unknown>;
+          const minuteVal = (cm.minute ?? cm.time ?? cm.elapsed ?? cm.match_minute) as number | string | undefined;
+          const minute = toMinuteNumber(minuteVal);
           const text = String(cm.comment ?? cm.text ?? cm.description ?? "");
           const tags = detectTagsFromText(text);
           const t = deriveEventType(text, tags, cm);
@@ -372,7 +375,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
             const { inName, outName } = parseSubstitutionPlayers({ description: text });
             const player = inName || String(cm.player || cm.player_name || cm.scorer || '' ) || undefined;
             const assist = outName || undefined;
-            out.push({ minute: Number(minute) || 0, team: side as any, type: t as any, player, assist, note: text });
+            out.push({ minute: Number(minute) || 0, team: side as 'home'|'away', type: t as TLItem['type'], player, assist, note: text });
           }
         }
       } catch {}
@@ -387,7 +390,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   const allClusters = useMemo(() => clusterItems(allItems), [allItems]);
 
   // Horizontal layout configuration (compressed spacing)
-  const cfg = { pxPerMinute: 9, maxGapPx: 110, minGapPx: 24, leftPad: 36, rightPad: 44, startGapPx: 28, anchorGapPx: 28 };
+  const cfg = useMemo(() => ({ pxPerMinute: 9, maxGapPx: 110, minGapPx: 24, leftPad: 36, rightPad: 44, startGapPx: 28, anchorGapPx: 28 }), []);
 
   const positions = useMemo(() => {
     let curX = cfg.leftPad + (cfg.startGapPx || 0); // add a gap after 0' so first event doesn't overlap the 0' tick
@@ -518,7 +521,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     <div className="space-y-6">
       <div className={cn("text-lg font-bold flex items-center gap-3 transition-colors duration-300", isDark ? "text-white" : "text-slate-900")}
       >
-        <div
+                    <div
           className={cn(
             "w-1 h-6 rounded-full shadow-lg transition-colors duration-300",
             isDark
@@ -589,10 +592,10 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               {/* away logo removed per user request */}
           {/* Sparse ticks for 0,45,90(+ET) rendered on baseline */}
           {[0, 45, 90].map((t) => (
-            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}'`} isDark={isDark} />
+            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}&apos;`} isDark={isDark} />
           ))}
           {maxMinute > 90 && (
-            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}'`} isDark={isDark} />
+            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}&apos;`} isDark={isDark} />
           )}
 
           {/* Markers per cluster */}
@@ -673,9 +676,9 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
                       "px-2 py-0.5 rounded-md border transition-colors duration-200",
                       isDark ? "bg-slate-900/60 border-slate-700/50" : "bg-white border-slate-200 shadow-sm"
                     )}
-                    style={{ backdropFilter: 'blur(6px)' }}
-                  >
-                    {formatMinuteLabel(c.minute)}'
+                    style={{ backdropFilter: "blur(6px)" }}
+                    >
+                    {formatMinuteLabel(c.minute)}&apos;
                   </div>
                 </div>
               );
@@ -778,12 +781,12 @@ function Tick({ x, label, isDark }: { x: number; label: string; isDark: boolean 
           style={{ boxShadow: isDark ? "0 0 8px rgba(156, 163, 175, 0.5)" : "0 0 6px rgba(148, 163, 184, 0.35)" }}
         />
       </div>
-      <div
+        <div
         className={cn(
           "text-center px-2 py-0.5 rounded-md border transition-colors duration-200",
           isDark ? "bg-slate-900/60 border-slate-700/50" : "bg-white border-slate-200 shadow-sm"
         )}
-        style={{ backdropFilter: 'blur(6px)', margin: '0 auto' }}
+        style={{ backdropFilter: "blur(6px)", margin: '0 auto' }}
       >
         {label}
       </div>
@@ -914,7 +917,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       ? `<div style="margin-top:12px;color:#94a3b8;font-size:14px;font-style:italic"><em>Loading details…</em></div>` 
       : (brief ? `<div style="margin-top:12px;color:#e2e8f0;font-size:14px;line-height:1.5;padding:12px;background:rgba(30,41,59,0.5);border-radius:8px;border-left:3px solid #3b82f6">${escapeHtml(brief)}</div>` : '');
     
-    const finalHtml = `<div style="color:white"><div style="font-weight:700;margin-bottom:12px;font-size:18px;color:#f1f5f9;text-shadow:0 2px 4px rgba(0,0,0,0.8)">${formatMinuteLabel(minute)}'</div>${rows}${briefHtml}</div>`;
+  const finalHtml = `<div style="color:white"><div style="font-weight:700;margin-bottom:12px;font-size:18px;color:#f1f5f9;text-shadow:0 2px 4px rgba(0,0,0,0.8)">${formatMinuteLabel(minute)}&apos;</div>${rows}${briefHtml}</div>`;
     return finalHtml;
   };
 
