@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
-import { toast } from "sonner";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
 
@@ -51,9 +50,6 @@ type FeaturedSection = {
 };
 
 // Navigator with optional Web Share API
-type NavigatorWithShare = Navigator & {
-  share?: (data: { title?: string; text?: string; url?: string }) => Promise<unknown>;
-};
 
 const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
 type CategoryMetadata = { id: string; title?: string; description?: string };
@@ -458,7 +454,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
-  const { user, supabase, bumpPreferences } = useAuth();
+  const { user, supabase } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -767,90 +763,7 @@ export default function LeaguesPage() {
     [ensureLeagueItemAndSend]
   );
 
-  // Save league to user preferences (favorite_leagues) and log interaction
-  const handleSaveLeague = useCallback(async () => {
-    if (!user || !selectedLeague) return;
-    try {
-      // ensure league item & send save interaction
-      await ensureLeagueItemAndSend(selectedLeague, 'save');
-
-      // fetch existing preferences
-      const { data: prefs } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
-      const existingLeagues: string[] = (prefs?.favorite_leagues ?? []) as string[];
-      const existingTeams: string[] = (prefs?.favorite_teams ?? []) as string[];
-      if (existingLeagues.includes(selectedLeague)) {
-        toast.success(`${selectedDisplayLabel} is already in your favorites`);
-        return;
-      }
-      const newLeagues = [...existingLeagues, selectedLeague];
-      // upsert preferences
-      await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
-  // preferences updated server-side; Profile will refresh via bumpPreferences
-      // notify other components (Profile) to refresh preferences
-      try { bumpPreferences(); } catch {}
-      toast.success(`${selectedDisplayLabel} saved to your favorites`);
-    } catch (err) {
-      console.error('save league', err);
-      toast.error('Failed to save league');
-    }
-  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences]);
-
-  const handleLeagueShare = useCallback(async () => {
-    if (!selectedLeague) return;
-    const displayName = selectedDisplayLabel || selectedLeague;
-    const url = typeof window !== 'undefined'
-      ? `${window.location.origin}/leagues?league=${encodeURIComponent(selectedLeague)}`
-      : `/leagues?league=${encodeURIComponent(selectedLeague)}`;
-    const title = `${displayName}`;
-    if (!user) return;
-    const { data: prefs } = await supabase
-      .from('user_preferences')
-      .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
-      .eq('user_id', user.id)
-      .single();
-    try {
-        const nav: NavigatorWithShare | undefined = typeof navigator !== 'undefined' ? (navigator as NavigatorWithShare) : undefined;
-        const existingTeamLogos = (prefs?.favorite_team_logos ?? {}) as Record<string, string>;
-        const existingLeagueLogos = (prefs?.favorite_league_logos ?? {}) as Record<string, string>;
-        const existingTeams = (prefs?.favorite_teams ?? []) as string[];
-        const existingLeagues = (prefs?.favorite_leagues ?? []) as string[];
-        const text = `Check out ${displayName} on Sports Analysis`;
-        // Determine a logo for the selected league, prefer the display object
-        const logo = selectedDisplayLeague?.logo || undefined;
-        const newLeagueLogos = { ...existingLeagueLogos } as Record<string, string>;
-        if (logo) newLeagueLogos[selectedLeague] = logo;
-        const newLeagues = existingLeagues.includes(selectedLeague) ? existingLeagues : [...existingLeagues, selectedLeague];
-        if (nav?.share) {
-          try {
-            await nav.share({ title, text, url });
-            // upsert preferences with logo maps so share action also captures logo
-            await supabase.from('user_preferences').upsert({
-              user_id: user.id,
-              favorite_teams: existingTeams,
-              favorite_leagues: newLeagues,
-              favorite_team_logos: existingTeamLogos,
-              favorite_league_logos: newLeagueLogos,
-            });
-            // best-effort: update cached_leagues for cross-user reuse
-            try {
-              const { error: rpcErr } = await supabase.rpc('upsert_cached_league', { p_provider_id: null, p_name: selectedLeague, p_logo: logo ?? '', p_metadata: {} });
-              if (rpcErr) console.debug('upsert_cached_league error', selectedLeague, rpcErr);
-            } catch (e) { console.debug('upsert_cached_league threw', selectedLeague, e); }
-            await ensureLeagueItemAndSend(selectedLeague, 'share');
-            return;
-          } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') return;
-          }
-        }
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        toast.success('Link copied to clipboard');
-        await ensureLeagueItemAndSend(selectedLeague, 'share');
-      }
-    } catch {
-      // Ignore share failures
-    }
-  }, [selectedLeague, selectedDisplayLabel, ensureLeagueItemAndSend, selectedDisplayLeague?.logo, supabase, user]);
+  // ...existing code...
 
   const fetchLeagueNews = useCallback(async (leagueName: string) => {
     if (!leagueName) return;

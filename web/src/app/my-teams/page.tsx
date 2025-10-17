@@ -358,9 +358,21 @@ export default function MyTeamsPage() {
   }, [user, supabase]);
 
   // Fetch cached team logos for display (if present in cached_teams)
+  const teamLogosRef = useRef(teamLogos);
+  useEffect(() => {
+    teamLogosRef.current = teamLogos;
+  }, [teamLogos]);
+
+  // Clear team logos if user logs out or teams is empty, in a separate effect
   useEffect(() => {
     if (!user || teams.length === 0) {
       setTeamLogos({});
+    }
+    // do not return here, let the main effect handle the rest
+  }, [user, teams]);
+
+  useEffect(() => {
+    if (!user || teams.length === 0) {
       return;
     }
     let mounted = true;
@@ -385,7 +397,7 @@ export default function MyTeamsPage() {
 
         const missing = teams.filter(teamName => {
           const normalizedKey = normalizeKey(teamName);
-          const existing = sanitizeLogoUrl(teamLogos[teamName]);
+          const existing = sanitizeLogoUrl(teamLogosRef.current[teamName]);
           const cached = sanitizeLogoUrl(map[normalizedKey]);
           return !existing && !cached;
         });
@@ -449,7 +461,7 @@ export default function MyTeamsPage() {
         const combinedCache = { ...teamLogoCache, ...map };
         const displayMap: Record<string, string> = {};
         teams.forEach(teamName => {
-          displayMap[String(teamName)] = resolveLogoForDisplay(String(teamName), teamLogos, combinedCache) || '';
+          displayMap[String(teamName)] = resolveLogoForDisplay(String(teamName), teamLogosRef.current, combinedCache) || '';
         });
         setTeamLogos(displayMap);
       } catch {
@@ -457,12 +469,24 @@ export default function MyTeamsPage() {
       }
     })();
     return () => { mounted = false; };
-  }, [teams, user, supabase, teamLogoCache, teamLogos]);
+  }, [teams, user, supabase, teamLogoCache]);
 
   // Fetch cached league logos for display (if present in cached_leagues)
+  // keep a ref to the latest leagueLogosMap to avoid using it as an effect dependency
+  const leagueLogosMapRef = useRef(leagueLogosMap);
+  useEffect(() => {
+    leagueLogosMapRef.current = leagueLogosMap;
+  }, [leagueLogosMap]);
+
+  // Clear league logos if user logs out or leagues is empty
   useEffect(() => {
     if (!user || leagues.length === 0) {
       setLeagueLogosMap({});
+    }
+  }, [user, leagues]);
+
+  useEffect(() => {
+    if (!user || leagues.length === 0) {
       return;
     }
     let mounted = true;
@@ -509,7 +533,7 @@ export default function MyTeamsPage() {
 
               if (!logo) {
                 try {
-                  const detail = await getLeagueTable(name);
+                  const detail = await getLeagueTable({ leagueName: name });
                   const maybeLeague = detail?.data?.league ?? detail?.data ?? null;
                   const leagueObj = Array.isArray(maybeLeague) && maybeLeague.length
                     ? maybeLeague[0]
@@ -644,7 +668,7 @@ export default function MyTeamsPage() {
         const combinedLeagueCache = { ...leagueLogoCache, ...map };
         const displayLeagueMap: Record<string, string> = {};
         leagues.forEach(leagueName => {
-          displayLeagueMap[String(leagueName)] = resolveLogoForDisplay(String(leagueName), leagueLogosMap, combinedLeagueCache) || '';
+          displayLeagueMap[String(leagueName)] = resolveLogoForDisplay(String(leagueName), leagueLogosMapRef.current, combinedLeagueCache) || '';
         });
         setLeagueLogosMap(displayLeagueMap);
       } catch {

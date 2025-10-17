@@ -398,7 +398,7 @@ export default function ProfilePage() {
     } catch {
       /* ignore */
     }
-  }, [user, prefsVersion]);
+  }, [user, prefsVersion, recs]);
 
   const resolveLogos = useCallback(
     async (kind: "team" | "league", names: string[], existing: Record<string, string>) => {
