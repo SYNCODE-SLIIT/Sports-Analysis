@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ChevronRight, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -237,7 +238,22 @@ type LeagueCardItemProps = {
 };
 
 function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: LeagueCardItemProps) {
-  const handleSelect = () => onSelect(league);
+  const router = useRouter();
+  const handleSelect = () => {
+    onSelect(league);
+    try {
+      const baseId = (league.id ?? league.displayName ?? league.rawName)?.toString();
+      if (!baseId) return;
+      const slug = encodeURIComponent(baseId);
+      let url = `/leagues/${slug}`;
+      if (league.rawName) {
+        url += `?name=${encodeURIComponent(league.rawName)}`;
+      }
+      router.push(url);
+    } catch {
+      // ignore navigation errors
+    }
+  };
   const baseClasses = [
     "cursor-pointer",
     "border",
