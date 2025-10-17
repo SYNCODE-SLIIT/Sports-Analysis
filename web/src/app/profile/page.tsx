@@ -16,6 +16,7 @@ import {
   ThumbsUp,
   Trophy,
 } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -266,6 +267,7 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 export default function ProfilePage() {
   const { user, supabase, loading, prefsVersion, interactionsVersion } = useAuth();
   const recs = useRecommendations();
+  const router = require('next/navigation').useRouter();
 
   const [profile, setProfile] = useState<ProfileState>({ full_name: "", avatar_url: null });
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
@@ -1074,6 +1076,21 @@ export default function ProfilePage() {
                     Edit profile
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="neon-button px-5"
+                  onClick={async () => {
+                    try {
+                      await supabase.auth.signOut();
+                    } finally {
+                      try { router.replace('/'); } catch {}
+                    }
+                  }}
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign out
+                </Button>
               </div>
             </div>
 

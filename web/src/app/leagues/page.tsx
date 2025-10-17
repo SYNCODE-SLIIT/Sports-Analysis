@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ChevronRight, Search } from "lucide-react";
+import { Check, ChevronRight, Plus, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
@@ -228,13 +229,54 @@ const sortLeaguesWithinCategory = (leagues: DisplayLeague[]) =>
 type LeagueCardItemProps = {
   league: DisplayLeague;
   isSelected: boolean;
+  isFavorited?: boolean;
+  favoriteBusy?: boolean;
   onSelect: (league: DisplayLeague) => void;
+  onToggleFavorite?: (league: DisplayLeague) => void;
   variant?: "grid" | "carousel";
 };
 
-function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: LeagueCardItemProps) {
-  const handleSelect = () => onSelect(league);
+function LeagueCardItem({
+  league,
+  isSelected,
+  isFavorited = false,
+  favoriteBusy = false,
+  onSelect,
+  onToggleFavorite,
+  variant = "grid",
+}: LeagueCardItemProps) {
+  const router = useRouter();
+  const favoriteDisabled = favoriteBusy || !onToggleFavorite;
+
+  const handleSelect = () => {
+    onSelect(league);
+    try {
+      const baseId = (league.id ?? league.displayName ?? league.rawName)?.toString();
+      if (!baseId) return;
+      const slug = encodeURIComponent(baseId);
+      let url = `/leagues/${slug}`;
+      if (league.rawName) {
+        url += `?name=${encodeURIComponent(league.rawName)}`;
+      }
+      router.push(url);
+    } catch {
+      // ignore navigation errors
+    }
+  };
+  const handleFavoriteClick = (evt: MouseEvent<HTMLButtonElement>) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+    if (!favoriteDisabled) onToggleFavorite?.(league);
+  };
+  const handleFavoriteKeyDown = (evt: KeyboardEvent<HTMLButtonElement>) => {
+    if (evt.key === " " || evt.key === "Enter") {
+      evt.preventDefault();
+      evt.stopPropagation();
+      if (!favoriteDisabled) onToggleFavorite?.(league);
+    }
+  };
   const baseClasses = [
+    "relative",
     "cursor-pointer",
     "border",
     "hover:shadow-md",
@@ -258,14 +300,41 @@ function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: Leag
       onClick={handleSelect}
       role="button"
       tabIndex={0}
+      aria-pressed={isSelected}
       onKeyDown={evt => {
-        if (evt.key === "Enter" || evt.key === " ") {
+        if ((evt.key === "Enter" || evt.key === " ") && evt.target === evt.currentTarget) {
           evt.preventDefault();
           handleSelect();
         }
       }}
     >
-      <CardContent className="flex items-center gap-4 p-4">
+      <motion.button
+        type="button"
+  aria-label={isFavorited ? "Remove league from favorites" : "Save league"}
+        onClick={handleFavoriteClick}
+        onKeyDown={handleFavoriteKeyDown}
+        disabled={favoriteDisabled}
+        className={[
+          "absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full border bg-background/95 text-muted-foreground shadow-sm transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+          isFavorited ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary hover:text-primary",
+          favoriteDisabled ? "cursor-default opacity-60" : "cursor-pointer",
+        ].join(" ")}
+        whileTap={favoriteDisabled ? undefined : { scale: 0.9 }}
+        whileHover={favoriteDisabled ? undefined : { scale: 1.05 }}
+        animate={isFavorited ? { scale: [1, 1.15, 1], rotate: [0, -6, 6, 0] } : { scale: 1, rotate: 0 }}
+        transition={{ duration: 0.35, ease: "easeOut" }}
+        data-state={isFavorited ? "saved" : "idle"}
+      >
+        {favoriteBusy ? (
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/60 border-t-transparent" />
+        ) : isFavorited ? (
+          <Check className="h-4 w-4" />
+        ) : (
+          <Plus className="h-4 w-4" />
+        )}
+      </motion.button>
+      <CardContent className="flex items-center gap-4 p-4 pr-12">
         <div
           className={`flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border text-sm font-semibold ${
             league.logo ? "border-transparent" : "border-border bg-muted text-muted-foreground"
@@ -292,9 +361,12 @@ type FeaturedCategorySectionProps = {
   section: FeaturedSection;
   onSelect: (league: DisplayLeague) => void;
   selectedLeague: string;
+  favLeagues: string[];
+  pendingFavorites: Set<string>;
+  onToggleFavorite: (league: DisplayLeague) => void;
 };
 
-function FeaturedCategorySection({ section, onSelect, selectedLeague }: FeaturedCategorySectionProps) {
+function FeaturedCategorySection({ section, onSelect, selectedLeague, favLeagues, pendingFavorites, onToggleFavorite }: FeaturedCategorySectionProps) {
   if (!section.leagues.length) return null;
   return (
     <div className="space-y-3">
@@ -309,6 +381,9 @@ function FeaturedCategorySection({ section, onSelect, selectedLeague }: Featured
             league={league}
             isSelected={selectedLeague === league.rawName}
             onSelect={onSelect}
+            onToggleFavorite={onToggleFavorite}
+            isFavorited={favLeagues.includes(league.rawName)}
+            favoriteBusy={pendingFavorites.has(league.rawName)}
             variant="carousel"
           />
         ))}
@@ -463,7 +538,17 @@ export default function LeaguesPage() {
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const [remainingVisibleCount, setRemainingVisibleCount] = useState<number>(INITIAL_REMAINING_COUNT);
-  // local placeholder for optimistic UI updates removed; preferences are sourced from Profile
+  const [favLeagues, setFavLeagues] = useState<string[]>([]);
+  const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(new Set());
+
+  const updateFavoritePending = useCallback((leagueName: string, pending: boolean) => {
+    setPendingFavorites(prev => {
+      const next = new Set(prev);
+      if (pending) next.add(leagueName);
+      else next.delete(leagueName);
+      return next;
+    });
+  }, []);
 
   const skeletonCount = useMemo(() => (news.length ? Math.min(news.length, 6) : 4), [news.length]);
 
@@ -472,6 +557,39 @@ export default function LeaguesPage() {
   useEffect(() => {
     setRemainingVisibleCount(INITIAL_REMAINING_COUNT);
   }, [search, allLeagues]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      setFavLeagues([]);
+      setPendingFavorites(new Set());
+      return () => {
+        active = false;
+      };
+    }
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('user_preferences')
+          .select('favorite_leagues')
+          .eq('user_id', user.id)
+          .single();
+        if (!active) return;
+        const leagues = Array.isArray(data?.favorite_leagues)
+          ? (data.favorite_leagues as string[])
+          : [];
+        setFavLeagues(leagues);
+      } catch {
+        if (!active) return;
+        setFavLeagues([]);
+      } finally {
+        if (active) setPendingFavorites(new Set());
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user, supabase]);
 
   const findMetadataForLeague = useCallback(
     (league: LeagueLite): ResolvedMetadata | undefined => {
@@ -763,7 +881,227 @@ export default function LeaguesPage() {
     [ensureLeagueItemAndSend]
   );
 
-  // ...existing code...
+  const removeFavoriteLeague = useCallback(async (league: DisplayLeague) => {
+    const name = league.rawName;
+    const displayLabel = league.displayLabel || league.displayName;
+    if (!user || !name) return;
+    if (pendingFavorites.has(name)) return;
+    updateFavoritePending(name, true);
+    setFavLeagues(prev => prev.filter(item => item !== name));
+    try {
+      const { data: prefs } = await supabase
+        .from('user_preferences')
+        .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
+        .eq('user_id', user.id)
+        .single();
+      const existingTeams = (prefs?.favorite_teams ?? []) as string[];
+      const existingLeagues = (prefs?.favorite_leagues ?? []) as string[];
+      const existingTeamLogos = (prefs?.favorite_team_logos ?? {}) as Record<string, string>;
+      const existingLeagueLogos = (prefs?.favorite_league_logos ?? {}) as Record<string, string>;
+      const nextLeagues = existingLeagues.filter(item => item !== name);
+      const nextLeagueLogos = { ...existingLeagueLogos } as Record<string, string>;
+      delete nextLeagueLogos[name];
+      await supabase.from('user_preferences').upsert({
+        user_id: user.id,
+        favorite_teams: existingTeams,
+        favorite_leagues: nextLeagues,
+        favorite_team_logos: existingTeamLogos,
+        favorite_league_logos: nextLeagueLogos,
+      });
+      try {
+        const { data: itemId } = await supabase.rpc('ensure_league_item', {
+          p_league_name: name,
+          p_logo: league.logo ?? null,
+          p_popularity: 0,
+        });
+        if (itemId) {
+          await supabase
+            .from('user_interactions')
+            .delete()
+            .match({ user_id: user.id, item_id: itemId, event: 'save' });
+          try {
+            await supabase
+              .from('user_interactions')
+              .insert({ user_id: user.id, item_id: itemId, event: 'dismiss' });
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore failures when cleaning up interactions
+      }
+      try { bumpPreferences(); } catch {}
+      toast.success(`${displayLabel} removed from favorites`);
+    } catch {
+      setFavLeagues(prev => (prev.includes(name) ? prev : [...prev, name]));
+      toast.error(`Couldn't remove ${displayLabel}`);
+    } finally {
+      updateFavoritePending(name, false);
+    }
+  }, [user, supabase, bumpPreferences, pendingFavorites, updateFavoritePending]);
+
+  const addFavoriteLeague = useCallback(async (league: DisplayLeague) => {
+    const name = league.rawName;
+    const displayLabel = league.displayLabel || league.displayName;
+    if (!name) return;
+    if (!user) {
+      toast.info('Sign in to save leagues');
+      return;
+    }
+    if (pendingFavorites.has(name)) return;
+    if (favLeagues.includes(name)) {
+      toast.info(`${displayLabel} is already saved`);
+      return;
+    }
+
+    updateFavoritePending(name, true);
+    setFavLeagues(prev => [...prev, name]);
+    try {
+      await ensureLeagueItemAndSend(name, 'save');
+      const { data: prefs } = await supabase
+        .from('user_preferences')
+        .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
+        .eq('user_id', user.id)
+        .single();
+      const existingTeams = (prefs?.favorite_teams ?? []) as string[];
+      const existingLeagues = (prefs?.favorite_leagues ?? []) as string[];
+      const existingTeamLogos = (prefs?.favorite_team_logos ?? {}) as Record<string, string>;
+      const existingLeagueLogos = (prefs?.favorite_league_logos ?? {}) as Record<string, string>;
+      const nextLeagues = Array.from(new Set([...existingLeagues, name]));
+      const nextLeagueLogos = { ...existingLeagueLogos } as Record<string, string>;
+      if (league.logo) nextLeagueLogos[name] = league.logo;
+      await supabase.from('user_preferences').upsert({
+        user_id: user.id,
+        favorite_teams: existingTeams,
+        favorite_leagues: nextLeagues,
+        favorite_team_logos: existingTeamLogos,
+        favorite_league_logos: nextLeagueLogos,
+      });
+      setFavLeagues(nextLeagues);
+      try { bumpPreferences(); } catch {}
+      try {
+        await supabase.rpc('upsert_cached_league', {
+          p_provider_id: null,
+          p_name: name,
+          p_logo: league.logo ?? '',
+          p_metadata: {},
+        });
+      } catch {
+        // ignore cached league updates
+      }
+      toast.success(`${displayLabel} added to favorites`, {
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void removeFavoriteLeague(league);
+          },
+        },
+      });
+    } catch {
+      setFavLeagues(prev => prev.filter(item => item !== name));
+      toast.error(`Couldn't save ${displayLabel}`);
+    } finally {
+      updateFavoritePending(name, false);
+    }
+  }, [user, supabase, favLeagues, pendingFavorites, ensureLeagueItemAndSend, bumpPreferences, updateFavoritePending, removeFavoriteLeague]);
+
+  const toggleFavoriteLeague = useCallback((league: DisplayLeague) => {
+    const name = league.rawName;
+    if (!name) return;
+    if (favLeagues.includes(name)) {
+      void removeFavoriteLeague(league);
+    } else {
+      void addFavoriteLeague(league);
+    }
+  }, [favLeagues, addFavoriteLeague, removeFavoriteLeague]);
+
+  // Save league to user preferences (favorite_leagues) and log interaction
+  const handleSaveLeague = useCallback(async () => {
+    if (!user || !selectedLeague) return;
+    try {
+      // ensure league item & send save interaction
+      await ensureLeagueItemAndSend(selectedLeague, 'save');
+
+      // fetch existing preferences
+      const { data: prefs } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
+      const existingLeagues: string[] = (prefs?.favorite_leagues ?? []) as string[];
+      const existingTeams: string[] = (prefs?.favorite_teams ?? []) as string[];
+      if (existingLeagues.includes(selectedLeague)) {
+        toast.success(`${selectedDisplayLabel} is already in your favorites`);
+        // still update local state to reflect db
+        setFavLeagues(existingLeagues);
+        return;
+      }
+      const newLeagues = [...existingLeagues, selectedLeague];
+      // upsert preferences
+      await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: existingTeams, favorite_leagues: newLeagues });
+      // update local state so UI updates immediately
+      setFavLeagues(newLeagues);
+      // notify other components (Profile) to refresh preferences
+      try { bumpPreferences(); } catch {}
+      toast.success(`${selectedDisplayLabel} saved to your favorites`);
+    } catch (err) {
+      console.error('save league', err);
+      toast.error('Failed to save league');
+    }
+  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences, setFavLeagues]);
+
+  const handleLeagueShare = useCallback(async () => {
+    if (!selectedLeague) return;
+    const displayName = selectedDisplayLabel || selectedLeague;
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/leagues?league=${encodeURIComponent(selectedLeague)}`
+      : `/leagues?league=${encodeURIComponent(selectedLeague)}`;
+    const title = `${displayName}`;
+    if (!user) return;
+    const { data: prefs } = await supabase
+      .from('user_preferences')
+      .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
+      .eq('user_id', user.id)
+      .single();
+    try {
+        const nav: NavigatorWithShare | undefined = typeof navigator !== 'undefined' ? (navigator as NavigatorWithShare) : undefined;
+        const existingTeamLogos = (prefs?.favorite_team_logos ?? {}) as Record<string, string>;
+        const existingLeagueLogos = (prefs?.favorite_league_logos ?? {}) as Record<string, string>;
+        const existingTeams = (prefs?.favorite_teams ?? []) as string[];
+        const existingLeagues = (prefs?.favorite_leagues ?? []) as string[];
+        const text = `Check out ${displayName} on Sports Analysis`;
+        // Determine a logo for the selected league, prefer the display object
+        const logo = selectedDisplayLeague?.logo || undefined;
+        const newLeagueLogos = { ...existingLeagueLogos } as Record<string, string>;
+        if (logo) newLeagueLogos[selectedLeague] = logo;
+        const newLeagues = existingLeagues.includes(selectedLeague) ? existingLeagues : [...existingLeagues, selectedLeague];
+        if (nav?.share) {
+          try {
+            await nav.share({ title, text, url });
+            // upsert preferences with logo maps so share action also captures logo
+            await supabase.from('user_preferences').upsert({
+              user_id: user.id,
+              favorite_teams: existingTeams,
+              favorite_leagues: newLeagues,
+              favorite_team_logos: existingTeamLogos,
+              favorite_league_logos: newLeagueLogos,
+            });
+            // best-effort: update cached_leagues for cross-user reuse
+            try {
+              const { error: rpcErr } = await supabase.rpc('upsert_cached_league', { p_provider_id: null, p_name: selectedLeague, p_logo: logo ?? '', p_metadata: {} });
+              if (rpcErr) console.debug('upsert_cached_league error', selectedLeague, rpcErr);
+            } catch (e) { console.debug('upsert_cached_league threw', selectedLeague, e); }
+            await ensureLeagueItemAndSend(selectedLeague, 'share');
+            return;
+          } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') return;
+          }
+        }
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link copied to clipboard');
+        await ensureLeagueItemAndSend(selectedLeague, 'share');
+      }
+    } catch {
+      // Ignore share failures
+    }
+  }, [selectedLeague, selectedDisplayLabel, ensureLeagueItemAndSend]);
 
   const fetchLeagueNews = useCallback(async (leagueName: string) => {
     if (!leagueName) return;
@@ -866,6 +1204,9 @@ export default function LeaguesPage() {
                     section={section}
                     onSelect={handleLeagueSelect}
                     selectedLeague={selectedLeague}
+                    favLeagues={favLeagues}
+                    pendingFavorites={pendingFavorites}
+                    onToggleFavorite={toggleFavoriteLeague}
                   />
                 ))}
               </div>
@@ -880,6 +1221,9 @@ export default function LeaguesPage() {
                       league={league}
                       isSelected={selectedLeague === league.rawName}
                       onSelect={handleLeagueSelect}
+                      onToggleFavorite={toggleFavoriteLeague}
+                      isFavorited={favLeagues.includes(league.rawName)}
+                      favoriteBusy={pendingFavorites.has(league.rawName)}
                     />
                   ))}
                 </div>

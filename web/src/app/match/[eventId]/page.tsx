@@ -1,7 +1,7 @@
 "use client";
 import Image from "next/image";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { Calendar, MapPin, Users, Trophy, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
 import { toast } from "sonner";
@@ -152,8 +152,18 @@ export default function MatchPage() {
   const [h2hExtra, setH2hExtra] = useState<{ matches: DataObject[] } | null>(null);
   const [extrasLoading, setExtrasLoading] = useState(false);
   const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
+  const [favoriteTeamPending, setFavoriteTeamPending] = useState<Set<string>>(new Set());
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const updateFavoriteTeamPending = useCallback((teamName: string, pending: boolean) => {
+    setFavoriteTeamPending(prev => {
+      const next = new Set(prev);
+      if (pending) next.add(teamName);
+      else next.delete(teamName);
+      return next;
+    });
+  }, []);
 
   // Ensure an item exists for this match and log an interaction
   const ensureMatchItemAndSend = async (
@@ -293,9 +303,50 @@ export default function MatchPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, event?.eventId]);
 
-  const addFavoriteTeam = async (teamName: string) => {
+  const removeFavoriteTeam = useCallback(async (teamName: string) => {
     if (!user || !teamName) return;
+    if (favoriteTeamPending.has(teamName)) return;
+    updateFavoriteTeamPending(teamName, true);
+    setFavoriteTeams(prev => prev.filter(team => team !== teamName));
+    try {
+      const { data } = await supabase
+        .from('user_preferences')
+        .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
+        .eq('user_id', user.id)
+        .single();
+      const prevTeams = (data?.favorite_teams ?? []) as string[];
+      const prevLeagues = (data?.favorite_leagues ?? []) as string[];
+      const prevTeamLogos = (data?.favorite_team_logos ?? {}) as Record<string, string>;
+      const prevLeagueLogos = (data?.favorite_league_logos ?? {}) as Record<string, string>;
+
+      const nextTeams = prevTeams.filter(team => team !== teamName);
+      const nextTeamLogos = { ...prevTeamLogos } as Record<string, string>;
+      delete nextTeamLogos[teamName];
+
+      await supabase.from('user_preferences').upsert({
+        user_id: user.id,
+        favorite_teams: nextTeams,
+        favorite_leagues: prevLeagues,
+        favorite_team_logos: nextTeamLogos,
+        favorite_league_logos: prevLeagueLogos,
+      });
+      setFavoriteTeams(nextTeams);
+      toast.success(`Removed ${teamName} from favorites`);
+    } catch {
+      setFavoriteTeams(prev => (prev.includes(teamName) ? prev : [...prev, teamName]));
+      toast.error(`Couldn't remove ${teamName}`);
+    } finally {
+      updateFavoriteTeamPending(teamName, false);
+    }
+  }, [user, supabase, favoriteTeamPending, updateFavoriteTeamPending]);
+
+  const addFavoriteTeam = useCallback(async (teamName: string) => {
+    if (!user || !teamName) return;
+    if (favoriteTeamPending.has(teamName)) return;
     if (favoriteTeams.includes(teamName)) return;
+
+    updateFavoriteTeamPending(teamName, true);
+    setFavoriteTeams(prev => [...prev, teamName]);
     try {
       const { data } = await supabase
         .from('user_preferences')
@@ -309,7 +360,6 @@ export default function MatchPage() {
 
       const nextTeams = Array.from(new Set([...prevTeams, teamName]));
 
-      // Try to resolve a logo from already-fetched team extras or by fetching
       const normalize = (s: string) => s.trim().toLowerCase();
       const nameKey = normalize(teamName);
       const getLogoFromObject = (obj: Record<string, unknown>): string | undefined => {
@@ -348,7 +398,6 @@ export default function MatchPage() {
       };
 
       let logo: string | undefined = undefined;
-      // try from teamsExtra
       const candidates: Array<Record<string, unknown> | null> = [
         teamsExtra.home as Record<string, unknown> | null,
         teamsExtra.away as Record<string, unknown> | null,
@@ -384,10 +433,40 @@ export default function MatchPage() {
         favorite_league_logos: prevLeagueLogos,
       });
       setFavoriteTeams(nextTeams);
-      // update cached team for reuse
-      try { await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: teamName, p_logo: logo ?? '', p_metadata: {} }); } catch {}
-    } catch {}
-  };
+      try {
+        await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: teamName, p_logo: logo ?? '', p_metadata: {} });
+      } catch {
+        // ignore cache population failures
+      }
+      toast.success(`${teamName} added to favorites`, {
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void removeFavoriteTeam(teamName);
+          },
+        },
+      });
+    } catch {
+      setFavoriteTeams(prev => prev.filter(team => team !== teamName));
+      toast.error(`Couldn't save ${teamName}`);
+    } finally {
+      updateFavoriteTeamPending(teamName, false);
+    }
+  }, [user, supabase, favoriteTeams, favoriteTeamPending, teamsExtra.home, teamsExtra.away, updateFavoriteTeamPending, removeFavoriteTeam]);
+
+  const toggleFavoriteTeam = useCallback((teamName: string) => {
+    if (!teamName) return;
+    if (!user) {
+      toast.info('Sign in to save teams');
+      return;
+    }
+    if (favoriteTeamPending.has(teamName)) return;
+    if (favoriteTeams.includes(teamName)) {
+      void removeFavoriteTeam(teamName);
+    } else {
+      void addFavoriteTeam(teamName);
+    }
+  }, [user, favoriteTeams, favoriteTeamPending, addFavoriteTeam, removeFavoriteTeam]);
 
   const handleShare = async () => {
     if (!match) return;
@@ -905,6 +984,11 @@ export default function MatchPage() {
   const isLive = /live|1st|2nd|ht/.test(st);
   const isFinished = /ft|finished/.test(st);
 
+  const homeFavorite = favoriteTeams.includes(match.homeTeam);
+  const homePending = favoriteTeamPending.has(match.homeTeam);
+  const awayFavorite = favoriteTeams.includes(match.awayTeam);
+  const awayPending = favoriteTeamPending.has(match.awayTeam);
+
   
 
   return (
@@ -940,19 +1024,21 @@ export default function MatchPage() {
                   <div className="flex items-center justify-center gap-2">
                     <h3 className="font-semibold text-lg flex items-center gap-1">
                       {match.homeTeam}
-                      {favoriteTeams.includes(match.homeTeam) && (
+                      {homeFavorite && (
                         <Heart className="w-4 h-4 text-red-500" fill="currentColor" />
                       )}
                     </h3>
                     <Button
                       variant="outline"
                       size="icon"
-                      title={favoriteTeams.includes(match.homeTeam) ? "Saved" : "Save team"}
+                      title={homeFavorite ? "Remove from favorites" : "Save team"}
                       className="transition-transform active:scale-95"
-                      disabled={favoriteTeams.includes(match.homeTeam)}
-                      onClick={() => addFavoriteTeam(match.homeTeam)}
+                      disabled={homePending}
+                      onClick={() => toggleFavoriteTeam(match.homeTeam)}
                     >
-                      {favoriteTeams.includes(match.homeTeam) ? (
+                      {homePending ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/60 border-t-transparent" />
+                      ) : homeFavorite ? (
                         <Check className="w-4 h-4 text-green-600" />
                       ) : (
                         <Plus className="w-4 h-4" />
@@ -985,19 +1071,21 @@ export default function MatchPage() {
                   <div className="flex items-center justify-center gap-2">
                     <h3 className="font-semibold text-lg flex items-center gap-1">
                       {match.awayTeam}
-                      {favoriteTeams.includes(match.awayTeam) && (
+                      {awayFavorite && (
                         <Heart className="w-4 h-4 text-red-500" fill="currentColor" />
                       )}
                     </h3>
                     <Button
                       variant="outline"
                       size="icon"
-                      title={favoriteTeams.includes(match.awayTeam) ? "Saved" : "Save team"}
+                      title={awayFavorite ? "Remove from favorites" : "Save team"}
                       className="transition-transform active:scale-95"
-                      disabled={favoriteTeams.includes(match.awayTeam)}
-                      onClick={() => addFavoriteTeam(match.awayTeam)}
+                      disabled={awayPending}
+                      onClick={() => toggleFavoriteTeam(match.awayTeam)}
                     >
-                      {favoriteTeams.includes(match.awayTeam) ? (
+                      {awayPending ? (
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary/60 border-t-transparent" />
+                      ) : awayFavorite ? (
                         <Check className="w-4 h-4 text-green-600" />
                       ) : (
                         <Plus className="w-4 h-4" />

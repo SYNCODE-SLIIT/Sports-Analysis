@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
-import { Menu, User, LogIn, LogOut } from "lucide-react";
+import { Menu, User, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ThemeToggle } from "./ThemeToggle";
@@ -30,11 +30,7 @@ export function Navbar() {
   const { user, supabase } = useAuth();
   const router = useRouter();
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.refresh();
-    router.replace("/");
-  };
+  // sign-out moved to profile page
 
   return (
     <motion.header
@@ -103,10 +99,6 @@ export function Navbar() {
                   Profile
                 </Link>
               </Button>
-              <Button size="sm" className="hidden md:flex" onClick={handleSignOut}>
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign out
-              </Button>
             </>
           ) : (
             <Button size="sm" asChild className="hidden md:flex">
@@ -152,10 +144,6 @@ export function Navbar() {
                           <User className="h-4 w-4 mr-2" />
                           Profile
                         </Link>
-                      </Button>
-                      <Button size="sm" className="w-full" onClick={() => { handleSignOut(); setIsOpen(false); }}>
-                        <LogOut className="h-4 w-4 mr-2" />
-                        Sign out
                       </Button>
                     </>
                   ) : (
