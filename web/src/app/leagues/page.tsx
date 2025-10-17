@@ -240,8 +240,18 @@ type LeagueCardItemProps = {
   variant?: "grid" | "carousel";
 };
 
-function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: LeagueCardItemProps) {
+function LeagueCardItem({
+  league,
+  isSelected,
+  isFavorited = false,
+  favoriteBusy = false,
+  onSelect,
+  onToggleFavorite,
+  variant = "grid",
+}: LeagueCardItemProps) {
   const router = useRouter();
+  const favoriteDisabled = favoriteBusy || !onToggleFavorite;
+
   const handleSelect = () => {
     onSelect(league);
     try {
@@ -255,6 +265,18 @@ function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: Leag
       router.push(url);
     } catch {
       // ignore navigation errors
+    }
+  };
+  const handleFavoriteClick = (evt: MouseEvent<HTMLButtonElement>) => {
+    evt.preventDefault();
+    evt.stopPropagation();
+    if (!favoriteDisabled) onToggleFavorite?.(league);
+  };
+  const handleFavoriteKeyDown = (evt: KeyboardEvent<HTMLButtonElement>) => {
+    if (evt.key === " " || evt.key === "Enter") {
+      evt.preventDefault();
+      evt.stopPropagation();
+      if (!favoriteDisabled) onToggleFavorite?.(league);
     }
   };
   const baseClasses = [
