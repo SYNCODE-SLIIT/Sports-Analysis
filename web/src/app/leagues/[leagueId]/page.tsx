@@ -12,6 +12,7 @@ import { getLeagueTable, listSeasons, postCollect, DataObject, Json } from "@/li
 import { parseFixtures } from "@/lib/schemas";
 import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
 import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
+import LeagueStatistics from "@/components/league/LeagueStatistics";
 
 type LeagueListEntry = {
   id?: string;
@@ -621,6 +622,14 @@ export default function LeagueDetailPage() {
         lastUpdated={lastUpdated}
       />
 
+      {/* League statistics derived from standings */}
+      <LeagueStatistics
+        rows={filteredRows}
+        leagueName={leagueName || heroInfo?.name}
+        seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
+        stageLabel={stageOptions.find(o => o.value === selectedStage)?.label}
+      />
+
       {/* Live matches for this league */}
       <LeagueLiveMatches leagueName={leagueName || heroInfo?.name} />
 
@@ -629,6 +638,7 @@ export default function LeagueDetailPage() {
         leagueName={leagueName || heroInfo?.name}
         seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
       />
+
     </div>
   );
 }
