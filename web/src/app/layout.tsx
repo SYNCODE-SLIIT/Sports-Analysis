@@ -4,6 +4,7 @@ import { Providers } from "@/components/providers";
 import { AuthProvider } from "@/components/AuthProvider";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { FloatingChatbot } from "@/components/chatbot/FloatingChatbot";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -55,6 +56,7 @@ export default function RootLayout({
             <Navbar />
             <main className="flex-1">{children}</main>
             <Footer />
+            <FloatingChatbot />
           </AuthProvider>
         </Providers>
       </body>
