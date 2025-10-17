@@ -36,7 +36,7 @@ async function backfill() {
     const missingTeams = teams.filter(t => !teamLogos[t] || teamLogos[t] === '');
     if (missingTeams.length) {
       // try cached_teams
-      const { data: rows } = await supabase.from('cached_teams').select('name, logo').in('name', missingTeams as any);
+  const { data: rows } = await supabase.from('cached_teams').select('name, logo').in('name', missingTeams as unknown as string[]);
       if (Array.isArray(rows)) {
         for (const r of rows) if (r?.name && r?.logo) teamLogos[String(r.name)] = String(r.logo);
       }
@@ -64,7 +64,7 @@ async function backfill() {
 
     const missingLeagues = leagues.filter(l => !leagueLogos[l] || leagueLogos[l] === '');
     if (missingLeagues.length) {
-      const { data: rows } = await supabase.from('cached_leagues').select('name, logo').in('name', missingLeagues as any);
+  const { data: rows } = await supabase.from('cached_leagues').select('name, logo').in('name', missingLeagues as unknown as string[]);
       if (Array.isArray(rows)) {
         for (const r of rows) if (r?.name && r?.logo) leagueLogos[String(r.name)] = String(r.logo);
       }

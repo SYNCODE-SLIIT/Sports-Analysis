@@ -12,7 +12,6 @@ import { ThemeToggle } from "./ThemeToggle";
 import { ASSETS } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
-import { useRouter } from "next/navigation";
 import { NlSearchBar } from "@/components/search/NlSearchBar";
 
 const navItems = [
@@ -27,8 +26,7 @@ const navItems = [
 export function Navbar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = React.useState(false);
-  const { user, supabase } = useAuth();
-  const router = useRouter();
+  const { user } = useAuth();
 
   // sign-out moved to profile page
 

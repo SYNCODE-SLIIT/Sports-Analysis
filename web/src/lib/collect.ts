@@ -81,28 +81,23 @@ export async function listEvents(args: { leagueName?: string; teamName?: string;
   return postCollect<{ events?: DataObject[] }>("events.list", cleanArgs);
 }
 
-/** League table/details */
-export async function getLeagueTable(leagueName: string, opts?: { season?: string; leagueId?: string }) {
+/** League table/details - supports both leagueId and leagueName like the old implementation */
+export async function getLeagueTable(args: { leagueId?: string; leagueName?: string; season?: string }) {
   const payload: Record<string, Json> = {};
-  const cleanName = sanitizeInput(leagueName);
-  if (cleanName) payload.leagueName = cleanName;
-  if (opts?.leagueId) payload.leagueId = String(opts.leagueId);
-  if (opts?.season) payload.season = opts.season;
-  return postCollect<{ table?: DataObject[]; league?: DataObject }>("league.table", payload);
-}
 
-/** League detail helper */
-export async function getLeagueDetails(args: { leagueName?: string; leagueId?: string }) {
-  const payload: Record<string, Json> = {};
-  if (args.leagueId) payload.leagueId = String(args.leagueId);
-  if (args.leagueName) {
-    const clean = sanitizeInput(args.leagueName);
-    if (clean) payload.leagueName = clean;
+  if (args.leagueId) {
+    payload.leagueId = sanitizeInput(String(args.leagueId));
+  } else if (args.leagueName) {
+    payload.leagueName = sanitizeInput(args.leagueName);
+  } else {
+    throw new Error("leagueId or leagueName is required");
   }
-  if (!payload.leagueId && !payload.leagueName) {
-    throw new Error("leagueId or leagueName required");
+
+  if (args.season) {
+    payload.season = sanitizeInput(args.season);
   }
-  return postCollect<{ league?: DataObject }>("league.get", payload);
+
+  return postCollect<{ table?: DataObject[]; result?: DataObject[]; total?: DataObject[]; standings?: DataObject[]; rows?: DataObject[]; league_table?: DataObject[] }>("league.table", payload);
 }
 
 /** Single match details */
