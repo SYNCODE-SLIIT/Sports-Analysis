@@ -77,6 +77,17 @@ export function buildTimeline(ev: unknown): TLItem[] {
     });
   }
 
+  const merged = buildFallbackTimeline(source);
+  if (merged.length) {
+    const seen = new Set(items.map(item => timelineKey(item)));
+    for (const extra of merged) {
+      const key = timelineKey(extra);
+      if (seen.has(key)) continue;
+      items.push(extra);
+      seen.add(key);
+    }
+  }
+
   if (!items.some(i => i.type === "ht")) items.push({ minute: 45, team: "home", type: "ht" });
   if (!items.some(i => i.type === "ft")) items.push({ minute: 90, team: "home", type: "ft" });
 
@@ -84,10 +95,36 @@ export function buildTimeline(ev: unknown): TLItem[] {
   return items;
 }
 
+const timelineKey = (item: TLItem) => `${item.minute}-${item.type}-${item.team}-${item.player ?? ""}-${item.assist ?? ""}`;
+
 const toMinute = (value: unknown): number => {
   if (value === null || value === undefined) return 0;
-  const n = Number(String(value).replace(/[^\d]/g, ""));
-  return Number.isFinite(n) ? n : 0;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const raw = String(value).trim();
+  if (!raw) return 0;
+  if (/^ht$/i.test(raw)) return 45;
+  if (/^ft$/i.test(raw)) return 90;
+
+  const plusIndex = raw.indexOf("+");
+  if (plusIndex !== -1) {
+    const basePart = raw.slice(0, plusIndex);
+    const extraPart = raw.slice(plusIndex + 1);
+    const baseNum = Number(basePart.replace(/[^\d]/g, ""));
+    const extraMatch = extraPart.match(/\d+/);
+    const extraNum = extraMatch ? Number(extraMatch[0]) : 0;
+    if (Number.isFinite(baseNum)) {
+      const total = baseNum + (Number.isFinite(extraNum) ? extraNum : 0);
+      if (Number.isFinite(total)) return total;
+    }
+  }
+
+  const firstMatch = raw.match(/\d+/);
+  if (firstMatch) {
+    const base = Number(firstMatch[0]);
+    if (Number.isFinite(base)) return base;
+  }
+
+  return 0;
 };
 
 const toString = (value: unknown): string | undefined => (typeof value === "string" && value.trim().length ? value : undefined);
@@ -102,6 +139,202 @@ const scoreRank = (type: string): number => {
   if (type === "ft") return 999;
   return 0;
 };
+
+const fallbackTimelineSources = [
+  "timeline",
+  "timeline_items",
+  "events",
+  "event_timeline",
+  "eventTimeline",
+  "event_entries",
+  "comments",
+  "comments_list",
+  "match_comments",
+  "play_by_play",
+];
+
+const pickTeamName = (source: LooseRecord, keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+};
+
+function buildFallbackTimeline(source: LooseRecord): TLItem[] {
+  const entries = gatherCandidateTimelineEntries(source);
+  if (!entries.length) return [];
+
+  const homeName = pickTeamName(source, ["event_home_team", "home_team", "homeTeam", "strHomeTeam", "HomeTeam"]);
+  const awayName = pickTeamName(source, ["event_away_team", "away_team", "awayTeam", "strAwayTeam", "AwayTeam"]);
+
+  const out: TLItem[] = [];
+  for (const entry of entries) {
+    const minuteRaw = entry.minute ?? entry.time ?? entry.elapsed ?? entry.min ?? entry.m ?? entry.match_minute;
+    const minute = toMinute(minuteRaw);
+    if (!Number.isFinite(minute)) continue;
+
+    const description = toString(entry.description ?? entry.text ?? entry.event ?? entry.detail);
+    const tags = normalizeTagList(entry, description);
+    const type = deriveTimelineType(tags, description, entry);
+    if (!type) continue;
+
+  const team = deduceTeamSide(entry, { homeName, awayName });
+    if (!team) continue;
+
+    let player = toString(entry.player ?? entry.player_name ?? entry.playerName ?? entry.player_fullname ?? entry.scorer ?? entry.goal_scorer ?? entry.home_scorer ?? entry.away_scorer);
+    if (!player && type === "sub") {
+      player = toString(entry.player_in ?? entry.in_player ?? entry.sub_on ?? entry.sub_in);
+    }
+
+    let assist: string | undefined;
+    if (type === "goal" || type === "own_goal" || type === "pen_score") {
+      assist = toString(entry.assist ?? entry.assist_name ?? entry.home_assist ?? entry.away_assist);
+    }
+    if (type === "sub") {
+      assist = toString(entry.player_out ?? entry.out_player ?? entry.sub_out ?? entry.out);
+    }
+
+    const note = toString(entry.note ?? entry.info ?? entry.reason ?? entry.detail ?? entry.description ?? entry.text);
+
+    out.push({ minute, team, type, player, assist, note });
+  }
+
+  return out;
+}
+
+function gatherCandidateTimelineEntries(source: LooseRecord): LooseRecord[] {
+  const collected: LooseRecord[] = [];
+  for (const key of fallbackTimelineSources) {
+    const value = (source as LooseRecord)[key];
+    if (!value) continue;
+    if (Array.isArray(value)) {
+      collected.push(...asRecords(value));
+      continue;
+    }
+    if (typeof value === "object") {
+      for (const nested of Object.values(value as LooseRecord)) {
+        if (Array.isArray(nested)) {
+          collected.push(...asRecords(nested));
+        } else if (nested && typeof nested === "object") {
+          collected.push(nested as LooseRecord);
+        }
+      }
+    }
+  }
+  return collected;
+}
+
+function normalizeTagList(entry: LooseRecord, description?: string | undefined): string[] {
+  const sources = [
+    entry.tags,
+    entry.labels,
+    entry.labels_list,
+    entry.predicted_tags,
+    entry.predictedTags,
+    entry.card,
+    entry.type,
+    entry.event_type,
+  ];
+  const tags: string[] = [];
+  for (const src of sources) {
+    if (src === undefined || src === null) continue;
+    if (Array.isArray(src)) {
+      for (const v of src) {
+        const s = toString(v);
+        if (s) tags.push(s.toLowerCase());
+      }
+      continue;
+    }
+    if (typeof src === "string") {
+      const parts = src.split(/[|,/]/g).map(part => part.trim().toLowerCase()).filter(Boolean);
+      if (parts.length) tags.push(...parts);
+      continue;
+    }
+    if (typeof src === "object") {
+      const maybeLabel = toString((src as LooseRecord).label ?? (src as LooseRecord).name ?? (src as LooseRecord).text);
+      if (maybeLabel) tags.push(maybeLabel.toLowerCase());
+    }
+  }
+
+  if (!tags.length && description) {
+    tags.push(...detectTagsFromText(description));
+  }
+
+  return Array.from(new Set(tags));
+}
+
+function deriveTimelineType(tags: string[], description: string | undefined, entry: LooseRecord): TLItem["type"] | null {
+  const tagText = tags.join(" ");
+  const desc = (description ?? "").toLowerCase();
+  const typeField = String(entry.type ?? entry.event_type ?? "").toLowerCase();
+
+  const has = (needle: string) => tagText.includes(needle) || desc.includes(needle) || typeField.includes(needle);
+
+  if (has("own goal")) return "own_goal";
+  if (has("penalty miss") || has("pen miss") || has("penalty saved")) return "pen_miss";
+  if (has("penalty") && has("goal")) return "pen_score";
+  if (has("goal") || toBool(entry.goal) || toBool(entry.is_goal)) return "goal";
+  if (has("red card") || has("sent off") || has("redcard") || toBool(entry.red_card)) return "red";
+  if (has("yellow card") || has("yellowcard") || toBool(entry.yellow_card)) return "yellow";
+  if (has("substitution") || has("subbed") || has("replaced") || toBool(entry.substitution)) return "sub";
+  return null;
+}
+
+function detectTagsFromText(text: string): string[] {
+  const lower = text.toLowerCase();
+  const tags = new Set<string>();
+  if (lower.includes("own goal")) tags.add("own goal");
+  if (lower.includes("penalty") && lower.includes("miss")) tags.add("penalty miss");
+  if (lower.includes("penalty")) tags.add("penalty");
+  if (/(\bgoal\b|scored|scores|header)/.test(lower)) tags.add("goal");
+  if (lower.includes("red card") || lower.includes("sent off")) tags.add("red card");
+  if (lower.includes("yellow card")) tags.add("yellow card");
+  if (lower.includes("substitution") || lower.includes("subbed") || lower.includes("replaces")) tags.add("substitution");
+  return Array.from(tags);
+}
+
+function deduceTeamSide(entry: LooseRecord, names: { homeName?: string; awayName?: string }): "home" | "away" | null {
+  const normalize = (value?: string) => value ? value.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim() : "";
+  const homeNorm = normalize(names.homeName);
+  const awayNorm = normalize(names.awayName);
+
+  const teamField = toString(entry.team ?? entry.team_name ?? entry.teamName ?? entry.club ?? entry.squad ?? entry.competitor);
+  const sideField = toString(entry.side ?? entry.team_side ?? entry.teamSide);
+  const combined = normalize(teamField ?? sideField ?? undefined);
+
+  if (combined) {
+    if (combined === "home" || combined.includes("home")) return "home";
+    if (combined === "away" || combined.includes("away")) return "away";
+    if (homeNorm && combined === homeNorm) return "home";
+    if (awayNorm && combined === awayNorm) return "away";
+    if (homeNorm && combined.includes(homeNorm)) return "home";
+    if (awayNorm && combined.includes(awayNorm)) return "away";
+  }
+
+  if (toBool(entry.home) || toBool(entry.is_home) || toBool(entry.homeTeam) || toBool(entry.home_side)) return "home";
+  if (toBool(entry.away) || toBool(entry.is_away) || toBool(entry.awayTeam) || toBool(entry.away_side)) return "away";
+
+  if (entry.home_scorer !== undefined || entry.home_fault !== undefined || entry.home_player !== undefined || entry.in_team === "home" || entry.team === "home") return "home";
+  if (entry.away_scorer !== undefined || entry.away_fault !== undefined || entry.away_player !== undefined || entry.in_team === "away" || entry.team === "away") return "away";
+
+  const playerTeam = toString(entry.player_team ?? entry.team_name ?? entry.teamName);
+  const playerTeamNorm = normalize(playerTeam ?? undefined);
+  if (playerTeamNorm) {
+    if (homeNorm && playerTeamNorm.includes(homeNorm)) return "home";
+    if (awayNorm && playerTeamNorm.includes(awayNorm)) return "away";
+  }
+
+  // As a last resort, try to match score context (e.g., "Home 1-0 Away")
+  const rawNote = toString(entry.note ?? entry.description ?? entry.text);
+  if (rawNote) {
+    const noteNorm = rawNote.toLowerCase();
+    if (homeNorm && noteNorm.includes(homeNorm)) return "home";
+    if (awayNorm && noteNorm.includes(awayNorm)) return "away";
+  }
+
+  return null;
+}
 
 type LeaderBuckets = {
   home: { goals: LeaderStat[]; assists: LeaderStat[]; cards: LeaderStat[] };
