@@ -11,8 +11,17 @@ create table if not exists public.user_preferences (
   user_id uuid primary key references auth.users(id) on delete cascade,
   favorite_teams text[] default '{}',
   favorite_leagues text[] default '{}',
+  -- Store logo maps alongside preferences for fast retrieval in the UI
+  favorite_team_logos jsonb default '{}'::jsonb,
+  favorite_league_logos jsonb default '{}'::jsonb,
   created_at timestamp with time zone default now()
 );
+
+-- Ensure columns exist if the table was created previously without them
+alter table if exists public.user_preferences
+  add column if not exists favorite_team_logos jsonb default '{}'::jsonb;
+alter table if exists public.user_preferences
+  add column if not exists favorite_league_logos jsonb default '{}'::jsonb;
 
 -- Items to recommend (could be matches, articles, clips)
 create table if not exists public.items (
