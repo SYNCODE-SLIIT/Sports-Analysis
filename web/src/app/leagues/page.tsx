@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
+import { toast } from "sonner";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
 
@@ -47,6 +48,11 @@ type FeaturedSection = {
   title: string;
   description?: string;
   leagues: DisplayLeague[];
+};
+
+// Navigator with optional Web Share API
+type NavigatorWithShare = Navigator & {
+  share?: (data: { title?: string; text?: string; url?: string }) => Promise<unknown>;
 };
 
 const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
@@ -452,7 +458,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
-  const { user, supabase } = useAuth();
+  const { user, supabase, bumpPreferences } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -461,6 +467,7 @@ export default function LeaguesPage() {
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const [remainingVisibleCount, setRemainingVisibleCount] = useState<number>(INITIAL_REMAINING_COUNT);
+  const [favLeagues, setFavLeagues] = useState<string[]>([]);
 
   const skeletonCount = useMemo(() => (news.length ? Math.min(news.length, 6) : 4), [news.length]);
 
@@ -789,7 +796,7 @@ export default function LeaguesPage() {
       console.error('save league', err);
       toast.error('Failed to save league');
     }
-  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences]);
+  }, [user, selectedLeague, selectedDisplayLabel, supabase, ensureLeagueItemAndSend, bumpPreferences, setFavLeagues]);
 
   const handleLeagueShare = useCallback(async () => {
     if (!selectedLeague) return;
