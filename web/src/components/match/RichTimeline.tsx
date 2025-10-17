@@ -1,7 +1,9 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getEventBrief, postCollect, getComments } from "@/lib/collect";
 import { summarizeEventBriefs } from "@/lib/summarizer";
 import { resolvePlayerImageByName, resolvePlayerImageFromObj, getTeamRoster } from "@/lib/roster";
 import type { TLItem } from "@/lib/match-mappers";
@@ -17,6 +19,29 @@ type Props = {
   matchRaw?: BasicRecord | null;
   players?: PlayersContext;
   teams?: TeamContext;
+};
+
+const toRecord = (value: unknown): BasicRecord | null => (value && typeof value === "object" ? (value as BasicRecord) : null);
+const toRecordArray = (value: unknown): BasicRecord[] =>
+  Array.isArray(value) ? value.filter((entry): entry is BasicRecord => Boolean(entry) && typeof entry === "object") : [];
+const toStringSafe = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    const str = String(value).trim();
+    return str ? str : undefined;
+  }
+  return undefined;
+};
+const toNumberSafe = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 };
 
 // Basic icon/color mapping inspired by the provided timeline.js helpers
@@ -135,12 +160,21 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   // Pre-warm roster cache for home/away teams when match loads
   useEffect(() => {
     try {
-      const m = matchRaw as any;
-      const home = (teams?.home && (teams as any).home?.name) || m?.event_home_team || m?.home_team || m?.strHomeTeam || undefined;
-      const away = (teams?.away && (teams as any).away?.name) || m?.event_away_team || m?.away_team || m?.strAwayTeam || undefined;
-      if (home) getTeamRoster(String(home)).catch(() => {});
-      if (away) getTeamRoster(String(away)).catch(() => {});
-    } catch (_e) {}
+      const raw = toRecord(matchRaw) ?? {};
+      const resolveName = (key: "home" | "away") =>
+        toStringSafe(teams?.[key]?.name) ??
+        toStringSafe(raw[`${key === "home" ? "event_home_team" : "event_away_team"}`]) ??
+        toStringSafe(raw[`${key}_team`]) ??
+        toStringSafe(raw[key === "home" ? "strHomeTeam" : "strAwayTeam"]);
+
+      const homeName = resolveName("home");
+      const awayName = resolveName("away");
+
+      if (homeName) getTeamRoster(homeName).catch(() => {});
+      if (awayName) getTeamRoster(awayName).catch(() => {});
+    } catch {
+      // ignore background pre-fetch errors
+    }
   }, [matchRaw, teams]);
 
 

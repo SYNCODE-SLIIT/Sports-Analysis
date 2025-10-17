@@ -3,10 +3,24 @@
 
 import { listTeamPlayers } from "./collect";
 
-type Player = { id?: string | number; name?: string; photo?: string; headshot?: string; thumbnail?: string; [k: string]: any };
+type Player = {
+  id?: string | number;
+  name?: string;
+  photo?: string;
+  headshot?: string;
+  thumbnail?: string;
+  [k: string]: unknown;
+};
 
 const rosterCache = new Map<string, Player[]>(); // key: teamName
 const playerImageCache = new Map<string, string>(); // key: normalized player name or id
+
+const toPlayerArray = (value: unknown): Player[] =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is Player => Boolean(entry) && typeof entry === "object")
+    : [];
+
+const toMaybeString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 
 function normalizeName(s?: string) {
   if (!s) return "";
@@ -19,10 +33,11 @@ export async function getTeamRoster(teamName: string) {
   if (rosterCache.has(key)) return rosterCache.get(key)!;
   try {
     const res = await listTeamPlayers(teamName);
-    const players = (res?.data?.players ?? []) as Player[];
+    const players = toPlayerArray(res?.data?.players)
+      .map((player) => player);
     rosterCache.set(key, players);
     return players;
-  } catch (e) {
+  } catch {
     rosterCache.set(key, []);
     return [] as Player[];
   }
@@ -38,7 +53,13 @@ export async function resolvePlayerImageByName(teamName: string | undefined, pla
     if (teamName) {
       const roster = await getTeamRoster(teamName);
       for (const p of roster) {
-        const pn = normalizeName(p.name || p.player || p.fullname || p.displayName || p.player_name);
+        const pn = normalizeName(
+          toMaybeString(p.name) ??
+          toMaybeString(p.player) ??
+          toMaybeString(p.fullname) ??
+          toMaybeString(p.displayName) ??
+          toMaybeString(p.player_name)
+        );
         if (!pn) continue;
         if (pn === norm || pn.includes(norm) || norm.includes(pn)) {
           const keys = ["photo", "headshot", "thumbnail", "image", "player_photo", "player_image", "avatar", "cutout"];
@@ -57,7 +78,13 @@ export async function resolvePlayerImageByName(teamName: string | undefined, pla
   // If not found, try across all cached rosters
   for (const roster of rosterCache.values()) {
     for (const p of roster) {
-      const pn = normalizeName(p.name || p.player || p.fullname || p.displayName || p.player_name);
+        const pn = normalizeName(
+          toMaybeString(p.name) ??
+          toMaybeString(p.player) ??
+          toMaybeString(p.fullname) ??
+          toMaybeString(p.displayName) ??
+          toMaybeString(p.player_name)
+        );
       if (!pn) continue;
       if (pn === norm || pn.includes(norm) || norm.includes(pn)) {
         const keys = ["photo", "headshot", "thumbnail", "image", "player_photo", "player_image", "avatar", "cutout"];
@@ -76,8 +103,8 @@ export async function resolvePlayerImageByName(teamName: string | undefined, pla
   return "";
 }
 
-export function resolvePlayerImageFromObj(obj?: any) {
-  if (!obj || typeof obj !== 'object') return "";
+export function resolvePlayerImageFromObj(obj?: Record<string, unknown>) {
+  if (!obj) return "";
   const keys = ["photo", "headshot", "thumbnail", "image", "player_photo", "player_image", "avatar", "cutout", "strThumb"];
   for (const k of keys) {
     const v = obj[k];

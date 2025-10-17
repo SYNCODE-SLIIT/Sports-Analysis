@@ -94,7 +94,6 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
               <div className="flex flex-col items-center gap-2 text-center">
                 <Avatar className="size-8 border border-border/40 shadow-sm">
                   {fixture.home_team_logo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <AvatarImage src={fixture.home_team_logo} alt={fixture.home_team} />
                   ) : (
                     <AvatarFallback>{fixture.home_team.slice(0,2).toUpperCase()}</AvatarFallback>
@@ -126,7 +125,6 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
               <div className="flex flex-col items-center gap-2 text-center">
                 <Avatar className="size-8 border border-border/40 shadow-sm">
                   {fixture.away_team_logo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <AvatarImage src={fixture.away_team_logo} alt={fixture.away_team} />
                   ) : (
                     <AvatarFallback>{fixture.away_team.slice(0,2).toUpperCase()}</AvatarFallback>
