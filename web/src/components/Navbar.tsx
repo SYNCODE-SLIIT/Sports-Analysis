@@ -18,7 +18,6 @@ import { NlSearchBar } from "@/components/search/NlSearchBar";
 const navItems = [
   { name: "Home", href: "/" },
   { name: "About", href: "/about" },
-  { name: "Assistant", href: "/chatbot" },
   { name: "Live", href: "/live" },
   { name: "Leagues", href: "/leagues" },
   { name: "News", href: "/news" },
@@ -46,30 +45,28 @@ export function Navbar() {
     >
       <nav className="container flex items-center justify-between h-16">
         {/* Logo & Brand */}
-        <Link href="/" className="flex items-center space-x-3">
+        <Link href="/" className="flex items-center space-x-4">
           {/* Light mode logo */}
           <Image
             src={ASSETS.logoLight}
             alt="ATHLETE Logo"
-            width={40}
-            height={40}
-            className="h-10 w-auto block dark:hidden"
+            width={68}
+            height={68}
+            className="h-16 w-auto max-h-16 block dark:hidden"
             priority
           />
           {/* Dark mode logo */}
           <Image
             src={ASSETS.logoDark}
             alt="ATHLETE Logo"
-            width={40}
-            height={40}
-            className="h-10 w-auto hidden dark:block"
+            width={68}
+            height={68}
+            className="h-16 w-auto max-h-16 hidden dark:block"
             priority
           />
-          <span className="text-xl font-bold text-gradient">ATHLETE</span>
-        </Link>
-
-        {/* Desktop Navigation */}
-        <div className="hidden md:flex items-center space-x-8">
+          <span className="text-2xl font-bold text-gradient">ATHLETE</span>
+        </Link>        {/* Desktop Navigation */}
+        <div className="hidden md:flex items-center gap-10">
           {navItems.map((item) => (
             <Link
               key={item.name}

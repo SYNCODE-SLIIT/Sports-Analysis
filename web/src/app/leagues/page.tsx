@@ -1,15 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { ChevronRight, Search, ThumbsUp, Bookmark, Share2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MatchCard } from "@/components/MatchCard";
+import { ChevronRight, Search } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { listEvents, getLeagueTable, sanitizeInput, getLiveEvents, postCollect, getLeagueNews } from "@/lib/collect";
-import { parseFixtures, type Fixture } from "@/lib/schemas";
+import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
 import { useAuth } from "@/components/AuthProvider";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
@@ -51,8 +49,6 @@ type FeaturedSection = {
   leagues: DisplayLeague[];
 };
 
-type NavigatorWithShare = Navigator & { share?: (data: ShareData) => Promise<void> };
-
 const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
 type CategoryMetadata = { id: string; title?: string; description?: string };
 const CATEGORY_METADATA_LIST: CategoryMetadata[] = rawCategoryMetadata as CategoryMetadata[];
@@ -83,6 +79,42 @@ type ResolvedMetadata = {
   categories: string[];
   fameRank: number;
 };
+
+const formatRelativeTime = (value?: string) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const divisions: { amount: number; name: Intl.RelativeTimeFormatUnit }[] = [
+    { amount: 60, name: "second" },
+    { amount: 60, name: "minute" },
+    { amount: 24, name: "hour" },
+    { amount: 7, name: "day" },
+    { amount: 4.34524, name: "week" },
+    { amount: 12, name: "month" },
+    { amount: Number.POSITIVE_INFINITY, name: "year" },
+  ];
+
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  let duration = seconds;
+
+  for (const division of divisions) {
+    if (Math.abs(duration) < division.amount) {
+      return formatter.format(Math.round(duration), division.name);
+    }
+
+    duration /= division.amount;
+  }
+
+  return null;
+};
+
+const REMAINING_INITIAL_ROWS = 3;
+const REMAINING_INCREMENT_ROWS = 5;
+const ITEMS_PER_ROW_DESKTOP = 4;
+const INITIAL_REMAINING_COUNT = REMAINING_INITIAL_ROWS * ITEMS_PER_ROW_DESKTOP;
+const INCREMENT_REMAINING_COUNT = REMAINING_INCREMENT_ROWS * ITEMS_PER_ROW_DESKTOP;
 
 const buildMetadataIndex = () => {
   const aggregated = new Map<string, AggregatedMetadata>();
@@ -420,30 +452,23 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
-  const { user, supabase, bumpPreferences, bumpInteractions } = useAuth();
+  const { user, supabase } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
-  const [standings, setStandings] = useState<Array<{ position?: number; team?: string; played?: number; points?: number }>>([]);
-  const [standingsLoading, setStandingsLoading] = useState(false);
-  const [liveInLeague, setLiveInLeague] = useState<Fixture[]>([]);
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [upcoming, setUpcoming] = useState<Fixture[]>([]);
-  const [recent, setRecent] = useState<Fixture[]>([]);
-  const [loadingUpcoming, setLoadingUpcoming] = useState(false);
-  const [loadingRecent, setLoadingRecent] = useState(false);
-  const todayISO = useMemo(() => new Date().toISOString().split("T")[0], []);
-  const [selectedDate, setSelectedDate] = useState<string>(todayISO);
-  const [dateMatches, setDateMatches] = useState<Fixture[]>([]);
-  const [dateLoading, setDateLoading] = useState(false);
   const [news, setNews] = useState<Array<{ id?: string; title?: string; url?: string; summary?: string; imageUrl?: string; source?: string; publishedAt?: string }>>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
-  const [favTeams, setFavTeams] = useState<string[]>([]);
-  const [favLeagues, setFavLeagues] = useState<string[]>([]);
+  const [remainingVisibleCount, setRemainingVisibleCount] = useState<number>(INITIAL_REMAINING_COUNT);
+
+  const skeletonCount = useMemo(() => (news.length ? Math.min(news.length, 6) : 4), [news.length]);
 
   const metadataIndex = useMetadataIndex();
+
+  useEffect(() => {
+    setRemainingVisibleCount(INITIAL_REMAINING_COUNT);
+  }, [search, allLeagues]);
 
   const findMetadataForLeague = useCallback(
     (league: LeagueLite): ResolvedMetadata | undefined => {
@@ -586,6 +611,24 @@ export default function LeaguesPage() {
     };
   }, [displayLeagues]);
 
+  useEffect(() => {
+    setRemainingVisibleCount(prev => {
+      if (!remainingLeagues.length) return INITIAL_REMAINING_COUNT;
+      if (prev > remainingLeagues.length) {
+        return Math.max(INITIAL_REMAINING_COUNT, remainingLeagues.length);
+      }
+      return prev;
+    });
+  }, [remainingLeagues.length]);
+
+  const visibleRemainingLeagues = useMemo(
+    () => remainingLeagues.slice(0, remainingVisibleCount),
+    [remainingLeagues, remainingVisibleCount]
+  );
+
+  const canShowMore = remainingLeagues.length > visibleRemainingLeagues.length;
+  const canShowLess = remainingVisibleCount > INITIAL_REMAINING_COUNT;
+
   const totalVisibleCount = useMemo(
     () => featuredSections.reduce((sum, section) => sum + section.leagues.length, 0) + remainingLeagues.length,
     [featuredSections, remainingLeagues]
@@ -597,9 +640,6 @@ export default function LeaguesPage() {
   }, [allLeagues, selectedLeague, createDisplayLeague]);
 
   const selectedDisplayName = selectedDisplayLeague?.displayName ?? selectedLeague;
-  const selectedDisplayContext = [selectedDisplayLeague?.displayCountry, selectedDisplayLeague?.metadata?.primary.confederation]
-    .filter(Boolean)
-    .join(" • ");
   const selectedDisplayLabel = selectedDisplayLeague?.displayLabel ?? selectedDisplayName;
 
   useEffect(() => {
@@ -703,24 +743,6 @@ export default function LeaguesPage() {
       try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(param)}`); } catch {}
     }
   }, [allLeagues, ensureLeagueItemAndSend, initialLeagueParam, selectedLeague]);
-
-  // Load user preferences for boosting
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      if (!user) { setFavTeams([]); setFavLeagues([]); return; }
-      try {
-        const { data } = await supabase.from('user_preferences').select('favorite_teams, favorite_leagues').eq('user_id', user.id).single();
-        if (!active) return;
-        setFavTeams((data?.favorite_teams ?? []) as string[]);
-        setFavLeagues((data?.favorite_leagues ?? []) as string[]);
-      } catch {
-        if (!active) return;
-        setFavTeams([]); setFavLeagues([]);
-      }
-    })();
-    return () => { active = false; };
-  }, [user, supabase]);
 
   const handleLeagueSelect = useCallback(
     (league: DisplayLeague) => {
@@ -879,158 +901,14 @@ export default function LeaguesPage() {
       setNewsLoading(false);
     }
   }, []);
-
-  const boostFixtures = useCallback((arr: Fixture[]) => {
-    if (favTeams.length === 0 && favLeagues.length === 0) return arr;
-    return [...arr]
-      .map((m, idx) => {
-        const teamBoost = (favTeams.includes(m.home_team) ? 3 : 0) + (favTeams.includes(m.away_team) ? 3 : 0);
-        const leagueBoost = favLeagues.includes(m.league ?? "") ? 2 : 0;
-        return { m, idx, score: teamBoost + leagueBoost };
-      })
-      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
-      .map(x => x.m);
-  }, [favTeams, favLeagues]);
-
-  const fetchMatchesByDate = useCallback(async (leagueName: string, date: string) => {
-    setDateLoading(true);
-    try {
-      const cleanLeague = sanitizeInput(leagueName);
-      const cleanDate = date || todayISO;
-      const response = await postCollect("events.list", {
-        leagueName: cleanLeague,
-        fromDate: cleanDate,
-        toDate: cleanDate,
-      });
-      const data = response.data;
-      const extract = (value: unknown): unknown[] => {
-        if (!value || typeof value !== "object") return [];
-        const candidate = value as Record<string, unknown>;
-        if (Array.isArray(candidate.events)) return candidate.events;
-        if (Array.isArray(candidate.result)) return candidate.result;
-        if (Array.isArray(candidate.results)) return candidate.results;
-        return Array.isArray(candidate) ? (candidate as unknown[]) : [];
-      };
-      const rawEvents: unknown[] = Array.isArray(data)
-        ? data
-        : extract(data) || [];
-      setDateMatches(boostFixtures(parseFixtures(rawEvents)));
-    } catch (error) {
-      console.debug("[leagues] date fixtures", error);
-      setDateMatches([]);
-    } finally {
-      setDateLoading(false);
-    }
-  }, [todayISO, boostFixtures]);
-
-  const applyDateFilter = useCallback(() => {
-    if (!selectedLeague) return;
-    fetchMatchesByDate(selectedLeague, selectedDate);
-  }, [fetchMatchesByDate, selectedLeague, selectedDate]);
-
-  // Load panels when selected league changes
   useEffect(() => {
     if (!selectedLeague) {
-      setDateMatches([]);
-      setDateLoading(false);
+      setNews([]);
+      setNewsError(null);
       return;
     }
-    let active = true;
-    setStandingsLoading(true);
-    setLiveLoading(true);
-    setLoadingUpcoming(true);
-    setLoadingRecent(true);
-    const initialDate = todayISO;
-    setSelectedDate(initialDate);
-    fetchMatchesByDate(selectedLeague, initialDate);
-    setStandings([]);
-    setLiveInLeague([]);
-    setUpcoming([]);
-    setRecent([]);
-    setNews([]);
     fetchLeagueNews(selectedLeague);
-
-    const extractEvents = (payload: unknown): unknown[] => {
-      if (!payload || typeof payload !== "object") return [];
-      const events = (payload as Record<string, unknown>).events;
-      return Array.isArray(events) ? events : [];
-    };
-
-    const run = async () => {
-      const [tableRes, liveRes, upcomingRes, recentRes] = await Promise.allSettled([
-        getLeagueTable(selectedLeague),
-        getLiveEvents({ leagueName: selectedLeague }),
-        listEvents({ leagueName: selectedLeague, kind: "upcoming", days: 7 }),
-        listEvents({ leagueName: selectedLeague, kind: "past", days: 3 }),
-      ]);
-      if (!active) return;
-
-      if (tableRes.status === "fulfilled") {
-        const d = tableRes.value.data as { table?: Array<Record<string, unknown>> } | undefined;
-        const arr = (d && Array.isArray(d.table)) ? d.table : [];
-        const mapped = arr.slice(0, 10).map((r, i) => {
-          const rec = r as Record<string, unknown>;
-          const rank = rec.rank;
-          const teamName = typeof rec.team_name === "string" ? rec.team_name : undefined;
-          return {
-            position: typeof rec.position === "number" ? rec.position : (typeof rank === "string" && rank.trim() ? Number(rank) : i + 1),
-            team: typeof rec.team === "string" ? rec.team : teamName,
-            played: typeof rec.played === "number" ? rec.played : undefined,
-            points: typeof rec.points === "number" ? rec.points : undefined,
-          };
-        });
-        setStandings(mapped);
-      } else {
-        setStandings([]);
-      }
-
-      if (liveRes.status === "fulfilled") {
-        const data = liveRes.value.data as Record<string, unknown> | undefined;
-        let raw: unknown = [];
-        if (data && typeof data === "object") {
-          const getField = (key: string) => (data as Record<string, unknown>)[key];
-          raw = getField("events") ?? getField("result") ?? getField("results") ?? getField("items") ?? [];
-        }
-        const fixtures = parseFixtures(Array.isArray(raw) ? raw : []);
-  setLiveInLeague(boostFixtures(fixtures));
-      } else {
-        setLiveInLeague([]);
-      }
-
-      if (upcomingRes.status === "fulfilled") {
-        const events = extractEvents(upcomingRes.value.data);
-  setUpcoming(boostFixtures(parseFixtures(events)));
-      } else {
-        setUpcoming([]);
-      }
-
-      if (recentRes.status === "fulfilled") {
-        const events = extractEvents(recentRes.value.data);
-  setRecent(boostFixtures(parseFixtures(events)));
-      } else {
-        setRecent([]);
-      }
-
-      setStandingsLoading(false);
-      setLiveLoading(false);
-      setLoadingUpcoming(false);
-      setLoadingRecent(false);
-    };
-
-    run().catch(() => {
-      if (!active) return;
-      setStandings([]);
-      setLiveInLeague([]);
-      setUpcoming([]);
-      setRecent([]);
-      setStandingsLoading(false);
-      setLiveLoading(false);
-      setLoadingUpcoming(false);
-      setLoadingRecent(false);
-    });
-
-    return () => { active = false; };
-  }, [selectedLeague, fetchMatchesByDate, todayISO, boostFixtures, fetchLeagueNews]);
+  }, [selectedLeague, fetchLeagueNews]);
 
   return (
     <div className="container py-8 space-y-12">
@@ -1079,7 +957,7 @@ export default function LeaguesPage() {
               <div className="space-y-4">
                 <h3 className="text-xl font-semibold">All Other Leagues</h3>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {remainingLeagues.map(league => (
+                  {visibleRemainingLeagues.map(league => (
                     <LeagueCardItem
                       key={`${league.id}-${league.displayCountry ?? "global"}-${league.rawName}`}
                       league={league}
@@ -1088,209 +966,161 @@ export default function LeaguesPage() {
                     />
                   ))}
                 </div>
+                {(canShowMore || canShowLess) && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canShowMore && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setRemainingVisibleCount(prev => Math.min(prev + INCREMENT_REMAINING_COUNT, remainingLeagues.length))}
+                      >
+                        Show more
+                      </Button>
+                    )}
+                    {canShowLess && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRemainingVisibleCount(INITIAL_REMAINING_COUNT)}
+                      >
+                        Show less
+                      </Button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {selectedLeague && (
-          <Card className="p-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-1">
-                <h3 className="text-lg font-semibold">Filters</h3>
-                <p className="text-sm text-muted-foreground">
-                  Pick a date to view fixtures for {selectedDisplayLabel}.
-                  {selectedDisplayContext ? <span className="block text-xs text-muted-foreground/80">{selectedDisplayContext}</span> : null}
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 md:flex-row md:items-center">
-                <label className="text-sm text-muted-foreground md:flex md:flex-col md:items-start md:gap-2">
-                  <span className="text-xs uppercase tracking-wide">Date</span>
-                  <input
-                    type="date"
-                    className="h-9 rounded-md border border-border bg-background px-3 text-sm"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-transform active:scale-95"
-                  onClick={applyDateFilter}
-                  disabled={dateLoading}
-                >
-                  {dateLoading ? 'Loading…' : 'Apply'}
-                </button>
-              </div>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" title="Like" className="transition-transform active:scale-95" onClick={() => { ensureLeagueItemAndSend(selectedLeague, 'like'); try { bumpInteractions(); } catch {} }}>
-                <ThumbsUp className="w-4 h-4 mr-1"/> Like
-              </Button>
-              <Button variant="outline" size="sm" title="Save" className="transition-transform active:scale-95" onClick={handleSaveLeague}>
-                <Bookmark className="w-4 h-4 mr-1"/> Save
-              </Button>
-              <Button variant="outline" size="sm" title="Share" className="transition-transform active:scale-95" onClick={() => { handleLeagueShare(); try { bumpInteractions(); } catch {} }}>
-                <Share2 className="w-4 h-4 mr-1"/> Share
-              </Button>
-              {/* Dismiss removed as per request */}
-            </div>
-          </Card>
-        )}
+
 
         {selectedLeague && (
           <div className="space-y-6">
-            {selectedLeague && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>
-                    Matches for {selectedDisplayLabel} on{" "}
-                    {selectedDate ? new Date(selectedDate + "T00:00:00").toLocaleDateString() : "selected date"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {dateLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading fixtures…</div>
-                  ) : dateMatches.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No fixtures scheduled for this date.</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {dateMatches.map((f) => (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-1">
-                <CardHeader><CardTitle>{selectedDisplayLabel} Standings</CardTitle></CardHeader>
-                <CardContent>
-                  {standingsLoading && standings.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Loading standings…</div>
-                  ) : standings.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">Standings unavailable</div>
-                  ) : (
-                    <div className="text-sm">
-                      <div className="grid grid-cols-4 gap-2 font-medium text-muted-foreground mb-2">
-                        <div>#</div><div>Team</div><div>P</div><div>Pts</div>
-                      </div>
-                      <div className="space-y-1">
-                        {standings.map((r, i)=> (
-                          <div key={i} className="grid grid-cols-4 gap-2">
-                            <div>{r.position ?? i+1}</div>
-                            <div className="truncate">{r.team}</div>
-                            <div>{r.played ?? '-'}</div>
-                            <div>{r.points ?? '-'}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              <Card className="lg:col-span-2">
-                <CardHeader><CardTitle>Live in {selectedDisplayLabel}</CardTitle></CardHeader>
-                <CardContent>
-                  {liveLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading live…</div>
-                  ) : liveInLeague.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No live matches</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {liveInLeague.map((f)=> (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader><CardTitle>Upcoming (next 7 days)</CardTitle></CardHeader>
-                <CardContent>
-                  {loadingUpcoming ? (
-                    <div className="text-sm text-muted-foreground">Loading upcoming…</div>
-                  ) : upcoming.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No upcoming fixtures</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {upcoming.map((f)=> (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader><CardTitle>Recent Results (last 3 days)</CardTitle></CardHeader>
-                <CardContent>
-                  {loadingRecent ? (
-                    <div className="text-sm text-muted-foreground">Loading recent…</div>
-                  ) : recent.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">No recent results</div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {recent.map((f)=> (
-                        <MatchCard key={f.id} fixture={f} />
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
             <div>
-              <Card>
-                <CardHeader>
-                  <CardTitle>Latest News for {selectedDisplayLabel}</CardTitle>
+              <Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background via-background/80 to-primary/5 shadow-md">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-6 -right-16 h-44 w-44 rounded-full bg-primary/10 blur-3xl"
+                />
+                <CardHeader className="relative space-y-2 pb-6">
+                  <CardTitle className="text-2xl font-bold tracking-tight">
+                    Latest News for {selectedDisplayLabel}
+                  </CardTitle>
+                  <CardDescription className="text-sm text-muted-foreground">
+                    Breaking stories, match reactions, and transfer chatter curated for {selectedDisplayLabel}.
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   {newsLoading ? (
-                    <div className="text-sm text-muted-foreground">Loading news…</div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {Array.from({ length: skeletonCount }).map((_, index) => (
+                        <div
+                          key={`league-news-skeleton-${index}`}
+                          className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 p-4 shadow-sm"
+                        >
+                          <div className="flex animate-pulse flex-col gap-4 sm:flex-row">
+                            <div className="h-24 w-full rounded-lg bg-muted sm:h-24 sm:w-32" />
+                            <div className="flex-1 space-y-3">
+                              <div className="h-4 w-3/4 rounded bg-muted/80" />
+                              <div className="h-3 w-full rounded bg-muted/60" />
+                              <div className="h-3 w-4/5 rounded bg-muted/60" />
+                              <div className="flex gap-2 pt-2">
+                                <div className="h-3 w-16 rounded-full bg-muted/50" />
+                                <div className="h-3 w-24 rounded-full bg-muted/50" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : newsError ? (
                     <div className="text-sm text-destructive">{newsError}</div>
                   ) : news.length === 0 ? (
                     <div className="text-sm text-muted-foreground">No recent headlines available right now.</div>
                   ) : (
-                    <div className="space-y-4">
-                      {news.map((article) => (
-                        <a
-                          key={article.id}
-                          href={article.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block rounded-lg border border-border p-4 transition hover:border-primary hover:shadow"
-                        >
-                          <div className="flex items-start gap-3">
-                            {article.imageUrl ? (
-                              <img
-                                src={article.imageUrl}
-                                alt={article.title || 'news image'}
-                                className="h-20 w-28 flex-shrink-0 rounded-md object-cover"
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                              />
-                            ) : null}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {news.map((article) => {
+                        const displayTitle = article.title || "Untitled headline";
+                        const relativeTime = formatRelativeTime(article.publishedAt);
 
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-semibold text-foreground truncate">{article.title}</div>
-                              {article.summary && (
-                                <div className="text-sm text-muted-foreground line-clamp-3">{article.summary}</div>
-                              )}
-                              <div className="text-xs text-muted-foreground flex items-center gap-2 mt-2">
-                                {article.source && <span className="truncate">{article.source}</span>}
-                                {article.publishedAt && (
-                                  <time dateTime={article.publishedAt} className="truncate">
-                                    {new Date(article.publishedAt).toLocaleString()}
-                                  </time>
-                                )}
+                        return (
+                          <a
+                            key={article.id}
+                            href={article.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative block overflow-hidden rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-background hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                          >
+                            <span
+                              aria-hidden
+                              className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-primary/0 via-primary/5 to-primary/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                            />
+                            <div className="flex flex-col gap-4 sm:flex-row">
+                              {article.imageUrl ? (
+                                <Image
+                                  src={article.imageUrl}
+                                  alt={displayTitle}
+                                  width={128}
+                                  height={96}
+                                  className="h-24 w-full flex-shrink-0 rounded-lg object-cover shadow-sm sm:h-24 sm:w-32"
+                                  onError={(event) => {
+                                    (event.currentTarget as HTMLImageElement).style.display = "none";
+                                  }}
+                                />
+                              ) : null}
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-primary/70">
+                                  Latest headline
+                                </div>
+                                <div className="mt-1 text-base font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">
+                                  {displayTitle}
+                                </div>
+                                {article.summary ? (
+                                  <p className="mt-2 text-sm text-muted-foreground line-clamp-3">{article.summary}</p>
+                                ) : null}
+                                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                                  {article.source ? (
+                                    <span className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary/80">
+                                      {article.source}
+                                    </span>
+                                  ) : null}
+                                  {article.source && article.publishedAt ? (
+                                    <span aria-hidden className="h-1 w-1 rounded-full bg-border" />
+                                  ) : null}
+                                  {article.publishedAt ? (
+                                    <time
+                                      dateTime={article.publishedAt}
+                                      className="truncate"
+                                      title={new Date(article.publishedAt).toLocaleString()}
+                                    >
+                                      {relativeTime ?? new Date(article.publishedAt).toLocaleDateString()}
+                                    </time>
+                                  ) : null}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </a>
-                      ))}
+                            <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-primary/80 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                              Read full story
+                              <svg
+                                aria-hidden
+                                className="h-3.5 w-3.5 translate-x-0 transition-transform duration-300 group-hover:translate-x-1"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                              >
+                                <path
+                                  d="M4 12L12 4M12 4H6M12 4V10"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </span>
+                          </a>
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
@@ -1298,6 +1128,7 @@ export default function LeaguesPage() {
             </div>
           </div>
         )}
+
       </section>
     </div>
   );

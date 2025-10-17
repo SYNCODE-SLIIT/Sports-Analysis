@@ -310,8 +310,9 @@ export default function MyTeamsPage() {
 
       // Load suggestions from RPC if available (ignore errors)
       try {
-        const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
-        const names = Array.isArray(rpc) ? rpc.map((r: any) => r.team).filter(Boolean) : [];
+  const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
+  type Row = { team?: string };
+  const names = Array.isArray(rpc) ? rpc.map((r: unknown) => (r as Row)?.team).filter((v): v is string => typeof v === 'string' && v.trim().length > 0) : [];
         setSuggestions(names);
         // Try to prefetch cached logos for suggestions so buttons can show icons
         try {
@@ -874,7 +875,7 @@ export default function MyTeamsPage() {
     if (!q) { setResults([]); return () => { alive = false; }; }
     (async () => {
       try {
-        setSearching(true);
+        
         const [teamsResp, leaguesResp] = await Promise.allSettled([searchTeams(q), searchLeagues(q)]);
         const teamsArr = (teamsResp.status === 'fulfilled' ? teamsResp.value.data?.teams ?? [] : []) as Array<Record<string, unknown>>;
         const leaguesArr = (leaguesResp.status === 'fulfilled' ? leaguesResp.value.data?.leagues ?? [] : []) as Array<Record<string, unknown>>;
@@ -915,7 +916,7 @@ export default function MyTeamsPage() {
       } catch {
         if (alive) setResults([]);
       } finally {
-        if (alive) setSearching(false);
+        
       }
     })();
     return () => { alive = false; };
@@ -939,13 +940,16 @@ export default function MyTeamsPage() {
   if (!user) {
     return (
       <div className="container py-8 min-h-[60vh] flex items-center justify-center">
-        <EmptyState
-          type="no-teams"
-          title="Sign in to manage your teams"
-          description="Create an account or sign in to save your favorite teams and get personalized match recommendations."
-          actionLabel="Sign In"
-          onAction={() => window.location.href = '/auth/login'}
-        />
+        <div className="max-w-lg w-full bg-background border rounded-lg shadow p-8 flex flex-col items-center text-center gap-6">
+          <Heart className="h-10 w-10 text-primary mb-2" />
+          <h2 className="text-2xl font-bold">Login to add your favorite teams</h2>
+          <p className="text-muted-foreground text-base">
+            Sign in to save and manage your favorite teams. You’ll get personalized match recommendations, quick access to your teams, and more.
+          </p>
+          <Button size="lg" className="mt-2 px-8 py-2 text-base font-semibold" onClick={() => window.location.href = '/auth/login'}>
+            Sign In
+          </Button>
+        </div>
       </div>
     );
   }

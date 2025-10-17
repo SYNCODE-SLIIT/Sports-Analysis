@@ -203,3 +203,13 @@ export async function getLeagueNews(leagueName: string, limit = 20) {
     limit,
   });
 }
+
+// Analysis win probability override (parity with legacy match.js)
+export async function getWinProb(eventId: string, source = "auto", lookback = 10) {
+  const u = new URL("/api/analysis/winprob", window.location.origin);
+  u.searchParams.set("eventId", String(eventId));
+  u.searchParams.set("source", source);
+  u.searchParams.set("lookback", String(lookback));
+  const r = await fetch(u.toString());
+  return r.json();
+}

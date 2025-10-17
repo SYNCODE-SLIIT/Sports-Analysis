@@ -1,5 +1,8 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from 'react-dom';
 import { useTheme } from "next-themes";
@@ -9,14 +12,40 @@ import { resolvePlayerImageByName, resolvePlayerImageFromObj, getTeamRoster } fr
 import type { TLItem } from "@/lib/match-mappers";
 import { cn } from "@/lib/utils";
 
+type BasicRecord = Record<string, unknown>;
+type TeamContext = { home?: BasicRecord | null; away?: BasicRecord | null } | null;
+type PlayersContext = { home: BasicRecord[]; away: BasicRecord[] } | null;
 type Props = {
   items: TLItem[];
   homeTeam?: string;
   awayTeam?: string;
   // optional context to resolve player photos / team logos
-  matchRaw?: unknown;
-  players?: { home: any[]; away: any[] } | null;
-  teams?: { home?: any | null; away?: any | null } | null;
+  matchRaw?: BasicRecord | null;
+  players?: PlayersContext;
+  teams?: TeamContext;
+};
+
+const toRecord = (value: unknown): BasicRecord | null => (value && typeof value === "object" ? (value as BasicRecord) : null);
+const toRecordArray = (value: unknown): BasicRecord[] =>
+  Array.isArray(value) ? value.filter((entry): entry is BasicRecord => Boolean(entry) && typeof entry === "object") : [];
+const toStringSafe = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    const str = String(value).trim();
+    return str ? str : undefined;
+  }
+  return undefined;
+};
+const toNumberSafe = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 };
 
 // Professional SVG icons and neon color mapping for football events
@@ -191,7 +220,6 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   }, [items]);
 
   const cleaned = useMemo(() => baseItems.slice().sort((a, b) => a.minute - b.minute), [baseItems]);
-  const clusters = useMemo(() => clusterItems(cleaned), [cleaned]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -201,21 +229,29 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     // Helpful debug: print provided raw match payload and context so we can map fields
     if (process.env.NODE_ENV !== 'production') {
       try {
-        // eslint-disable-next-line no-console
         console.debug('[RichTimeline] debug', { matchRaw, items, players, teams });
-      } catch (e) {}
+      } catch {}
     }
   }, [matchRaw, items, players, teams]);
 
   // Pre-warm roster cache for home/away teams when match loads
   useEffect(() => {
     try {
-      const m = matchRaw as any;
-      const home = (teams?.home && (teams as any).home?.name) || m?.event_home_team || m?.home_team || m?.strHomeTeam || undefined;
-      const away = (teams?.away && (teams as any).away?.name) || m?.event_away_team || m?.away_team || m?.strAwayTeam || undefined;
-      if (home) getTeamRoster(String(home)).catch(() => {});
-      if (away) getTeamRoster(String(away)).catch(() => {});
-    } catch (_e) {}
+      const raw = toRecord(matchRaw) ?? {};
+      const resolveName = (key: "home" | "away") =>
+        toStringSafe(teams?.[key]?.name) ??
+        toStringSafe(raw[`${key === "home" ? "event_home_team" : "event_away_team"}`]) ??
+        toStringSafe(raw[`${key}_team`]) ??
+        toStringSafe(raw[key === "home" ? "strHomeTeam" : "strAwayTeam"]);
+
+      const homeName = resolveName("home");
+      const awayName = resolveName("away");
+
+      if (homeName) getTeamRoster(homeName).catch(() => {});
+      if (awayName) getTeamRoster(awayName).catch(() => {});
+    } catch {
+      // ignore background pre-fetch errors
+    }
   }, [matchRaw, teams]);
 
 
@@ -228,8 +264,8 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
         e.preventDefault();
       }
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel as any);
+    el.addEventListener("wheel", onWheel as EventListener, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel as EventListener);
   }, []);
 
   // Simple hover tooltip
@@ -241,63 +277,85 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   const synthesized = useMemo(() => {
     const isOnlyAnchors = cleaned.length <= 2 && cleaned.every(i => i.type === 'ht' || i.type === 'ft');
     if (!isOnlyAnchors && cleaned.length > 0) return null;
-    const m = matchRaw as any;
+    const m = matchRaw as Record<string, unknown> | null;
     if (!m || typeof m !== 'object') return null;
 
     const asArray = (keys: string[]) => {
       // Check top-level and several common nested locations
-      const candidates = [m, m.event || m.data || m.match || m.raw || m.payload || {}];
+      const mm = m as Record<string, unknown>;
+      const candidates: Array<Record<string, unknown>> = [
+        mm,
+        (mm.event as Record<string, unknown>) ||
+          (mm.data as Record<string, unknown>) ||
+          (mm.match as Record<string, unknown>) ||
+          (mm.raw as Record<string, unknown>) ||
+          (mm.payload as Record<string, unknown>) ||
+          {},
+      ];
       for (const c of candidates) {
         if (!c || typeof c !== 'object') continue;
         for (const k of keys) {
-          const v = c[k];
-          if (Array.isArray(v) && v.length) return v;
+          const v = c[k as keyof typeof c];
+          if (Array.isArray(v) && v.length) return v as unknown[];
         }
       }
       // Fallback: scan all object values for first array-looking value
-      for (const k of Object.keys(m)) {
-        const v = (m as any)[k];
-        if (Array.isArray(v) && v.length) return v;
+      for (const k of Object.keys(mm)) {
+        const v = (mm as Record<string, unknown>)[k];
+        if (Array.isArray(v) && v.length) return v as unknown[];
       }
-      return [] as any[];
+      return [] as unknown[];
     };
 
   const out: TLItem[] = [];
 
   // goals
   const goalKeys = ['timeline','events','event_timeline','eventTimeline','event_entries','goalscorers','goals','scorers','scorers_list','goal_scorers','scorers_list','scorer_list'];
-    const goals = asArray(goalKeys);
+    const goals = asArray(goalKeys) as Array<Record<string, unknown>>;
     for (const g of goals) {
-      const minute = toMinuteNumber(g.time ?? g.minute ?? g.elapsed ?? g.match_minute ?? g.min);
-  const player = String((g.scorer ?? g.player ?? g.home_scorer ?? g.away_scorer) || '') || undefined;
-  const assist = String((g.assist ?? g.home_assist ?? g.away_assist) || '') || undefined;
-      const isOwn = Boolean(g.own_goal || g.ownGoal);
-      const type: TLItem['type'] = isOwn ? 'own_goal' : (g.penalty || g.pen ? 'pen_score' : 'goal');
-      const side = (g.home_scorer || g.side === 'home' || g.team === 'home' || g.team === 'Home') ? 'home' : 'away';
-      out.push({ minute: Number(minute)||0, team: side as any, type, player, assist });
+      const minute = toMinuteNumber((g.time as number | string | undefined) ?? (g.minute as number | string | undefined) ?? (g.elapsed as number | string | undefined) ?? (g.match_minute as number | string | undefined) ?? (g.min as number | string | undefined));
+      const toStr = (v: unknown): string | undefined => {
+        const s = v === undefined || v === null ? '' : String(v);
+        return s.trim() ? s : undefined;
+      };
+      const player = toStr(g.scorer ?? g.player ?? g.home_scorer ?? g.away_scorer);
+      const assist = toStr(g.assist ?? g.home_assist ?? g.away_assist);
+      const isOwn = Boolean(g.own_goal ?? g.ownGoal);
+      const type: TLItem['type'] = isOwn ? 'own_goal' : ((g.penalty ?? g.pen) ? 'pen_score' : 'goal');
+      const side: 'home' | 'away' = (g.home_scorer || g.side === 'home' || g.team === 'home' || g.team === 'Home') ? 'home' : 'away';
+      out.push({ minute: Number(minute)||0, team: side, type, player, assist });
     }
 
     // cards
   const cardKeys = ['cards','bookings','cards_list','bookings_list','discipline'];
-    const cards = asArray(cardKeys);
+    const cards = asArray(cardKeys) as Array<Record<string, unknown>>;
     for (const c of cards) {
-      const minute = toMinuteNumber(c.time ?? c.minute ?? c.elapsed ?? c.match_minute);
-  const player = String((c.player ?? c.home_fault ?? c.away_fault) || '') || undefined;
-      const isRed = String(c.card ?? c.type ?? '').toLowerCase().includes('red');
+      const minute = toMinuteNumber((c.time as number | string | undefined) ?? (c.minute as number | string | undefined) ?? (c.elapsed as number | string | undefined) ?? (c.match_minute as number | string | undefined));
+      const toStr = (v: unknown): string | undefined => {
+        const s = v === undefined || v === null ? '' : String(v);
+        return s.trim() ? s : undefined;
+      };
+      const player = toStr(c.player ?? c.home_fault ?? c.away_fault);
+      const isRed = String((c.card ?? c.type) ?? '').toLowerCase().includes('red');
       const type: TLItem['type'] = isRed ? 'red' : 'yellow';
-      const side = (c.home_fault || c.side === 'home' || c.team === 'home' || c.team === 'Home') ? 'home' : 'away';
-      out.push({ minute: Number(minute)||0, team: side as any, type, player, note: String(c.reason ?? c.info ?? '') || undefined });
+      const side: 'home' | 'away' = (c.home_fault || c.side === 'home' || c.team === 'home' || c.team === 'Home') ? 'home' : 'away';
+      const note = toStr(c.reason ?? c.info);
+      out.push({ minute: Number(minute)||0, team: side, type, player, note });
     }
 
     // substitutions
   const subKeys = ['substitutes','subs','substitutions','substitutions_list','changes','sub_list'];
-    const subs = asArray(subKeys);
+    const subs = asArray(subKeys) as Array<Record<string, unknown>>;
     for (const s of subs) {
-      const minute = toMinuteNumber(s.time ?? s.minute ?? s.elapsed ?? s.match_minute);
-      const inName = s.in_player || s.player_in || s.player || (s.player && typeof s.player === 'string' ? s.player : undefined);
-      const outName = s.out_player || s.player_out || undefined;
-      const side = (s.home || s.side === 'home' || s.team === 'home' || s.team === 'Home') ? 'home' : 'away';
-      out.push({ minute: Number(minute)||0, team: side as any, type: 'sub', player: inName || undefined, assist: outName || undefined });
+      const minute = toMinuteNumber((s.time as number | string | undefined) ?? (s.minute as number | string | undefined) ?? (s.elapsed as number | string | undefined) ?? (s.match_minute as number | string | undefined));
+      const toStr = (v: unknown): string | undefined => {
+        const ss = v === undefined || v === null ? '' : String(v);
+        return ss.trim() ? ss : undefined;
+      };
+      const inName = toStr(s.in_player ?? s.player_in ?? (typeof s.player === 'string' ? s.player : undefined));
+      const outName = toStr(s.out_player ?? s.player_out);
+      const side: 'home' | 'away' = (s.home || s.side === 'home' || s.team === 'home' || s.team === 'Home') ? 'home' : 'away';
+      out.push({ minute: Number(minute)||0, team: side, type: 'sub', player: inName, assist: outName });
     }
 
     // If still empty, try to synthesize from comments list if present on raw
@@ -361,7 +419,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
       total = viewport;
     }
     return { xs, total };
-  }, [allClusters, width]);
+  }, [allClusters, width, cfg]);
 
   const minutesAll = allItems.map((e) => e.minute).filter((n) => Number.isFinite(n));
   const maxMinute = minutesAll.length ? Math.max(90, Math.max(...minutesAll)) : 90;
@@ -404,7 +462,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     }
   };
 
-  const findTeamLogo = (teamSide: 'home' | 'away', teamName?: string): string | '' => {
+  const findTeamLogo = (teamSide: 'home' | 'away'): string | '' => {
     try {
       const t = teamSide === 'home' ? teams?.home : teams?.away;
       if (t && typeof t === 'object') {
@@ -413,23 +471,23 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
         for (const k of logoKeys) if ((t as any)[k]) return String((t as any)[k]);
       }
       // try matchRaw fallback
-      const m = matchRaw as any;
+      const m = matchRaw as Record<string, unknown> | null;
       if (m && typeof m === 'object') {
-        const home = m.event_home_team || m.home_team || m.strHomeTeam;
-        const away = m.event_away_team || m.away_team || m.strAwayTeam;
+        const home = (m as Record<string, unknown>).event_home_team || (m as Record<string, unknown>).home_team || (m as Record<string, unknown>).strHomeTeam;
+        const away = (m as Record<string, unknown>).event_away_team || (m as Record<string, unknown>).away_team || (m as Record<string, unknown>).strAwayTeam;
         const teamKey = teamSide === 'home' ? home : away;
-        if (teamKey && m.teams && Array.isArray(m.teams)) {
-          const rec = m.teams.find((x: any) => String(x.name || x.team || x.team_name || x.strTeam).toLowerCase() === String(teamKey).toLowerCase());
+        if (teamKey && (m as Record<string, unknown>).teams && Array.isArray((m as Record<string, unknown>).teams)) {
+          const rec = (m as { teams: Array<Record<string, unknown>> }).teams.find((x: Record<string, unknown>) => String((x.name || x.team || x.team_name || x.strTeam) as string).toLowerCase() === String(teamKey).toLowerCase());
           if (rec) {
             const keys = ['logo', 'team_logo', 'logo_url', 'team_logo_url', 'team_image', 'image', 'strTeamBadge'];
             for (const k of keys) {
-              const v = rec[k];
+              const v = (rec as Record<string, unknown>)[k];
               if (typeof v === 'string' && v.trim()) return v;
             }
           }
         }
       }
-    } catch (_e) {}
+    } catch {}
     return '';
   };
 
@@ -796,15 +854,19 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       chips.push(g.team === 'home' ? 'HOME' : 'AWAY');
       
       try {
-        const rawTL = (raw as any)?.timeline || (raw as any)?.timeline_items || (raw as any)?.events || (raw as any)?.event_timeline;
-        if (Array.isArray(rawTL)) {
+        const base = (raw as Record<string, unknown>) || {};
+        const rawTLUnknown = (base.timeline ?? base.timeline_items ?? base.events ?? base.event_timeline) as unknown;
+        const rawTL = Array.isArray(rawTLUnknown) ? (rawTLUnknown as Array<Record<string, unknown>>) : [];
+        if (rawTL.length) {
           const mt = (g.minute ?? 0);
-          const cand = rawTL.find((it: any) => {
-            const m = (it?.minute ?? it?.time ?? it?.elapsed ?? '').toString();
-            const mm = Number(String(m).replace(/[^0-9]/g, '')) || 0;
+          const cand = rawTL.find((it: Record<string, unknown>) => {
+            const val = (it.minute ?? it.time ?? it.elapsed ?? '') as unknown;
+            const m = typeof val === 'string' || typeof val === 'number' ? String(val) : '';
+            const mm = Number(m.replace(/[^0-9]/g, '')) || 0;
             return mm === (Number(mt) || 0);
           });
-          const tags = Array.isArray(cand?.predicted_tags) ? cand.predicted_tags : [];
+          const tagsUnknown = (cand as Record<string, unknown> | undefined)?.predicted_tags as unknown;
+          const tags = Array.isArray(tagsUnknown) ? tagsUnknown : [];
           for (const t of tags) {
             const up = String(t).toUpperCase();
             if (!chips.includes(up)) chips.push(up);

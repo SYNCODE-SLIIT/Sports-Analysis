@@ -122,7 +122,7 @@ export function ChatbotPanel() {
 
   return (
     <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full">
-      <CardHeader className="pb-1.5 pt-2 flex-shrink-0">
+      <CardHeader className="pb-1.5 pt-2 flex-shrink-0 hidden">
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
