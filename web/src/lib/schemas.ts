@@ -51,6 +51,8 @@ export const zFixture = z.object({
   home_team_logo: z.string().optional(),
   away_team: z.string(),
   away_team_logo: z.string().optional(),
+  home_score: z.number().optional(),
+  away_score: z.number().optional(),
   date: z.string(),
   time: z.string().optional(),
   league: z.string().optional(),
@@ -96,6 +98,67 @@ export function parseFixtures(data: unknown): Fixture[] {
     return undefined;
   };
   const coerceOne = (item: unknown): Record<string, unknown> => {
+    const parseScoreNumber = (value: unknown): number | undefined => {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return undefined;
+        const numericOnly = trimmed.match(/^-?\d+$/);
+        if (numericOnly) {
+          const parsed = Number.parseInt(numericOnly[0], 10);
+          return Number.isNaN(parsed) ? undefined : parsed;
+        }
+      }
+      return undefined;
+    };
+
+    const parseScoreFromResult = (value: unknown, side: 'home' | 'away'): number | undefined => {
+      if (typeof value !== 'string') return undefined;
+      const digits = value.match(/\d+/g);
+      if (!digits || digits.length < 2) return undefined;
+      const idx = side === 'home' ? 0 : 1;
+      if (digits[idx] === undefined) return undefined;
+      const parsed = Number.parseInt(digits[idx], 10);
+      return Number.isNaN(parsed) ? undefined : parsed;
+    };
+
+    const collectScore = (obj: unknown, side: 'home' | 'away'): number | undefined => {
+      const rec = (obj as Record<string, unknown>) || {};
+      const directKeys =
+        side === 'home'
+          ? ['home_score', 'homeScore', 'score_home', 'goals_home', 'home_goals', 'home_result', 'homeResult', 'intHomeScore', 'home_scored']
+          : ['away_score', 'awayScore', 'score_away', 'goals_away', 'away_goals', 'away_result', 'awayResult', 'intAwayScore', 'away_scored'];
+
+      for (const key of directKeys) {
+        const parsed = parseScoreNumber(rec[key]);
+        if (parsed !== undefined) return parsed;
+      }
+
+      const nestedCandidates = ['score', 'scores', 'result', 'results', 'full_time', 'ft', 'ft_score', 'final_score']
+        .map(key => rec[key])
+        .filter(value => value && typeof value === 'object') as Record<string, unknown>[];
+
+      for (const nested of nestedCandidates) {
+        for (const key of directKeys) {
+          const parsed = parseScoreNumber(nested[key]);
+          if (parsed !== undefined) return parsed;
+        }
+        const aliasKey = side === 'home' ? 'home' : 'away';
+        const parsed = parseScoreNumber(nested[aliasKey]);
+        if (parsed !== undefined) return parsed;
+      }
+
+      const resultStrings = ['event_final_result', 'event_result', 'final_result', 'ft_score', 'score']
+        .map(key => rec[key])
+        .filter((value): value is string => typeof value === 'string');
+      for (const str of resultStrings) {
+        const parsed = parseScoreFromResult(str, side);
+        if (parsed !== undefined) return parsed;
+      }
+
+      return undefined;
+    };
+
     // Coerce common provider shapes (AllSports, TSDB) into our canonical fixture fields
     const id = pick(item, ['id', 'event_key', 'idEvent', 'match_id', 'fixture_id', 'game_id', 'tsdb_event_id']);
     const home = pick(item, ['home_team', 'event_home_team', 'strHomeTeam', 'home']);
@@ -132,12 +195,16 @@ export function parseFixtures(data: unknown): Fixture[] {
     // for away logo try keys adapted for away
     const imgKeysAway = imgKeys.map(k => k.replace(/^home_/, 'away_'));
     const awayLogo = pickImage(item, imgKeysAway) ?? pickImage(item, imgKeys) ?? undefined;
+    const homeScore = collectScore(item, 'home');
+    const awayScore = collectScore(item, 'away');
     return {
       id: id ?? '',
       home_team: home ?? '',
       home_team_logo: homeLogo,
       away_team: away ?? '',
       away_team_logo: awayLogo,
+      home_score: homeScore,
+      away_score: awayScore,
       date: date ?? new Date().toISOString().split('T')[0],
       time,
       league,
