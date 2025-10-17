@@ -152,13 +152,16 @@ export default function MyTeamsPage() {
   if (!user) {
     return (
       <div className="container py-8 min-h-[60vh] flex items-center justify-center">
-        <EmptyState
-          type="no-teams"
-          title="Sign in to manage your teams"
-          description="Create an account or sign in to save your favorite teams and get personalized match recommendations."
-          actionLabel="Sign In"
-          onAction={() => window.location.href = '/auth/login'}
-        />
+        <div className="max-w-lg w-full bg-background border rounded-lg shadow p-8 flex flex-col items-center text-center gap-6">
+          <Heart className="h-10 w-10 text-primary mb-2" />
+          <h2 className="text-2xl font-bold">Login to add your favorite teams</h2>
+          <p className="text-muted-foreground text-base">
+            Sign in to save and manage your favorite teams. You’ll get personalized match recommendations, quick access to your teams, and more.
+          </p>
+          <Button size="lg" className="mt-2 px-8 py-2 text-base font-semibold" onClick={() => window.location.href = '/auth/login'}>
+            Sign In
+          </Button>
+        </div>
       </div>
     );
   }

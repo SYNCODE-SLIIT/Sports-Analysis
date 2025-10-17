@@ -82,14 +82,23 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12">
-      <div className="container max-w-md">
+    <div className="min-h-[80vh] flex items-center justify-center py-12 relative">
+      {/* Background Image with Overlay */}
+      <div className="absolute inset-0 z-0">
+        <div 
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: 'url(/loginbg.jpg)' }}
+        />
+        <div className="absolute inset-0 bg-white/80 dark:bg-black/75" />
+      </div>
+      
+      <div className="container max-w-lg relative z-10">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
         >
-          <Card>
+          <Card className="shadow-2xl">
             <CardHeader className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
                 <UserPlus className="w-8 h-8 text-primary-foreground" />
