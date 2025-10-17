@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Check, ChevronRight, Plus, Search } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -239,27 +240,21 @@ type LeagueCardItemProps = {
   variant?: "grid" | "carousel";
 };
 
-function LeagueCardItem({
-  league,
-  isSelected,
-  isFavorited = false,
-  favoriteBusy = false,
-  onSelect,
-  onToggleFavorite,
-  variant = "grid",
-}: LeagueCardItemProps) {
-  const handleSelect = () => onSelect(league);
-  const favoriteDisabled = Boolean(favoriteBusy);
-  const handleFavoriteClick = (evt: MouseEvent<HTMLButtonElement>) => {
-    evt.preventDefault();
-    evt.stopPropagation();
-    if (!favoriteDisabled) onToggleFavorite?.(league);
-  };
-  const handleFavoriteKeyDown = (evt: KeyboardEvent<HTMLButtonElement>) => {
-    if (evt.key === " " || evt.key === "Enter") {
-      evt.preventDefault();
-      evt.stopPropagation();
-      if (!favoriteDisabled) onToggleFavorite?.(league);
+function LeagueCardItem({ league, isSelected, onSelect, variant = "grid" }: LeagueCardItemProps) {
+  const router = useRouter();
+  const handleSelect = () => {
+    onSelect(league);
+    try {
+      const baseId = (league.id ?? league.displayName ?? league.rawName)?.toString();
+      if (!baseId) return;
+      const slug = encodeURIComponent(baseId);
+      let url = `/leagues/${slug}`;
+      if (league.rawName) {
+        url += `?name=${encodeURIComponent(league.rawName)}`;
+      }
+      router.push(url);
+    } catch {
+      // ignore navigation errors
     }
   };
   const baseClasses = [
