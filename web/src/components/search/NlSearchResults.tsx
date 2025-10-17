@@ -173,8 +173,6 @@ export function NlSearchResults({ query, data, isLoading, error }: NlSearchResul
 
   const tried = data.results ?? [];
 
-  const parsedEntities = data.parsed?.entities ?? {};
-
   if (hits.length === 0) {
     return (
       <div className="space-y-6">
