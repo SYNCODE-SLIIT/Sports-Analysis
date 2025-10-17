@@ -163,3 +163,200 @@
 .text-gradient {
   @apply bg-gradient-to-r from-brand-600 to-brand-400 bg-clip-text text-transparent;
 }
+
+.neon-card {
+  position: relative;
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  border: 1px solid rgba(8, 247, 254, 0.28);
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: 0 14px 32px rgba(15, 30, 70, 0.12);
+}
+
+.neon-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.neon-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(110deg, rgba(8, 247, 254, 0.92), rgba(255, 45, 165, 0.9));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 1;
+}
+
+.neon-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.neon-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 38px rgba(15, 30, 70, 0.16);
+}
+
+.neon-avatar {
+  position: relative;
+  box-shadow: 0 0 0 2px rgba(8, 247, 254, 0.35);
+}
+
+.neon-avatar::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  opacity: 0;
+}
+
+.neon-button {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.neon-button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(8, 247, 254, 0.12), rgba(255, 45, 165, 0.2), rgba(8, 247, 254, 0.12));
+  z-index: -1;
+}
+
+.neon-button::after {
+  content: "";
+  position: absolute;
+  inset: -150%;
+  background: linear-gradient(90deg, rgba(8, 247, 254, 0.35), rgba(255, 45, 165, 0.55), rgba(8, 247, 254, 0.35));
+  opacity: 0.9;
+  animation: neon-swipe 4s linear infinite;
+  mix-blend-mode: screen;
+}
+
+.neon-button:hover::after {
+  animation-duration: 2s;
+}
+
+.neon-chip {
+  background: linear-gradient(120deg, rgba(8, 247, 254, 0.65), rgba(255, 45, 165, 0.55));
+  border: 1px solid rgba(8, 247, 254, 0.5);
+  color: rgba(16, 24, 45, 0.92);
+  box-shadow: 0 8px 20px rgba(8, 247, 254, 0.2);
+  font-weight: 600;
+}
+
+.dark .neon-chip {
+  background: linear-gradient(120deg, rgba(8, 247, 254, 0.4), rgba(255, 45, 165, 0.6));
+  border-color: rgba(255, 45, 165, 0.5);
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 18px rgba(255, 45, 165, 0.35);
+}
+
+.neon-tile {
+  position: relative;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(8, 247, 254, 0.24);
+  background: var(--card);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  overflow: hidden;
+}
+
+.neon-tile::before,
+.neon-tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.neon-tile::after {
+  padding: 1px;
+  background: linear-gradient(120deg, rgba(8, 247, 254, 0.9), rgba(255, 45, 165, 0.85));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 1;
+}
+
+.neon-tile::before {
+  opacity: 0;
+}
+
+.neon-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 34px rgba(15, 30, 70, 0.15);
+  border-color: rgba(255, 45, 165, 0.4);
+}
+
+.dark .neon-card {
+  background: rgba(5, 12, 24, 0.94);
+  border: 1px solid rgba(8, 247, 254, 0.42);
+  box-shadow: 0 18px 42px rgba(4, 18, 46, 0.4);
+}
+
+.dark .neon-card:hover {
+  box-shadow: 0 24px 52px rgba(4, 18, 46, 0.5);
+}
+
+.dark .neon-avatar {
+  box-shadow: 0 0 0 2px rgba(8, 247, 254, 0.5);
+}
+
+.dark .neon-tile {
+  background: rgba(9, 18, 38, 0.9);
+  border: 1px solid rgba(8, 247, 254, 0.32);
+}
+
+.dark .neon-tile:hover {
+  box-shadow: 0 22px 44px rgba(4, 18, 46, 0.45);
+}
+
+@keyframes neon-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    filter: blur(12px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(16px);
+  }
+}
+
+@keyframes neon-swipe {
+  0% {
+    transform: translateX(-45%);
+  }
+  100% {
+    transform: translateX(45%);
+  }
+}
+
+@keyframes neon-shimmer {
+  0% {
+    transform: rotate(0deg);
+    opacity: 0.9;
+  }
+  50% {
+    transform: rotate(180deg);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(360deg);
+    opacity: 0.9;
+  }
+}
