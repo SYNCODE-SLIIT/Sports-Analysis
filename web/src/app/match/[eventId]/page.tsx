@@ -7,13 +7,14 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { HighlightsCarousel } from "@/components/HighlightsCarousel";
 import RichTimeline from "@/components/match/RichTimeline";
 import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
 import MatchSummaryCard from "@/components/match/MatchSummaryCard";
 import WinProbabilityCard from "@/components/match/WinProbabilityCard";
-import MatchExtrasTabs, { type MatchExtrasTabsProps } from "@/components/match/MatchExtrasTabs";
+
 import { buildTimeline, computeLeaders, computeBestPlayer } from "@/lib/match-mappers";
 import type { TLItem } from "@/lib/match-mappers";
 import {
@@ -21,17 +22,14 @@ import {
   getEventAllSports,
   getHighlights,
   DataObject,
-  searchEventHighlight,
-  getComments,
   getLeagueTable,
   postCollect,
   getTeam,
   listTeamPlayers,
-  listSeasons,
   getForm,
   getH2HByTeams,
+  getWinProb,
 } from "@/lib/collect";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -57,6 +55,8 @@ type RenderEvent = {
   venue?: string;
   date: string;
   attendance?: number;
+  homeTeamLogo?: string;
+  awayTeamLogo?: string;
   winProbabilities?: { home?: number; draw?: number; away?: number };
   stats?: MatchStats;
   events?: Array<{ time?: number; type?: string; team?: string; player?: string }>;
@@ -90,6 +90,33 @@ const getNumber = (o: DataObject, keys: string[], fallback?: number) => {
   return fallback;
 };
 
+const getLogo = (o: DataObject, homeOrAway: 'home' | 'away'): string | undefined => {
+  const prefix = homeOrAway === 'home' ? 'home' : 'away';
+  const keys = [
+    `${prefix}_team_logo`,
+    `team_${prefix}_badge`,
+    `str${homeOrAway === 'home' ? 'Home' : 'Away'}TeamBadge`,
+    `${prefix}Badge`,
+    `${prefix}_logo`,
+    `${prefix}_team_badge`,
+  ];
+  
+  for (const k of keys) {
+    const v = (o as Record<string, unknown>)[k];
+    if (typeof v === 'string' && v.trim() !== '') return v;
+  }
+  
+  // Check nested team objects
+  const teamObj = (o as Record<string, unknown>)[`${prefix}_team`];
+  if (teamObj && typeof teamObj === 'object') {
+    const nested = teamObj as Record<string, unknown>;
+    const nestedLogo = nested['logo'] || nested['badge'] || nested['image'];
+    if (typeof nestedLogo === 'string' && nestedLogo.trim() !== '') return nestedLogo;
+  }
+  
+  return undefined;
+};
+
 export default function MatchPage() {
   const { user, supabase, bumpInteractions } = useAuth();
   const { eventId } = useParams<{ eventId: string }>();
@@ -98,11 +125,6 @@ export default function MatchPage() {
 
   const [event, setEvent] = useState<RenderEvent | null>(null);
   const [highlights, setHighlights] = useState<Array<{ id: string; title?: string; url?: string; thumbnail?: string; provider?: string; duration?: number }>>([]);
-  const [ehsQuery, setEhsQuery] = useState({ minute: "", player: "", event_type: "" });
-  const [ehsLoading, setEhsLoading] = useState(false);
-  type ScrapedLink = { url?: string; title?: string; videoId?: string };
-  const [ehsResults, setEhsResults] = useState<ScrapedLink[]>([]);
-  const [comments, setComments] = useState<Array<{ time?: string; text?: string; author?: string }>>([]);
   const [table, setTable] = useState<Array<{ position?: number; team?: string; played?: number; points?: number }>>([]);
   const [eventRaw, setEventRaw] = useState<DataObject | null>(null);
   const [timeline, setTimeline] = useState<TLItem[]>([]);
@@ -114,9 +136,7 @@ export default function MatchPage() {
   const [playersExtra, setPlayersExtra] = useState<{ home: DataObject[]; away: DataObject[] }>({ home: [], away: [] });
   const [oddsExtra, setOddsExtra] = useState<{ listed: DataObject[]; live: DataObject[] }>({ listed: [], live: [] });
   const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] });
-  const [seasonsExtra, setSeasonsExtra] = useState<DataObject[]>([]);
   const [h2hExtra, setH2hExtra] = useState<{ matches: DataObject[] } | null>(null);
-  const [extrasErrors, setExtrasErrors] = useState<NonNullable<MatchExtrasTabsProps["errors"]>>({});
   const [extrasLoading, setExtrasLoading] = useState(false);
   const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
   const [liked, setLiked] = useState(false);
@@ -330,6 +350,8 @@ export default function MatchPage() {
             venue: getString(raw, ['venue']) || undefined,
             date: getString(raw, ['date'], new Date().toISOString())!,
             attendance: getNumber(raw, ['attendance']) || undefined,
+            homeTeamLogo: getLogo(raw, 'home'),
+            awayTeamLogo: getLogo(raw, 'away'),
             winProbabilities: (raw['winProbabilities'] || raw['winprob']) as RenderEvent['winProbabilities'],
             stats: (raw['stats'] as MatchStats) || undefined,
             events: Array.isArray(raw['events']) ? (raw['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
@@ -366,17 +388,32 @@ export default function MatchPage() {
           }
         }
         if (!coreObj) return;
+        // Helper: parse score from common string fields like "1-2"
+        const parseScore = (obj: DataObject) => {
+          const s = getString(obj, ['event_final_result', 'final_result', 'ft_result']);
+          if (s && s.includes('-')) {
+            const [h, a] = s.split('-').map(x => Number(String(x).replace(/[^0-9.-]/g, '').trim()));
+            return {
+              home: Number.isFinite(h) ? h : undefined,
+              away: Number.isFinite(a) ? a : undefined,
+            };
+          }
+          return { home: undefined, away: undefined };
+        };
+        const scoreStr = parseScore(coreObj);
         const normalized: RenderEvent = {
           eventId: getString(coreObj, ['eventId', 'id', 'event_id', 'event_key', 'match_id', 'fixture_id'], String(eventId))!,
           homeTeam: getString(coreObj, ['homeTeam', 'home_team', 'event_home_team', 'strHomeTeam', 'home'], 'Home')!,
           awayTeam: getString(coreObj, ['awayTeam', 'away_team', 'event_away_team', 'strAwayTeam', 'away'], 'Away')!,
-          homeScore: getNumber(coreObj, ['homeScore', 'home_score', 'score.home', 'event_final_result_home', 'home_result'], 0) || 0,
-          awayScore: getNumber(coreObj, ['awayScore', 'away_score', 'score.away', 'event_final_result_away', 'away_result'], 0) || 0,
+          homeScore: (scoreStr.home ?? getNumber(coreObj, ['homeScore', 'home_score', 'score.home', 'event_final_result_home', 'home_result'], 0)) || 0,
+          awayScore: (scoreStr.away ?? getNumber(coreObj, ['awayScore', 'away_score', 'score.away', 'event_final_result_away', 'away_result'], 0)) || 0,
           status: getString(coreObj, ['status', 'event_status'], '') || '',
           league: getString(coreObj, ['league', 'league_name', 'competition']) || undefined,
           venue: getString(coreObj, ['venue', 'stadium']) || undefined,
           date: getString(coreObj, ['date', 'datetime', 'kickoff', 'event_date'], new Date().toISOString())!,
           attendance: getNumber(coreObj, ['attendance']) || undefined,
+          homeTeamLogo: getLogo(coreObj, 'home'),
+          awayTeamLogo: getLogo(coreObj, 'away'),
           winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
           stats: (coreObj['stats'] as MatchStats) || undefined,
           events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
@@ -392,17 +429,27 @@ export default function MatchPage() {
           const core = (d && typeof d === 'object' && 'event' in d) ? (d as { event?: DataObject }).event : (d as DataObject);
           if (!core) return;
           const coreObj = core as DataObject;
+          const scoreStr2 = (() => {
+            const s = getString(coreObj, ['event_final_result', 'final_result', 'ft_result']);
+            if (s && s.includes('-')) {
+              const [h, a] = s.split('-').map(x => Number(String(x).replace(/[^0-9.-]/g, '').trim()));
+              return { home: Number.isFinite(h) ? h : undefined, away: Number.isFinite(a) ? a : undefined };
+            }
+            return { home: undefined, away: undefined };
+          })();
           const normalized: RenderEvent = {
             eventId: getString(coreObj, ['eventId', 'id', 'event_id'], String(eventId))!,
             homeTeam: getString(coreObj, ['homeTeam', 'home_team', 'home'], 'Home')!,
             awayTeam: getString(coreObj, ['awayTeam', 'away_team', 'away'], 'Away')!,
-            homeScore: getNumber(coreObj, ['homeScore', 'home_score', 'score.home'], 0) || 0,
-            awayScore: getNumber(coreObj, ['awayScore', 'away_score', 'score.away'], 0) || 0,
+            homeScore: (scoreStr2.home ?? getNumber(coreObj, ['homeScore', 'home_score', 'score.home'], 0)) || 0,
+            awayScore: (scoreStr2.away ?? getNumber(coreObj, ['awayScore', 'away_score', 'score.away'], 0)) || 0,
             status: getString(coreObj, ['status'], '') || '',
             league: getString(coreObj, ['league', 'competition']) || undefined,
             venue: getString(coreObj, ['venue', 'stadium']) || undefined,
             date: getString(coreObj, ['date', 'datetime', 'kickoff'], new Date().toISOString())!,
             attendance: getNumber(coreObj, ['attendance']) || undefined,
+            homeTeamLogo: getLogo(coreObj, 'home'),
+            awayTeamLogo: getLogo(coreObj, 'away'),
             winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
             stats: (coreObj['stats'] as MatchStats) || undefined,
             events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
@@ -425,18 +472,6 @@ export default function MatchPage() {
       }));
       setHighlights(normalized);
     }).catch(() => {});
-    // Fetch comments (optional)
-    getComments(String(eventId)).then(env => {
-      if (!active) return;
-      const d = env.data as { comments?: Array<DataObject> } | undefined;
-      const arr = (d && Array.isArray(d.comments)) ? d.comments : [];
-      const mapped = arr.map(c => ({
-        time: typeof c.time === 'string' ? c.time : undefined,
-        text: typeof c.text === 'string' ? c.text : (typeof c.comment === 'string' ? c.comment : undefined),
-        author: typeof c.author === 'string' ? c.author : undefined,
-      }));
-      setComments(mapped);
-    }).catch(() => setComments([]));
 
     return () => { active = false; };
   }, [eventId]);
@@ -477,11 +512,55 @@ export default function MatchPage() {
             away: awayPct / 100,
           },
         } : prev);
+        // If zero or missing, try override endpoint used by legacy match.js
+        const sum = homePct + drawPct + awayPct;
+        if (sum === 0) {
+          return getWinProb(String(eventId)).then(res => {
+            if (!active) return;
+            const data = (res && res.data) || {};
+            const prob = (data && (data.winprob || data.win_prob || data.probabilities)) || {};
+            const norm = (val?: unknown) => {
+              if (typeof val !== "number") return 0;
+              if (Number.isNaN(val)) return 0;
+              return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
+            };
+            const h = norm(prob.home);
+            const d = norm(prob.draw);
+            const a = norm(prob.away);
+            setWinProbDisplay({ home: h, draw: d, away: a });
+            setWinProbInsight(res as unknown as Record<string, unknown>);
+            setEvent(prev => prev ? {
+              ...prev,
+              winProbabilities: { home: h / 100, draw: d / 100, away: a / 100 },
+            } : prev);
+          }).catch(() => {});
+        }
       })
       .catch(() => {
         if (!active) return;
         setWinProbInsight(null);
-        setWinProbDisplay({ home: 0, draw: 0, away: 0 });
+        // Try override endpoint as fallback when match_insights fails
+        getWinProb(String(eventId)).then(res => {
+          if (!active) return;
+          const data = (res && res.data) || {};
+          const prob = (data && (data.winprob || data.win_prob || data.probabilities)) || {};
+          const norm = (val?: unknown) => {
+            if (typeof val !== "number") return 0;
+            if (Number.isNaN(val)) return 0;
+            return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
+          };
+          const h = norm(prob.home);
+          const d = norm(prob.draw);
+          const a = norm(prob.away);
+          setWinProbDisplay({ home: h, draw: d, away: a });
+          setWinProbInsight(res as unknown as Record<string, unknown>);
+          setEvent(prev => prev ? {
+            ...prev,
+            winProbabilities: { home: h / 100, draw: d / 100, away: a / 100 },
+          } : prev);
+        }).catch(() => {
+          setWinProbDisplay({ home: 0, draw: 0, away: 0 });
+        });
       });
     return () => { active = false; };
   }, [eventId]);
@@ -526,12 +605,24 @@ export default function MatchPage() {
   }, [eventRaw]);
 
   useEffect(() => {
-    if (!event?.league) {
+    // Try to extract league name from eventRaw, fallback to event.league, country, or competition
+    let leagueName: string | undefined = undefined;
+    if (eventRaw) {
+      leagueName = getString(eventRaw, ["league", "league_name", "competition", "strLeague"]);
+      if (!leagueName) {
+        // Try country + league
+        const country = getString(eventRaw, ["country", "country_name", "strCountry"]);
+        const league = getString(eventRaw, ["league", "league_name", "competition", "strLeague"]);
+        if (country && league) leagueName = `${country} ${league}`;
+      }
+    }
+    if (!leagueName && event?.league) leagueName = event.league;
+    if (!leagueName) {
       setTable([]);
       return;
     }
     let active = true;
-    getLeagueTable(event.league)
+    getLeagueTable(leagueName)
       .then(env => {
         if (!active) return;
         const d = env.data as { table?: Array<DataObject> } | undefined;
@@ -553,7 +644,7 @@ export default function MatchPage() {
     return () => {
       active = false;
     };
-  }, [event?.league]);
+  }, [eventRaw, event?.league]);
 
   useEffect(() => {
     if (!event) {
@@ -561,17 +652,13 @@ export default function MatchPage() {
       setPlayersExtra({ home: [], away: [] });
       setOddsExtra({ listed: [], live: [] });
       setFormExtra({ home: [], away: [] });
-      setSeasonsExtra([]);
       setH2hExtra(null);
-      setExtrasErrors({});
       setExtrasLoading(false);
       return;
     }
 
     let active = true;
     setExtrasLoading(true);
-    const nextErrors: NonNullable<MatchExtrasTabsProps["errors"]> = {};
-    const seasonArgs = extractLeagueIdentifiers(event, eventRaw);
 
     const requests = [
       event.homeTeam ? getTeam(event.homeTeam) : Promise.resolve(null),
@@ -580,7 +667,7 @@ export default function MatchPage() {
       event.awayTeam ? listTeamPlayers(event.awayTeam) : Promise.resolve(null),
       event.eventId ? postCollect("odds.list", { eventId: event.eventId }) : Promise.resolve(null),
       event.eventId ? postCollect("odds.live", { eventId: event.eventId }) : Promise.resolve(null),
-      seasonArgs ? listSeasons(seasonArgs) : Promise.resolve(null),
+      Promise.resolve(null),
       event.eventId ? getForm(event.eventId) : Promise.resolve(null),
       event.homeTeam && event.awayTeam ? getH2HByTeams(event.homeTeam, event.awayTeam) : Promise.resolve(null),
     ] as const;
@@ -588,54 +675,31 @@ export default function MatchPage() {
     Promise.allSettled(requests)
       .then(results => {
         if (!active) return;
-        const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, seasonsRes, formRes, h2hRes] = results;
+        const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, , formRes, h2hRes] = results;
 
         const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value) : null;
         const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value) : null;
-        if (!homeTeamData && !awayTeamData && (homeTeamRes.status === "rejected" || awayTeamRes.status === "rejected")) {
-          nextErrors.teams = "Unable to load team profiles.";
-        }
         setTeamsExtra({ home: homeTeamData, away: awayTeamData });
 
         const homePlayers = isFulfilled(homePlayersRes) ? parsePlayersResponse(homePlayersRes.value) : [];
         const awayPlayers = isFulfilled(awayPlayersRes) ? parsePlayersResponse(awayPlayersRes.value) : [];
-        if (!homePlayers.length && !awayPlayers.length && (homePlayersRes.status === "rejected" || awayPlayersRes.status === "rejected")) {
-          nextErrors.players = "Unable to load squad information.";
-        }
         setPlayersExtra({ home: homePlayers, away: awayPlayers });
 
         const listedOdds = isFulfilled(oddsListRes) ? parseOddsResponse(oddsListRes.value) : [];
         const liveOdds = isFulfilled(oddsLiveRes) ? parseOddsResponse(oddsLiveRes.value) : [];
-        if (!listedOdds.length && !liveOdds.length && (oddsListRes.status === "rejected" || oddsLiveRes.status === "rejected")) {
-          nextErrors.odds = "Odds data unavailable.";
-        }
         setOddsExtra({ listed: listedOdds, live: liveOdds });
 
-        const seasonsData = isFulfilled(seasonsRes) ? parseSeasonsResponse(seasonsRes.value) : [];
-        if (!seasonsData.length && seasonsRes.status === "rejected") {
-          nextErrors.seasons = "Unable to load seasons.";
-        }
-        setSeasonsExtra(seasonsData);
-
         const formData = isFulfilled(formRes) ? parseFormResponse(formRes.value) : { home: [], away: [] };
-        if (!formData.home.length && !formData.away.length && formRes.status === "rejected") {
-          nextErrors.form = "Recent form unavailable.";
-        }
         setFormExtra(formData);
 
         const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value) : null;
-        if (!h2hData && h2hRes.status === "rejected") {
-          nextErrors.h2h = "Unable to load head-to-head results.";
-        }
         setH2hExtra(h2hData);
       })
-      .catch(error => {
-        if (!active) return;
-        nextErrors.general = error instanceof Error ? error.message : String(error);
+      .catch(() => {
+        // Silently handle errors
       })
       .finally(() => {
         if (!active) return;
-        setExtrasErrors(nextErrors);
         setExtrasLoading(false);
       });
 
@@ -651,8 +715,9 @@ export default function MatchPage() {
   }
 
   const matchDate = new Date(match.date);
-  const isLive = match.status === "LIVE";
-  const isFinished = match.status === "FT";
+  const st = (match.status || '').toLowerCase();
+  const isLive = /live|1st|2nd|ht/.test(st);
+  const isFinished = /ft|finished/.test(st);
 
   
 
@@ -677,11 +742,15 @@ export default function MatchPage() {
               {/* Teams and Score with Save (+) */}
               <div className="flex items-center justify-center space-x-8">
                 <div className="text-center space-y-2">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-red-100 flex items-center justify-center">
-                    <span className="font-bold text-red-600 text-xl">
-                      {match.homeTeam.substring(0, 2).toUpperCase()}
-                    </span>
-                  </div>
+                  <Avatar className="w-16 h-16 mx-auto border-2 border-border/40 shadow-md">
+                    {match.homeTeamLogo ? (
+                      <AvatarImage src={match.homeTeamLogo} alt={match.homeTeam} />
+                    ) : (
+                      <AvatarFallback className="bg-red-100 text-red-600 text-xl font-bold">
+                        {match.homeTeam.substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
                   <div className="flex items-center justify-center gap-2">
                     <h3 className="font-semibold text-lg flex items-center gap-1">
                       {match.homeTeam}
@@ -718,11 +787,15 @@ export default function MatchPage() {
                 </div>
 
                 <div className="text-center space-y-2">
-                  <div className="w-16 h-16 mx-auto rounded-full bg-blue-100 flex items-center justify-center">
-                    <span className="font-bold text-blue-600 text-xl">
-                      {match.awayTeam.substring(0, 2).toUpperCase()}
-                    </span>
-                  </div>
+                  <Avatar className="w-16 h-16 mx-auto border-2 border-border/40 shadow-md">
+                    {match.awayTeamLogo ? (
+                      <AvatarImage src={match.awayTeamLogo} alt={match.awayTeam} />
+                    ) : (
+                      <AvatarFallback className="bg-blue-100 text-blue-600 text-xl font-bold">
+                        {match.awayTeam.substring(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    )}
+                  </Avatar>
                   <div className="flex items-center justify-center gap-2">
                     <h3 className="font-semibold text-lg flex items-center gap-1">
                       {match.awayTeam}
@@ -814,6 +887,8 @@ export default function MatchPage() {
       <WinProbabilityCard
         homeTeam={match.homeTeam}
         awayTeam={match.awayTeam}
+        homeTeamLogo={match.homeTeamLogo}
+        awayTeamLogo={match.awayTeamLogo}
         fallback={winProbDisplay}
         rawInsight={winProbInsight}
         rawEvent={eventRaw}
@@ -823,9 +898,11 @@ export default function MatchPage() {
       {/* Match Details Tabs */}
       <div>
         <Tabs defaultValue="stats" className="space-y-6">
-          <TabsList className="grid grid-cols-3 w-full max-w-md mx-auto">
+          <TabsList className="grid grid-cols-5 w-full max-w-3xl mx-auto">
             <TabsTrigger value="stats">Statistics</TabsTrigger>
             <TabsTrigger value="events">Events</TabsTrigger>
+            <TabsTrigger value="league">League Table</TabsTrigger>
+            <TabsTrigger value="teams">Teams</TabsTrigger>
             <TabsTrigger value="analysis">Analysis</TabsTrigger>
           </TabsList>
 
@@ -920,92 +997,393 @@ export default function MatchPage() {
             <LeadersCard leaders={leaders} />
           </TabsContent>
 
+          <TabsContent value="league" className="space-y-4">
+            {extrasLoading ? (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Loading league table...</div>
+                </CardContent>
+              </Card>
+            ) : table.length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>League Table</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-2 font-semibold text-sm">Pos</th>
+                          <th className="text-left py-2 px-2 font-semibold text-sm">Team</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">P</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">W</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">D</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">L</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">GF</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">GA</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">GD</th>
+                          <th className="text-center py-2 px-2 font-semibold text-sm">Pts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {table.map((row, idx) => {
+                          const isHomeTeam = row.team === match.homeTeam;
+                          const isAwayTeam = row.team === match.awayTeam;
+                          const highlighted = isHomeTeam || isAwayTeam;
+                          return (
+                            <tr
+                              key={idx}
+                              className={`border-b transition-colors hover:bg-muted/50 ${
+                                highlighted ? 'bg-primary/5 font-medium' : ''
+                              }`}
+                            >
+                              <td className="py-2 px-2 text-sm">{row.position ?? idx + 1}</td>
+                              <td className="py-2 px-2 text-sm">
+                                {row.team ?? 'Unknown'}
+                                {isHomeTeam && <span className="ml-2 text-xs text-muted-foreground">(H)</span>}
+                                {isAwayTeam && <span className="ml-2 text-xs text-muted-foreground">(A)</span>}
+                              </td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).played ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).won ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).drawn ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).lost ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).goalsFor ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).goalsAgainst ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm">{String((row as Record<string, unknown>).goalDifference ?? '-')}</td>
+                              <td className="py-2 px-2 text-center text-sm font-semibold">{row.points ?? '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">No league table data available.</div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="teams" className="space-y-4">
+            {extrasLoading ? (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Loading teams...</div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Team Squads</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="home" className="space-y-4">
+                    <TabsList className="grid grid-cols-2 w-full max-w-md">
+                      <TabsTrigger value="home">{match.homeTeam}</TabsTrigger>
+                      <TabsTrigger value="away">{match.awayTeam}</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="home" className="space-y-4">
+                      {teamsExtra.home && (
+                        <div className="rounded-lg border p-4 space-y-3">
+                          <div className="flex items-center gap-3 mb-4">
+                            <Avatar className="w-12 h-12 border-2 border-border/40 shadow-sm">
+                              {match.homeTeamLogo ? (
+                                <AvatarImage src={match.homeTeamLogo} alt={match.homeTeam} />
+                              ) : (
+                                <AvatarFallback className="text-lg font-semibold">
+                                  {match.homeTeam.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              )}
+                            </Avatar>
+                            <h4 className="font-semibold text-lg">{match.homeTeam}</h4>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            {(() => {
+                              const teamRecord = teamsExtra.home as Record<string, unknown>;
+                              const info = [
+                                { label: "Founded", value: pickString(teamRecord, ["team_founded", "intFormedYear"]) },
+                                { label: "Stadium", value: pickString(teamRecord, ["team_venue", "strStadium"]) },
+                                { label: "Manager", value: pickString(teamRecord, ["team_manager", "strManager"]) },
+                                { label: "Country", value: pickString(teamRecord, ["team_country", "strCountry"]) },
+                              ].filter(item => item.value);
+                              return info.map(item => (
+                                <div key={item.label}>
+                                  <div className="text-muted-foreground">{item.label}</div>
+                                  <div className="font-medium">{item.value}</div>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="rounded-lg border p-4">
+                        <h4 className="font-semibold mb-3">Players</h4>
+                        {playersExtra.home.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {playersExtra.home.map((player, idx) => {
+                              const playerRecord = player as Record<string, unknown>;
+                              const name = pickString(playerRecord, ["player_name", "strPlayer", "name"]);
+                              const position = pickString(playerRecord, ["player_type", "strPosition", "position"]);
+                              const number = pickString(playerRecord, ["player_number", "strNumber", "number"]);
+                              return (
+                                <div key={idx} className="rounded border p-3 space-y-1">
+                                  <div className="font-medium text-sm">{name || 'Unknown'}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {number && `#${number}`} {position && `• ${position}`}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">No player data available.</div>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="away" className="space-y-4">
+                      {teamsExtra.away && (
+                        <div className="rounded-lg border p-4 space-y-3">
+                          <div className="flex items-center gap-3 mb-4">
+                            <Avatar className="w-12 h-12 border-2 border-border/40 shadow-sm">
+                              {match.awayTeamLogo ? (
+                                <AvatarImage src={match.awayTeamLogo} alt={match.awayTeam} />
+                              ) : (
+                                <AvatarFallback className="text-lg font-semibold">
+                                  {match.awayTeam.substring(0, 2).toUpperCase()}
+                                </AvatarFallback>
+                              )}
+                            </Avatar>
+                            <h4 className="font-semibold text-lg">{match.awayTeam}</h4>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            {(() => {
+                              const teamRecord = teamsExtra.away as Record<string, unknown>;
+                              const info = [
+                                { label: "Founded", value: pickString(teamRecord, ["team_founded", "intFormedYear"]) },
+                                { label: "Stadium", value: pickString(teamRecord, ["team_venue", "strStadium"]) },
+                                { label: "Manager", value: pickString(teamRecord, ["team_manager", "strManager"]) },
+                                { label: "Country", value: pickString(teamRecord, ["team_country", "strCountry"]) },
+                              ].filter(item => item.value);
+                              return info.map(item => (
+                                <div key={item.label}>
+                                  <div className="text-muted-foreground">{item.label}</div>
+                                  <div className="font-medium">{item.value}</div>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="rounded-lg border p-4">
+                        <h4 className="font-semibold mb-3">Players</h4>
+                        {playersExtra.away.length > 0 ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {playersExtra.away.map((player, idx) => {
+                              const playerRecord = player as Record<string, unknown>;
+                              const name = pickString(playerRecord, ["player_name", "strPlayer", "name"]);
+                              const position = pickString(playerRecord, ["player_type", "strPosition", "position"]);
+                              const number = pickString(playerRecord, ["player_number", "strNumber", "number"]);
+                              return (
+                                <div key={idx} className="rounded border p-3 space-y-1">
+                                  <div className="font-medium text-sm">{name || 'Unknown'}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {number && `#${number}`} {position && `• ${position}`}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-muted-foreground">No player data available.</div>
+                        )}
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
           <TabsContent value="analysis" className="space-y-6">
             <HighlightsCarousel highlights={highlights} isLoading={false} />
 
-            <MatchExtrasTabs
-              loading={extrasLoading}
-              homeTeam={match.homeTeam}
-              awayTeam={match.awayTeam}
-              teams={teamsExtra}
-              players={playersExtra}
-              leagueTable={table}
-              odds={oddsExtra}
-              probabilities={winProbDisplay}
-              form={formExtra}
-              comments={comments}
-              seasons={seasonsExtra}
-              h2h={h2hExtra}
-              errors={extrasErrors}
-            />
+            {extrasLoading ? (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">Loading analysis data...</div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Match Analysis</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="odds" className="space-y-4">
+                    <TabsList className="grid grid-cols-3 w-full max-w-md">
+                      <TabsTrigger value="odds">Odds</TabsTrigger>
+                      <TabsTrigger value="form">Form</TabsTrigger>
+                      <TabsTrigger value="h2h">H2H</TabsTrigger>
+                    </TabsList>
 
-            {/* Event Highlight Search (legacy-inspired) */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Search Specific Event Highlight</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Minute</label>
-                    <Input type="number" min={1} max={130} placeholder="67" value={ehsQuery.minute} onChange={e=>setEhsQuery(q=>({...q, minute: e.target.value}))} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Player</label>
-                    <Input placeholder="Player name" value={ehsQuery.player} onChange={e=>setEhsQuery(q=>({...q, player: e.target.value}))} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Event Type</label>
-                    <select className="w-full h-9 rounded-md border bg-background px-3 text-sm" value={ehsQuery.event_type} onChange={e=>setEhsQuery(q=>({...q, event_type: e.target.value}))}>
-                      <option value="">(auto)</option>
-                      <option value="goal">Goal</option>
-                      <option value="penalty goal">Penalty Goal</option>
-                      <option value="own goal">Own Goal</option>
-                      <option value="red card">Red Card</option>
-                      <option value="yellow card">Yellow Card</option>
-                      <option value="substitution">Substitution</option>
-                      <option value="VAR">VAR</option>
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <Button disabled={ehsLoading} onClick={async ()=>{
-                      if(!match) return;
-                      setEhsLoading(true);
-                      setEhsResults([]);
-                      try{
-                        const res = await searchEventHighlight({
-                          home: match.homeTeam,
-                          away: match.awayTeam,
-                          date: match.date?.split('T')[0],
-                          minute: ehsQuery.minute || undefined,
-                          player: ehsQuery.player || undefined,
-                          event_type: ehsQuery.event_type || undefined,
-                        });
-                        const scraped = (res?.results?.duckduckgo_scraped) || [];
-                        setEhsResults(Array.isArray(scraped) ? scraped.slice(0,10) : []);
-                      }catch{
-                        // quietly ignore in UI; could show a toast later
-                        setEhsResults([]);
-                      }finally{
-                        setEhsLoading(false);
-                      }
-                    }}>{ehsLoading ? 'Searching…' : 'Search'}</Button>
-                  </div>
-                </div>
-                {ehsResults.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-sm text-muted-foreground">Direct links</div>
-                    <div className="space-y-2">
-                      {ehsResults.map((r, i)=> (
-                        <div key={i} className="text-sm">
-                          <a className="text-primary hover:underline" href={r.url} target="_blank" rel="noreferrer">{r.title || r.url}</a>
+                    <TabsContent value="odds" className="space-y-4">
+                      {oddsExtra.listed.length > 0 || oddsExtra.live.length > 0 ? (
+                        <div className="space-y-4">
+                          {oddsExtra.listed.length > 0 && (
+                            <div className="rounded-lg border p-4">
+                              <h4 className="font-semibold mb-3">Listed Odds</h4>
+                              <div className="space-y-2">
+                                {oddsExtra.listed.map((odd, idx) => {
+                                  const oddRecord = odd as Record<string, unknown>;
+                                  const bookmaker = pickString(oddRecord, ["bookmaker", "name"]);
+                                  const home = pickString(oddRecord, ["home", "homeOdds"]);
+                                  const draw = pickString(oddRecord, ["draw", "drawOdds"]);
+                                  const away = pickString(oddRecord, ["away", "awayOdds"]);
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
+                                      <span className="font-medium">{bookmaker || `Bookmaker ${idx + 1}`}</span>
+                                      <div className="flex gap-4">
+                                        <span>H: {home || '-'}</span>
+                                        <span>D: {draw || '-'}</span>
+                                        <span>A: {away || '-'}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          {oddsExtra.live.length > 0 && (
+                            <div className="rounded-lg border p-4">
+                              <h4 className="font-semibold mb-3">Live Odds</h4>
+                              <div className="space-y-2">
+                                {oddsExtra.live.map((odd, idx) => {
+                                  const oddRecord = odd as Record<string, unknown>;
+                                  const bookmaker = pickString(oddRecord, ["bookmaker", "name"]);
+                                  const home = pickString(oddRecord, ["home", "homeOdds"]);
+                                  const draw = pickString(oddRecord, ["draw", "drawOdds"]);
+                                  const away = pickString(oddRecord, ["away", "awayOdds"]);
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
+                                      <span className="font-medium">{bookmaker || `Bookmaker ${idx + 1}`}</span>
+                                      <div className="flex gap-4">
+                                        <span>H: {home || '-'}</span>
+                                        <span>D: {draw || '-'}</span>
+                                        <span>A: {away || '-'}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No odds data available.</div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="form" className="space-y-4">
+                      {formExtra.home.length > 0 || formExtra.away.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="rounded-lg border p-4">
+                            <h4 className="font-semibold mb-3">{match.homeTeam}</h4>
+                            {formExtra.home.length > 0 ? (
+                              <div className="space-y-2">
+                                {formExtra.home.map((item, idx) => {
+                                  const record = item as Record<string, unknown>;
+                                  const result = pickString(record, ["result", "outcome"]);
+                                  const opponent = pickString(record, ["opponent", "against"]);
+                                  const score = pickString(record, ["score", "scoreline"]);
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between rounded border p-2 text-sm">
+                                      <span className={`font-bold px-2 py-0.5 rounded ${
+                                        result === 'W' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' :
+                                        result === 'L' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' :
+                                        'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100'
+                                      }`}>{result || '?'}</span>
+                                      <span className="flex-1 text-center">{opponent || 'vs Unknown'}</span>
+                                      <span>{score || '-'}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground">No form data available.</div>
+                            )}
+                          </div>
+                          <div className="rounded-lg border p-4">
+                            <h4 className="font-semibold mb-3">{match.awayTeam}</h4>
+                            {formExtra.away.length > 0 ? (
+                              <div className="space-y-2">
+                                {formExtra.away.map((item, idx) => {
+                                  const record = item as Record<string, unknown>;
+                                  const result = pickString(record, ["result", "outcome"]);
+                                  const opponent = pickString(record, ["opponent", "against"]);
+                                  const score = pickString(record, ["score", "scoreline"]);
+                                  return (
+                                    <div key={idx} className="flex items-center justify-between rounded border p-2 text-sm">
+                                      <span className={`font-bold px-2 py-0.5 rounded ${
+                                        result === 'W' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' :
+                                        result === 'L' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' :
+                                        'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100'
+                                      }`}>{result || '?'}</span>
+                                      <span className="flex-1 text-center">{opponent || 'vs Unknown'}</span>
+                                      <span>{score || '-'}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground">No form data available.</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No form data available.</div>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="h2h" className="space-y-4">
+                      {h2hExtra && h2hExtra.matches.length > 0 ? (
+                        <div className="rounded-lg border p-4">
+                          <h4 className="font-semibold mb-3">Head to Head</h4>
+                          <div className="space-y-2">
+                            {h2hExtra.matches.map((match_item, idx) => {
+                              const matchRecord = match_item as Record<string, unknown>;
+                              const home = pickString(matchRecord, ["home_team", "homeTeam", "home"]);
+                              const away = pickString(matchRecord, ["away_team", "awayTeam", "away"]);
+                              const homeScore = pickString(matchRecord, ["home_score", "homeScore"]);
+                              const awayScore = pickString(matchRecord, ["away_score", "awayScore"]);
+                              const date = pickString(matchRecord, ["date", "match_date"]);
+                              return (
+                                <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
+                                  <span className="flex-1">{home || 'Home'}</span>
+                                  <span className="font-bold px-3">{homeScore || '0'} - {awayScore || '0'}</span>
+                                  <span className="flex-1 text-right">{away || 'Away'}</span>
+                                  {date && <span className="text-xs text-muted-foreground ml-3">{date}</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground">No head-to-head data available.</div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </div>
@@ -1075,16 +1453,6 @@ function parseOddsResponse(res: { data?: unknown } | null): DataObject[] {
   return [];
 }
 
-function parseSeasonsResponse(res: Awaited<ReturnType<typeof listSeasons>> | null): DataObject[] {
-  if (!res) return [];
-  const record = res as Record<string, unknown>;
-  const candidates = [record.data, record.result, record.seasons, res];
-  for (const candidate of candidates) {
-    if (Array.isArray(candidate) && candidate.length) return toDataObjectArray(candidate);
-  }
-  return [];
-}
-
 function parseFormResponse(res: unknown): { home: unknown[]; away: unknown[] } {
   if (!res || typeof res !== "object") return { home: [], away: [] };
   const record = res as Record<string, unknown>;
@@ -1113,15 +1481,6 @@ function parseH2HResponse(res: unknown): { matches: DataObject[] } | null {
   const matches = toDataObjectArray(data.matches ?? data.results ?? data.games ?? []);
   if (!matches.length) return null;
   return { matches };
-}
-
-function extractLeagueIdentifiers(event: RenderEvent, rawEvent: DataObject | null): { leagueId?: string; leagueName?: string } | null {
-  const record = rawEvent as Record<string, unknown> | null;
-  const leagueId = record ? pickString(record, ["league_id", "league_key", "idLeague", "leagueid"]) : "";
-  const leagueName = event.league || (record ? pickString(record, ["league", "league_name", "competition"]) : "");
-  if (leagueId) return { leagueId };
-  if (leagueName) return { leagueName };
-  return null;
 }
 
 function parseNumber(value: unknown): number | undefined {

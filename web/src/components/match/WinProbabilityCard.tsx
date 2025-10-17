@@ -2,13 +2,15 @@
 
 import { useMemo } from "react";
 import { TrendingUp } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DataObject } from "@/lib/collect";
 
 type WinProbabilityCardProps = {
   homeTeam: string;
   awayTeam: string;
+  homeTeamLogo?: string;
+  awayTeamLogo?: string;
   fallback: { home: number; draw: number; away: number };
   rawInsight: Record<string, unknown> | null | undefined;
   rawEvent: DataObject | null;
@@ -55,6 +57,8 @@ const LOGO_KEYS = [
 export default function WinProbabilityCard({
   homeTeam,
   awayTeam,
+  homeTeamLogo,
+  awayTeamLogo,
   fallback,
   rawInsight,
   rawEvent,
@@ -67,174 +71,231 @@ export default function WinProbabilityCard({
         fallback,
         homeTeam,
         awayTeam,
+        homeTeamLogo,
+        awayTeamLogo,
         rawEvent,
         teams,
       }),
-    [rawInsight, fallback, homeTeam, awayTeam, rawEvent, teams]
+    [rawInsight, fallback, homeTeam, awayTeam, homeTeamLogo, awayTeamLogo, rawEvent, teams]
   );
 
   const isLoading = rawInsight === undefined;
 
-  const summary = `${model.home.name} (${model.home.role}) ${formatPercent(model.home.pct)}% • Draw ${formatPercent(model.drawPct)}% • ${model.away.name} (${model.away.role}) ${formatPercent(model.away.pct)}%`;
-
-  const segments = [
-    { key: "home", pct: model.home.pct, color: "bg-emerald-500" },
-    { key: "draw", pct: model.drawPct, color: "bg-amber-500" },
-    { key: "away", pct: model.away.pct, color: "bg-sky-500" },
-  ];
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          <span>Win Probabilities</span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {isLoading ? (
-          <ProbabilitySkeleton />
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-4 text-center md:grid-cols-3">
-              <ProbabilityTile
-                label={`${model.home.name} ${model.home.role === "Home" ? "Win" : model.home.role === "Away" ? "Win" : "Result"}`}
-                pct={model.home.pct}
-                accent="text-emerald-600"
-              />
-              <ProbabilityTile label="Draw" pct={model.drawPct} accent="text-amber-600" />
-              <ProbabilityTile
-                label={`${model.away.name} ${model.away.role === "Away" ? "Win" : model.away.role === "Home" ? "Win" : "Result"}`}
-                pct={model.away.pct}
-                accent="text-sky-600"
-              />
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <TeamSpotlight side={model.home} align="start" />
-                <div className="text-sm text-muted-foreground md:max-w-md md:text-center">{summary}</div>
-                <TeamSpotlight side={model.away} align="end" />
-              </div>
-
-              <div className="flex h-4 overflow-hidden rounded-full bg-muted">
-                {segments.map(segment => (
-                  <div
-                    key={segment.key}
-                    className={`h-full transition-all ${segment.color}`}
-                    style={{ width: `${segment.pct}%` }}
-                  />
-                ))}
-              </div>
-
-              <div className="space-y-3 text-sm">
-                {segments.map(segment => (
-                  <ProbabilityRow
-                    key={segment.key}
-                    label={segment.key === "home" ? `${model.home.name} (${model.home.role})` : segment.key === "away" ? `${model.away.name} (${model.away.role})` : "Draw"}
-                    pct={segment.pct}
-                    color={segment.color}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-              <div>
-                Method: {model.method ?? "unknown"}
-                {typeof model.sample === "number" && model.sample > 0 ? ` • n=${Math.round(model.sample)}` : null}
-              </div>
-              {model.source === "fallback" ? (
-                <div>Using fallback probabilities. Analysis service unavailable.</div>
-              ) : null}
-            </div>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-type ProbabilityTileProps = {
-  label: string;
-  pct: number;
-  accent: string;
-};
-
-function ProbabilityTile({ label, pct, accent }: ProbabilityTileProps) {
-  return (
-    <div className="space-y-2">
-      <div className={`text-2xl font-bold ${accent}`}>{formatPercent(pct)}%</div>
-      <div className="text-sm text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
-type ProbabilityRowProps = {
-  label: string;
-  pct: number;
-  color: string;
-};
-
-function ProbabilityRow({ label, pct, color }: ProbabilityRowProps) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="w-40 shrink-0 text-muted-foreground md:w-48">{label}</span>
-      <div className="flex h-2 flex-1 overflow-hidden rounded-full bg-muted">
-        <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 px-1">
+        <TrendingUp className="h-5 w-5" />
+        <h3 className="text-lg font-semibold">Win Probabilities</h3>
       </div>
-      <span className="w-12 text-right font-medium">{formatPercent(pct)}%</span>
+      
+      {isLoading ? (
+        <ProbabilitySkeleton />
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {/* Home Team Card */}
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center gap-4">
+                  {model.home.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={model.home.logo}
+                      alt={`${model.home.name} logo`}
+                      className="h-20 w-20 rounded-lg border-2 bg-white object-contain p-2 shadow-sm"
+                      onError={event => {
+                        event.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-lg border-2 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900">
+                      <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                        {model.home.name.charAt(0)}
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-muted-foreground">{model.home.role}</div>
+                    <div className="mt-1 text-lg font-semibold">{model.home.name}</div>
+                  </div>
+
+                  <div className="text-center text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {formatPercent(model.home.pct)}%
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Draw Card */}
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-lg border-2 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950 dark:to-amber-900">
+                    <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">=</span>
+                  </div>
+                  
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-muted-foreground">Result</div>
+                    <div className="mt-1 text-lg font-semibold">Draw</div>
+                  </div>
+
+                  <div className="text-center text-3xl font-bold text-amber-600 dark:text-amber-400">
+                    {formatPercent(model.drawPct)}%
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Away Team Card */}
+            <Card className="overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex flex-col items-center gap-4">
+                  {model.away.logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={model.away.logo}
+                      alt={`${model.away.name} logo`}
+                      className="h-20 w-20 rounded-lg border-2 bg-white object-contain p-2 shadow-sm"
+                      onError={event => {
+                        event.currentTarget.style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-20 w-20 items-center justify-center rounded-lg border-2 bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900">
+                      <span className="text-2xl font-bold text-sky-600 dark:text-sky-400">
+                        {model.away.name.charAt(0)}
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-muted-foreground">{model.away.role}</div>
+                    <div className="mt-1 text-lg font-semibold">{model.away.name}</div>
+                  </div>
+
+                  <div className="text-center text-3xl font-bold text-sky-600 dark:text-sky-400">
+                    {formatPercent(model.away.pct)}%
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Combined Probability Bar */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              {/* Home Team Logo and Info */}
+              <div className="flex items-center gap-3">
+                {model.home.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={model.home.logo}
+                    alt={`${model.home.name} logo`}
+                    className="h-12 w-12 rounded-md border-2 bg-white object-contain p-1 shadow-sm"
+                    onError={event => {
+                      event.currentTarget.style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md border-2 bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-950 dark:to-emerald-900">
+                    <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                      {model.home.name.charAt(0)}
+                    </span>
+                  </div>
+                )}
+                <div className="hidden text-left md:block">
+                  <div className="text-sm font-semibold">{model.home.name}</div>
+                  <div className="text-xs text-muted-foreground">{formatPercent(model.home.pct)}%</div>
+                </div>
+              </div>
+
+              {/* Center Summary */}
+              <div className="hidden text-center text-sm text-muted-foreground md:block">
+                {model.home.name} ({model.home.role}) {formatPercent(model.home.pct)}% • Draw {formatPercent(model.drawPct)}% • {model.away.name} ({model.away.role}) {formatPercent(model.away.pct)}%
+              </div>
+
+              {/* Away Team Logo and Info */}
+              <div className="flex items-center gap-3">
+                <div className="hidden text-right md:block">
+                  <div className="text-sm font-semibold">{model.away.name}</div>
+                  <div className="text-xs text-muted-foreground">{formatPercent(model.away.pct)}%</div>
+                </div>
+                {model.away.logo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={model.away.logo}
+                    alt={`${model.away.name} logo`}
+                    className="h-12 w-12 rounded-md border-2 bg-white object-contain p-1 shadow-sm"
+                    onError={event => {
+                      event.currentTarget.style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md border-2 bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950 dark:to-sky-900">
+                    <span className="text-lg font-bold text-sky-600 dark:text-sky-400">
+                      {model.away.name.charAt(0)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Stacked Probability Bar */}
+            <div className="flex h-6 w-full overflow-hidden rounded-full shadow-inner">
+              <div
+                className="bg-gradient-to-r from-emerald-500 to-emerald-600 transition-all duration-500"
+                style={{ width: `${model.home.pct}%` }}
+                title={`${model.home.name}: ${formatPercent(model.home.pct)}%`}
+              />
+              <div
+                className="bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-500"
+                style={{ width: `${model.drawPct}%` }}
+                title={`Draw: ${formatPercent(model.drawPct)}%`}
+              />
+              <div
+                className="bg-gradient-to-r from-sky-500 to-sky-600 transition-all duration-500"
+                style={{ width: `${model.away.pct}%` }}
+                title={`${model.away.name}: ${formatPercent(model.away.pct)}%`}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/50 px-4 py-3 text-xs text-muted-foreground">
+            <div>
+              Method: {model.method ?? "unknown"}
+              {typeof model.sample === "number" && model.sample > 0 ? ` • n=${Math.round(model.sample)}` : null}
+            </div>
+            {model.source === "fallback" ? (
+              <div>Using fallback probabilities. Analysis service unavailable.</div>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
-}
-
-type TeamSpotlightProps = {
-  side: SideInfo;
-  align: "start" | "end";
-};
-
-function TeamSpotlight({ side, align }: TeamSpotlightProps) {
-  const content = (
-    <div className="flex items-center gap-3">
-      {side.logo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={side.logo}
-          alt={`${side.name} logo`}
-          className="h-10 w-10 rounded-md border bg-white object-contain"
-          onError={event => {
-            event.currentTarget.style.display = "none";
-          }}
-        />
-      ) : null}
-      <div className="flex flex-col">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">{side.role}</span>
-        <span className="text-base font-semibold leading-tight">{side.name}</span>
-      </div>
-    </div>
-  );
-
-  return <div className={`flex ${align === "end" ? "justify-end" : "justify-start"}`}>{content}</div>;
 }
 
 function ProbabilitySkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-      </div>
-      <div className="space-y-4">
-        <Skeleton className="h-6 w-3/4" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-5/6" />
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Skeleton className="h-4 w-32" />
-        <Skeleton className="h-3 w-40" />
-      </div>
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      {[1, 2, 3].map(i => (
+        <Card key={i}>
+          <CardContent className="p-6">
+            <div className="flex flex-col items-center gap-4">
+              <Skeleton className="h-20 w-20 rounded-lg" />
+              <div className="space-y-2 text-center">
+                <Skeleton className="h-4 w-16" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+              <div className="w-full space-y-2">
+                <Skeleton className="h-9 w-24 mx-auto" />
+                <Skeleton className="h-3 w-full rounded-full" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   );
 }
@@ -244,10 +305,12 @@ function buildProbabilityModel(params: {
   fallback: { home: number; draw: number; away: number };
   homeTeam: string;
   awayTeam: string;
+  homeTeamLogo?: string;
+  awayTeamLogo?: string;
   rawEvent: DataObject | null;
   teams: { home: DataObject | null; away: DataObject | null };
 }): ProbabilityViewModel {
-  const { insight, fallback, homeTeam, awayTeam, rawEvent, teams } = params;
+  const { insight, fallback, homeTeam, awayTeam, homeTeamLogo, awayTeamLogo, rawEvent, teams } = params;
 
   const fallbackNormalized = normalizeTriple(fallback.home, fallback.draw, fallback.away);
 
@@ -274,8 +337,9 @@ function buildProbabilityModel(params: {
   const names = resolveTeamNames({ insight, teams, homeTeam, awayTeam });
   const neutral = determineNeutrality({ insight, rawEvent, homeName: names.home, awayName: names.away });
 
-  const homeLogo = resolveLogo("home", names.home, teams.home, rawEvent);
-  const awayLogo = resolveLogo("away", names.away, teams.away, rawEvent);
+  // Use provided logo props first, fallback to resolving from data
+  const homeLogo = homeTeamLogo || resolveLogo("home", names.home, teams.home, rawEvent);
+  const awayLogo = awayTeamLogo || resolveLogo("away", names.away, teams.away, rawEvent);
 
   return {
     home: { name: names.home, role: neutral ? "Neutral" : "Home", pct: normalizedBase.homePct, logo: homeLogo },
