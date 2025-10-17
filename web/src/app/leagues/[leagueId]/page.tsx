@@ -9,6 +9,9 @@ import { LeagueStandingsCard, StandingRow, SelectOption } from "@/components/lea
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getLeagueTable, getLeagueDetails, listSeasons, postCollect, DataObject, Json } from "@/lib/collect";
+import { parseFixtures } from "@/lib/schemas";
+import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
+import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 
 type LeagueListEntry = {
   id?: string;
@@ -322,6 +325,10 @@ export default function LeagueDetailPage() {
   const [selectedSeason, setSelectedSeason] = useState<string>("");
   const [selectedStage, setSelectedStage] = useState<string>(ALL_STAGE_KEY);
 
+  // Live matches moved to LeagueLiveMatches component
+
+  // Season matches moved to LeagueSeasonMatches component
+
   // ---- Load league metadata from list (logos, base info) ----
   useEffect(() => {
     let cancelled = false;
@@ -552,6 +559,9 @@ export default function LeagueDetailPage() {
     fetchStandings(selectedSeason, seasonParam);
   }, [selectedSeason, seasonCache, fetchStandings]);
 
+  // Live matches logic is encapsulated in LeagueLiveMatches
+
+
   const seasonOptions: SelectOption[] = useMemo(() => {
     const entries = Object.entries(seasonLabels);
     entries.sort((a, b) => seasonSortValue(b[1]) - seasonSortValue(a[1]));
@@ -656,6 +666,15 @@ export default function LeagueDetailPage() {
         selectedStage={selectedStage}
         onSelectStage={setSelectedStage}
         lastUpdated={lastUpdated}
+      />
+
+      {/* Live matches for this league */}
+      <LeagueLiveMatches leagueName={leagueName || heroInfo?.name} />
+
+      {/* Season matches for selected season */}
+      <LeagueSeasonMatches
+        leagueName={leagueName || heroInfo?.name}
+        seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
       />
     </div>
   );
