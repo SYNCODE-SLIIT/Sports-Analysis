@@ -601,14 +601,6 @@ export function Hero() {
             </div>
           </div>
         )}
-
-        <Button
-          size="sm"
-          onClick={handleViewAnalysis}
-          className="mt-2 w-full justify-center rounded-full shadow-md transition-all duration-200 hover:shadow-lg"
-        >
-          View match analysis
-        </Button>
       </>
     );
   };
@@ -654,18 +646,36 @@ export function Hero() {
             transition={{ duration: 0.8, delay: 0.5 }}
             className="hidden justify-center lg:flex"
           >
-            <div className="w-full max-w-md">
-              <Card className="group relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background via-background/80 to-muted/40 shadow-xl transition-colors">
-                <CardContent className="relative flex flex-col gap-6 p-6">
-                  {renderCardBody()}
-                  {hasError && (
-                    <p className="text-xs text-destructive/80">
-                      We could not load the latest details. Try again soon.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                <div className="w-full max-w-md">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={match ? `${match.homeTeam} vs ${match.awayTeam} - View details` : "Featured match - view details"}
+                    onClick={() => {
+                      if (eventId && !isLoading && !hasError) {
+                        handleViewAnalysis();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if ((e.key === "Enter" || e.key === " ") && eventId && !isLoading && !hasError) {
+                        e.preventDefault();
+                        handleViewAnalysis();
+                      }
+                    }}
+                    className="group relative cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background via-background/80 to-muted/40 shadow-xl transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
+                  >
+                    <Card className="pointer-events-none bg-transparent shadow-none">
+                      <CardContent className="relative flex flex-col gap-6 p-6 pointer-events-none">
+                        {renderCardBody()}
+                        {hasError && (
+                          <p className="text-xs text-destructive/80">
+                            We could not load the latest details. Try again soon.
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
           </motion.div>
         </div>
       </div>
