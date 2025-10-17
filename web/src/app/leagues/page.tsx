@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
-import { toast } from "sonner";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
 
@@ -52,9 +51,6 @@ type FeaturedSection = {
 };
 
 // Navigator with optional Web Share API
-type NavigatorWithShare = Navigator & {
-  share?: (data: { title?: string; text?: string; url?: string }) => Promise<unknown>;
-};
 
 const LEAGUE_METADATA: LeagueMetadata[] = rawLeagueMetadata as LeagueMetadata[];
 type CategoryMetadata = { id: string; title?: string; description?: string };
@@ -533,7 +529,7 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
 };
 
 export default function LeaguesPage() {
-  const { user, supabase, bumpPreferences } = useAuth();
+  const { user, supabase } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [search, setSearch] = useState("");
