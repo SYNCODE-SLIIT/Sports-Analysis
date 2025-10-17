@@ -776,19 +776,46 @@ export default function LeaguesPage() {
       ? `${window.location.origin}/leagues?league=${encodeURIComponent(selectedLeague)}`
       : `/leagues?league=${encodeURIComponent(selectedLeague)}`;
     const title = `${displayName}`;
-    const text = `Check out ${displayName} on Sports Analysis`;
+    if (!user) return;
+    const { data: prefs } = await supabase
+      .from('user_preferences')
+      .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
+      .eq('user_id', user.id)
+      .single();
     try {
-      const nav: NavigatorWithShare | undefined = typeof navigator !== 'undefined' ? (navigator as NavigatorWithShare) : undefined;
-      if (nav?.share) {
-        try {
-          await nav.share({ title, text, url });
-          toast.success('Shared');
-          await ensureLeagueItemAndSend(selectedLeague, 'share');
-          return;
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
+        const nav: NavigatorWithShare | undefined = typeof navigator !== 'undefined' ? (navigator as NavigatorWithShare) : undefined;
+        const existingTeamLogos = (prefs?.favorite_team_logos ?? {}) as Record<string, string>;
+        const existingLeagueLogos = (prefs?.favorite_league_logos ?? {}) as Record<string, string>;
+        const existingTeams = (prefs?.favorite_teams ?? []) as string[];
+        const existingLeagues = (prefs?.favorite_leagues ?? []) as string[];
+        const text = `Check out ${displayName} on Sports Analysis`;
+        // Determine a logo for the selected league, prefer the display object
+        const logo = selectedDisplayLeague?.logo || undefined;
+        const newLeagueLogos = { ...existingLeagueLogos } as Record<string, string>;
+        if (logo) newLeagueLogos[selectedLeague] = logo;
+        const newLeagues = existingLeagues.includes(selectedLeague) ? existingLeagues : [...existingLeagues, selectedLeague];
+        if (nav?.share) {
+          try {
+            await nav.share({ title, text, url });
+            // upsert preferences with logo maps so share action also captures logo
+            await supabase.from('user_preferences').upsert({
+              user_id: user.id,
+              favorite_teams: existingTeams,
+              favorite_leagues: newLeagues,
+              favorite_team_logos: existingTeamLogos,
+              favorite_league_logos: newLeagueLogos,
+            });
+            // best-effort: update cached_leagues for cross-user reuse
+            try {
+              const { error: rpcErr } = await supabase.rpc('upsert_cached_league', { p_provider_id: null, p_name: selectedLeague, p_logo: logo ?? '', p_metadata: {} });
+              if (rpcErr) console.debug('upsert_cached_league error', selectedLeague, rpcErr);
+            } catch (e) { console.debug('upsert_cached_league threw', selectedLeague, e); }
+            await ensureLeagueItemAndSend(selectedLeague, 'share');
+            return;
+          } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') return;
+          }
         }
-      }
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
         toast.success('Link copied to clipboard');

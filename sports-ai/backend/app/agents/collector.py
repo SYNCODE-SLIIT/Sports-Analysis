@@ -382,6 +382,45 @@ class CollectorAgentV2:
         IMPORTANT: Use name-based lookup via /search_all_teams.php because
         /lookup_all_teams.php can return incorrect/irrelevant teams for many IDs.
         """
+        # Normalize team payloads so consumers (frontend) can rely on consistent keys
+        def _normalize_teams(raw: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            out: List[Dict[str, Any]] = []
+            for t in (raw or []):
+                if not isinstance(t, dict):
+                    out.append(t)
+                    continue
+                # prefer existing canonical keys, then try common upstream names
+                name = (
+                    t.get("team_name")
+                    or t.get("strTeam")
+                    or t.get("name")
+                    or t.get("team")
+                    or t.get("strTeamShort")
+                    or ""
+                )
+                logo = (
+                    t.get("team_logo")
+                    or t.get("strTeamBadge")
+                    or t.get("strBadge")
+                    or t.get("logo")
+                    or t.get("team_logo")
+                    or ""
+                )
+                nt = dict(t)
+                # canonical fields
+                nt["team_name"] = name
+                nt["team_logo"] = logo
+                # common aliases for downstream consumers
+                if "strTeam" not in nt or not nt.get("strTeam"):
+                    nt["strTeam"] = name
+                if "strTeamBadge" not in nt or not nt.get("strTeamBadge"):
+                    nt["strTeamBadge"] = logo
+                if "strBadge" not in nt or not nt.get("strBadge"):
+                    nt["strBadge"] = logo
+                if "logo" not in nt or not nt.get("logo"):
+                    nt["logo"] = logo
+                out.append(nt)
+            return out
         # 1) Direct team search by name
         if args.get("teamName"):
             teams: List[Dict[str, Any]] = []
@@ -405,7 +444,14 @@ class CollectorAgentV2:
                         trace.append({"step": "allsports_team_search", "count": len(teams)})
                 except Exception as e:
                     trace.append({"step": "allsports_team_search_error", "error": str(e)})
-            return {"teams": teams, "count": len(teams)}, {"teamName": args["teamName"]}
+            # trace normalized result for debugging (counts + small sample)
+            try:
+                normalized = _normalize_teams(teams)
+                logo_count = sum(1 for t in normalized if (t.get("team_logo") or "").strip())
+                trace.append({"step": "teams_search_result_normalized", "count": len(normalized), "with_logo": logo_count, "sample": [ {"name": t.get("team_name"), "logo": (t.get("team_logo") or "")[:80] } for t in normalized[:3] ]})
+            except Exception:
+                pass
+            return {"teams": _normalize_teams(teams), "count": len(teams)}, {"teamName": args["teamName"]}
 
         # 2) Resolve a league name, then use search_all_teams.php?l={strLeague}&s=Soccer
         league_name = (args.get("leagueName") or "").strip()
@@ -477,7 +523,13 @@ class CollectorAgentV2:
                 resolved["leagueId"] = str(league_id)
             if resolved_league_id and not league_id:
                 resolved["leagueId"] = str(resolved_league_id)
-            return {"teams": teams, "count": len(teams)}, resolved
+            try:
+                normalized = _normalize_teams(teams)
+                logo_count = sum(1 for t in normalized if (t.get("team_logo") or "").strip())
+                trace.append({"step": "teams_league_result_normalized", "count": len(normalized), "with_logo": logo_count, "sample": [ {"name": t.get("team_name"), "logo": (t.get("team_logo") or "")[:80] } for t in normalized[:3] ]})
+            except Exception:
+                pass
+            return {"teams": _normalize_teams(teams), "count": len(teams)}, resolved
 
         # 3) Country search (still via search_all_teams)
         if args.get("country"):
@@ -503,7 +555,13 @@ class CollectorAgentV2:
                         trace.append({"step": "allsports_country_teams", "count": len(teams)})
                 except Exception as e:
                     trace.append({"step": "allsports_country_teams_error", "error": str(e)})
-            return {"teams": teams, "count": len(teams)}, {"country": args["country"]}
+            try:
+                normalized = _normalize_teams(teams)
+                logo_count = sum(1 for t in normalized if (t.get("team_logo") or "").strip())
+                trace.append({"step": "teams_country_result_normalized", "count": len(normalized), "with_logo": logo_count, "sample": [ {"name": t.get("team_name"), "logo": (t.get("team_logo") or "")[:80] } for t in normalized[:3] ]})
+            except Exception:
+                pass
+            return {"teams": _normalize_teams(teams), "count": len(teams)}, {"country": args["country"]}
 
         raise CollectorError("MISSING_ARG", "Need teamName | leagueId/leagueName | country")
 

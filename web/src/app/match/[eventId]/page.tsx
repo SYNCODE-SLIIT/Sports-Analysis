@@ -264,15 +264,91 @@ export default function MatchPage() {
     try {
       const { data } = await supabase
         .from('user_preferences')
-        .select('favorite_teams, favorite_leagues')
+        .select('favorite_teams, favorite_leagues, favorite_team_logos, favorite_league_logos')
         .eq('user_id', user.id)
         .single();
       const prevTeams = (data?.favorite_teams ?? []) as string[];
       const prevLeagues = (data?.favorite_leagues ?? []) as string[];
+      const prevTeamLogos = (data?.favorite_team_logos ?? {}) as Record<string, string>;
+      const prevLeagueLogos = (data?.favorite_league_logos ?? {}) as Record<string, string>;
+
       const nextTeams = Array.from(new Set([...prevTeams, teamName]));
-      await supabase.from('user_preferences').upsert({ user_id: user.id, favorite_teams: nextTeams, favorite_leagues: prevLeagues });
+
+      // Try to resolve a logo from already-fetched team extras or by fetching
+      const normalize = (s: string) => s.trim().toLowerCase();
+      const nameKey = normalize(teamName);
+      const getLogoFromObject = (obj: Record<string, unknown>): string | undefined => {
+        const keys = [
+          'team_logo', 'strTeamBadge', 'logo', 'badge', 'crest', 'emblem', 'shield', 'icon', 'image', 'thumb', 'logo_path', 'logo_url', 'image_url', 'strLogo', 'strBadge', 'strBadgeWide'
+        ];
+        for (const k of keys) {
+          const v = obj[k];
+          if (typeof v === 'string' && v.trim()) return v.trim();
+          if (v && typeof v === 'object') {
+            const r = (v as any).url || (v as any).src || (v as any).image || (v as any).path;
+            if (typeof r === 'string' && r.trim()) return r.trim();
+          }
+        }
+        const mediaKeys = ['media', 'images', 'logos', 'thumbnails'];
+        for (const mk of mediaKeys) {
+          const mv = obj[mk];
+          if (Array.isArray(mv)) {
+            for (const item of mv) {
+              if (typeof item === 'string' && item.trim()) return item.trim();
+              if (item && typeof item === 'object') {
+                const r = (item as any).url || (item as any).src || (item as any).image || (item as any).path;
+                if (typeof r === 'string' && r.trim()) return r.trim();
+              }
+            }
+          }
+        }
+        return undefined;
+      };
+
+      const getNameFromObject = (obj: Record<string, unknown>): string => {
+        const name = pickString(obj, ['team', 'team_name', 'name', 'strTeam']);
+        return name || '';
+      };
+
+      let logo: string | undefined = undefined;
+      // try from teamsExtra
+      const candidates: Array<Record<string, unknown> | null> = [
+        teamsExtra.home as Record<string, unknown> | null,
+        teamsExtra.away as Record<string, unknown> | null,
+      ];
+      for (const c of candidates) {
+        if (!c) continue;
+        const nm = getNameFromObject(c);
+        if (nm && normalize(nm) === nameKey) {
+          logo = getLogoFromObject(c);
+          if (logo) break;
+        }
+      }
+      if (!logo) {
+        try {
+          const resp = await getTeam(teamName);
+          const obj = parseTeamResponse(resp);
+          if (obj && typeof obj === 'object') {
+            logo = getLogoFromObject(obj as Record<string, unknown>);
+          }
+        } catch {
+          // ignore fetch failures
+        }
+      }
+
+      const nextTeamLogos: Record<string, string> = { ...prevTeamLogos };
+      if (logo) nextTeamLogos[teamName] = logo;
+
+      await supabase.from('user_preferences').upsert({
+        user_id: user.id,
+        favorite_teams: nextTeams,
+        favorite_leagues: prevLeagues,
+        favorite_team_logos: nextTeamLogos,
+        favorite_league_logos: prevLeagueLogos,
+      });
       setFavoriteTeams(nextTeams);
-      try { await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: teamName, p_logo: '', p_metadata: {} }); } catch {}
+      // update cached team for reuse
+      try { await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: teamName, p_logo: logo ?? '', p_metadata: {} }); } catch {}
     } catch {}
   };
 

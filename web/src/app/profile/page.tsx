@@ -73,7 +73,22 @@ export default function ProfilePage() {
     setSaving(true);
     try {
       await supabase.from("profiles").upsert({ id: user.id, full_name: profile?.full_name, avatar_url: profile?.avatar_url });
-      await supabase.from("user_preferences").upsert({ user_id: user.id, favorite_teams: preferences.favorite_teams ?? [], favorite_leagues: preferences.favorite_leagues ?? [] });
+      // preserve any existing logo maps when saving from the profile editor
+      try {
+        const { data: existing } = await supabase.from('user_preferences').select('favorite_team_logos, favorite_league_logos').eq('user_id', user.id).single();
+        const teamLogos = existing?.favorite_team_logos ?? {};
+        const leagueLogos = existing?.favorite_league_logos ?? {};
+        await supabase.from("user_preferences").upsert({
+          user_id: user.id,
+          favorite_teams: preferences.favorite_teams ?? [],
+          favorite_leagues: preferences.favorite_leagues ?? [],
+          favorite_team_logos: teamLogos,
+          favorite_league_logos: leagueLogos,
+        });
+      } catch {
+        // fallback: upsert without logos if the select fails for any reason
+        await supabase.from("user_preferences").upsert({ user_id: user.id, favorite_teams: preferences.favorite_teams ?? [], favorite_leagues: preferences.favorite_leagues ?? [] });
+      }
       toast.success("Profile saved");
       setEditing(false);
       recs.refetch();
