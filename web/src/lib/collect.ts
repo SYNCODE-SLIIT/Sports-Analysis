@@ -103,6 +103,17 @@ export async function getEventAllSports(eventId: string, opts?: { augmentTags?: 
   return postCollect<Record<string, Json> | { result?: DataObject[] }>("event.get", a);
 }
 
+/**
+ * Request a short computed brief for a specific event minute/type.
+ * Backend should support intent `event.brief` which returns { brief: string }
+ */
+export async function getEventBrief(eventId: string, minute?: number | string, type?: string) {
+  const payload: Record<string, Json> = { eventId: String(eventId) };
+  if (minute !== undefined && minute !== null) payload.minute = String(minute);
+  if (type) payload.type = String(type);
+  return postCollect<{ brief?: string }>("event.brief", payload);
+}
+
 /** Highlights for a match */
 export async function getHighlights(eventId: string) {
   return postCollect<{ videos?: DataObject[] }>("video.highlights", { eventId: String(eventId) });

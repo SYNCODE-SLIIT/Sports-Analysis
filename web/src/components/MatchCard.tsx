@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { pickEventId } from "@/lib/collect";
 import { useAuth } from "@/components/AuthProvider";
 import { Calendar, Clock } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,9 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
   const router = useRouter();
   const { user, supabase, bumpInteractions } = useAuth();
   const winprob = insights?.winprob;
+  const hasScore =
+    typeof fixture.home_score === "number" &&
+    typeof fixture.away_score === "number";
   
   const formatTime = (dateTime: string) => {
     try {
@@ -48,21 +52,28 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
       transition={{ duration: 0.2 }}
       className={className}
     >
-      <Card className="h-full hover:shadow-lg transition-all duration-200 cursor-pointer group">
-        <CardContent className="p-6 space-y-4">
+  <Card className="group relative h-[360px] min-h-[320px] w-full cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-xl">
+        <div className="pointer-events-none absolute inset-0 opacity-0 mix-blend-screen transition-opacity duration-300 group-hover:opacity-100">
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-primary/10" />
+        </div>
+  <CardContent className="relative flex h-full flex-col gap-5 p-6 justify-between">
           {/* Header */}
-          <div className="flex justify-between items-start">
-            <div className="space-y-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-2">
               {fixture.league && (
-                <Badge variant="secondary" className="text-xs">
+                <Badge variant="secondary" className="px-2.5 py-1 text-xs font-semibold uppercase tracking-wide">
                   {fixture.league}
                 </Badge>
               )}
-              <div className="flex items-center text-xs text-muted-foreground space-x-1">
-                <Calendar className="h-3 w-3" />
-                <span>{date}</span>
-                <Clock className="h-3 w-3 ml-2" />
-                <span>{time}</span>
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="h-3 w-3" />
+                  <span>{date}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" />
+                  <span>{time}</span>
+                </div>
               </div>
             </div>
             
@@ -78,11 +89,54 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
           </div>
 
           {/* Teams */}
-          <div className="space-y-3">
-            <div className="text-center space-y-2">
-              <div className="font-semibold">{fixture.home_team}</div>
-              <div className="text-sm text-muted-foreground">vs</div>
-              <div className="font-semibold">{fixture.away_team}</div>
+          <div className="rounded-2xl border border-border/50 bg-card/40 p-5 backdrop-blur-sm transition-colors group-hover:border-primary/30">
+            <div className="grid grid-cols-3 items-center gap-6">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <Avatar className="size-8 border border-border/40 shadow-sm">
+                  {fixture.home_team_logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <AvatarImage src={fixture.home_team_logo} alt={fixture.home_team} />
+                  ) : (
+                    <AvatarFallback>{fixture.home_team.slice(0,2).toUpperCase()}</AvatarFallback>
+                  )}
+                </Avatar>
+                <div className="space-y-0.5">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Home</div>
+                  <div className="text-sm font-semibold leading-tight">{fixture.home_team}</div>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center gap-2 rounded-2xl bg-muted/50 px-4 py-2 text-center shadow-inner">
+                {hasScore ? (
+                  <div className="text-xl font-bold leading-none tracking-tight">
+                    <span>{fixture.home_score}</span>
+                    <span className="mx-1 text-muted-foreground">-</span>
+                    <span>{fixture.away_score}</span>
+                  </div>
+                ) : (
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">vs</div>
+                )}
+                {fixture.status && (
+                  <div className="text-[10px] font-semibold uppercase text-muted-foreground/80">
+                    {fixture.status.toUpperCase()}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col items-center gap-2 text-center">
+                <Avatar className="size-8 border border-border/40 shadow-sm">
+                  {fixture.away_team_logo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <AvatarImage src={fixture.away_team_logo} alt={fixture.away_team} />
+                  ) : (
+                    <AvatarFallback>{fixture.away_team.slice(0,2).toUpperCase()}</AvatarFallback>
+                  )}
+                </Avatar>
+                <div className="space-y-0.5">
+                  <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Away</div>
+                  <div className="text-sm font-semibold leading-tight">{fixture.away_team}</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -114,11 +168,11 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
           )}
 
           {/* Action */}
-          <div className="pt-2">
+          <div className="pt-4">
             <Button
-              variant="ghost"
+              variant="default"
               size="sm"
-              className="w-full group-hover:bg-primary group-hover:text-primary-foreground transition-colors"
+              className="w-full justify-center rounded-full shadow-md transition-all duration-200 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
               onClick={() => {
                 try {
                   const id = pickEventId(fixture as unknown as Record<string, unknown>);
@@ -152,7 +206,7 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
                 }
               }}
             >
-              View Analysis
+              View Details
             </Button>
           </div>
         </CardContent>
