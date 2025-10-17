@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { postCollect, getLiveEvents, listEvents, getEventResults, getHighlights, DataObject, sanitizeInput } from "@/lib/collect";
 import { parseInsights, parseEvent, parseHighlights, parseFixtures } from "@/lib/schemas";
 
+const UPCOMING_LOOKAHEAD_DAYS = 6; // today + next 6 days
+
 /**
  * Hook to fetch match insights for a specific event
  */
@@ -117,15 +119,19 @@ export function useLiveMatches(opts?: { leagueName?: string }) {
 }
 
 /**
- * Hook to fetch matches scheduled for the current day
+ * Hook to fetch upcoming matches within a rolling window
  */
 export function useTodayScheduledMatches(opts?: { leagueName?: string }) {
   return useQuery({
     queryKey: ["scheduled-matches", opts?.leagueName ?? null],
     queryFn: async () => {
       const today = new Date();
-      const isoDate = today.toISOString().split("T")[0];
-      const args: Record<string, string> = { date: isoDate };
+      const fromDate = today.toISOString().split("T")[0];
+      const endWindow = new Date(today);
+      endWindow.setDate(endWindow.getDate() + UPCOMING_LOOKAHEAD_DAYS);
+      const toDate = endWindow.toISOString().split("T")[0];
+
+      const args: Record<string, string> = { from: fromDate, to: toDate };
       if (opts?.leagueName) {
         args.leagueName = sanitizeInput(opts.leagueName);
       }
@@ -143,25 +149,16 @@ export function useTodayScheduledMatches(opts?: { leagueName?: string }) {
           [];
       }
       const fixtures = parseFixtures(Array.isArray(raw) ? raw : []);
+      const windowStart = fromDate;
+      const windowEnd = toDate;
       const liveKeywords = ["live", "1st half", "2nd half", "half time", "ht", "paused", "extra time", "penalties"];
       const finishedKeywords = ["finished", "ft", "full time", "ended", "final", "after pens", "after pen", "aet"];
 
       const filtered = fixtures.filter(match => {
         if (!match.date) return false;
-        let matchesDate = false;
-        try {
-          const matchDate = new Date(match.date);
-          if (Number.isNaN(matchDate.getTime())) {
-            matchesDate = match.date.startsWith(isoDate);
-          }
-          if (!matchesDate) {
-            const matchIso = matchDate.toISOString().split("T")[0];
-            matchesDate = matchIso === isoDate;
-          }
-        } catch {
-          matchesDate = match.date.startsWith(isoDate);
-        }
-        if (!matchesDate) return false;
+        const matchDatePart = match.date.split("T")[0];
+        if (!matchDatePart) return false;
+        if (matchDatePart < windowStart || matchDatePart > windowEnd) return false;
         const status = (match.status ?? "").toLowerCase();
         const isLive = liveKeywords.some(keyword => status.includes(keyword));
         const isFinished = finishedKeywords.some(keyword => status.includes(keyword));
@@ -177,19 +174,28 @@ export function useTodayScheduledMatches(opts?: { leagueName?: string }) {
         return true;
       });
 
-      const sorted = [...unique].sort((a, b) => {
-        const normalizeTime = (value?: string | null) => {
-          if (!value) return Number.MAX_SAFE_INTEGER;
-          const [h, m] = value.split(":");
-          const hours = Number.parseInt(h ?? "", 10);
-          const minutes = Number.parseInt(m ?? "", 10);
-          if (Number.isNaN(hours)) return Number.MAX_SAFE_INTEGER;
-          return hours * 60 + (Number.isNaN(minutes) ? 0 : minutes);
-        };
-        return normalizeTime(a.time) - normalizeTime(b.time);
-      });
+      const timestampOf = (fixture: typeof unique[number]) => {
+        const rawDate = fixture.date ?? "";
+        const hasTimeComponent = rawDate.includes("T");
+        if (hasTimeComponent) {
+          const parsed = Date.parse(rawDate);
+          if (!Number.isNaN(parsed)) return parsed;
+        }
+        const baseDate = rawDate.split("T")[0];
+        if (!baseDate) return Number.MAX_SAFE_INTEGER;
+        const fallbackTime = fixture.time ?? "00:00";
+        const normalizedTime = fallbackTime.length === 5 ? `${fallbackTime}:00` : fallbackTime;
+        const candidate = `${baseDate}T${normalizedTime}Z`;
+        const parsed = Date.parse(candidate);
+        if (!Number.isNaN(parsed)) return parsed;
+        const fallback = Date.parse(`${baseDate}T00:00:00Z`);
+        return Number.isNaN(fallback) ? Number.MAX_SAFE_INTEGER : fallback;
+      };
 
-      return sorted;
+      const sorted = [...unique].sort((a, b) => timestampOf(a) - timestampOf(b));
+
+      // Avoid overwhelming the grid if the provider returns an extremely large set
+      return sorted.slice(0, 120);
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchInterval: 5 * 60 * 1000,
