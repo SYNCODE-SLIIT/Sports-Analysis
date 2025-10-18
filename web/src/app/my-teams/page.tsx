@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import { Heart, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/components/AuthProvider";
 import { useEffect, useMemo, useRef, useState } from "react";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
@@ -257,7 +256,7 @@ export default function MyTeamsPage() {
   const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [searching, setSearching] = useState(false);
+  const [searching] = useState(false);
   const [leagues, setLeagues] = useState<string[]>([]);
   const [leagueLogosMap, setLeagueLogosMap] = useState<Record<string, string>>({});
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -309,17 +308,17 @@ export default function MyTeamsPage() {
       }
 
       // Load suggestions from RPC if available (ignore errors)
-      try {
+    try {
   const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
   type Row = { team?: string };
   const names = Array.isArray(rpc) ? rpc.map((r: unknown) => (r as Row)?.team).filter((v): v is string => typeof v === 'string' && v.trim().length > 0) : [];
         setSuggestions(names);
         // Try to prefetch cached logos for suggestions so buttons can show icons
         try {
-          const { data: cached } = await supabase.from('cached_teams').select('name, logo').in('name', names as any);
+          const { data: cached } = await supabase.from('cached_teams').select('name, logo').in('name', names as unknown[]);
           if (Array.isArray(cached) && cached.length) {
             const normalized: Record<string, string> = {};
-            cached.forEach((c: any) => {
+            cached.forEach((c: Record<string, unknown>) => {
               if (!c?.name) return;
               const logo = sanitizeLogoUrl(c?.logo);
               if (!logo) return;
@@ -347,32 +346,44 @@ export default function MyTeamsPage() {
         try {
           const { data: teamsRows, error: teamsErr } = await supabase.from('cached_teams').select('name,logo').limit(50);
           console.debug('DEBUG cached_teams sample', { teamsErr, teamsRows });
-        } catch (e) { console.debug('DEBUG cached_teams fetch threw', e); }
+        } catch { console.debug('DEBUG cached_teams fetch threw'); }
         try {
           const { data: leaguesRows, error: leaguesErr } = await supabase.from('cached_leagues').select('name,logo').limit(50);
           console.debug('DEBUG cached_leagues sample', { leaguesErr, leaguesRows });
-        } catch (e) { console.debug('DEBUG cached_leagues fetch threw', e); }
+        } catch { console.debug('DEBUG cached_leagues fetch threw'); }
       })();
-    } catch (e) {
+    } catch {
       // no-op
     }
   }, [user, supabase]);
 
   // Fetch cached team logos for display (if present in cached_teams)
+  const teamLogosRef = useRef(teamLogos);
+  useEffect(() => {
+    teamLogosRef.current = teamLogos;
+  }, [teamLogos]);
+
+  // Clear team logos if user logs out or teams is empty, in a separate effect
   useEffect(() => {
     if (!user || teams.length === 0) {
       setTeamLogos({});
+    }
+    // do not return here, let the main effect handle the rest
+  }, [user, teams]);
+
+  useEffect(() => {
+    if (!user || teams.length === 0) {
       return;
     }
     let mounted = true;
     (async () => {
       try {
-        const { data: rows } = await supabase.from('cached_teams').select('name, logo').in('name', teams as any);
+        const { data: rows } = await supabase.from('cached_teams').select('name, logo').in('name', teams as unknown[]);
         if (!mounted) return;
 
         const map: Record<string, string> = {};
         if (Array.isArray(rows)) {
-          rows.forEach((r: any) => {
+          rows.forEach((r: Record<string, unknown>) => {
             if (!r?.name) return;
             const key = normalizeKey(String(r.name));
             const logo = sanitizeLogoUrl(r?.logo);
@@ -386,7 +397,7 @@ export default function MyTeamsPage() {
 
         const missing = teams.filter(teamName => {
           const normalizedKey = normalizeKey(teamName);
-          const existing = sanitizeLogoUrl(teamLogos[teamName]);
+          const existing = sanitizeLogoUrl(teamLogosRef.current[teamName]);
           const cached = sanitizeLogoUrl(map[normalizedKey]);
           return !existing && !cached;
         });
@@ -397,7 +408,7 @@ export default function MyTeamsPage() {
               const res = await searchTeams(name);
               const teamsArr = Array.isArray(res?.data?.teams) ? res.data.teams : [];
               const normalizedTarget = normalizeKey(name);
-              const candidateEntry = (teamsArr.find((t: any) => {
+              const candidateEntry = (teamsArr.find((t: Record<string, unknown>) => {
                 const candidateName = pickFirstString(
                   t?.team_name,
                   t?.strTeam,
@@ -450,7 +461,7 @@ export default function MyTeamsPage() {
         const combinedCache = { ...teamLogoCache, ...map };
         const displayMap: Record<string, string> = {};
         teams.forEach(teamName => {
-          displayMap[String(teamName)] = resolveLogoForDisplay(String(teamName), teamLogos, combinedCache) || '';
+          displayMap[String(teamName)] = resolveLogoForDisplay(String(teamName), teamLogosRef.current, combinedCache) || '';
         });
         setTeamLogos(displayMap);
       } catch {
@@ -458,23 +469,35 @@ export default function MyTeamsPage() {
       }
     })();
     return () => { mounted = false; };
-  }, [teams, user, supabase]);
+  }, [teams, user, supabase, teamLogoCache]);
 
   // Fetch cached league logos for display (if present in cached_leagues)
+  // keep a ref to the latest leagueLogosMap to avoid using it as an effect dependency
+  const leagueLogosMapRef = useRef(leagueLogosMap);
+  useEffect(() => {
+    leagueLogosMapRef.current = leagueLogosMap;
+  }, [leagueLogosMap]);
+
+  // Clear league logos if user logs out or leagues is empty
   useEffect(() => {
     if (!user || leagues.length === 0) {
       setLeagueLogosMap({});
+    }
+  }, [user, leagues]);
+
+  useEffect(() => {
+    if (!user || leagues.length === 0) {
       return;
     }
     let mounted = true;
     (async () => {
       try {
-        const { data: rows } = await supabase.from('cached_leagues').select('name, logo').in('name', leagues as any);
+        const { data: rows } = await supabase.from('cached_leagues').select('name, logo').in('name', leagues as unknown[]);
         if (!mounted) return;
 
         const map: Record<string, string> = {};
         if (Array.isArray(rows)) {
-          rows.forEach((r: any) => {
+          rows.forEach((r: Record<string, unknown>) => {
             if (!r?.name) return;
             const logo = sanitizeLogoUrl(r?.logo);
             if (!logo) return;
@@ -495,7 +518,7 @@ export default function MyTeamsPage() {
               const res = await searchLeagues(name);
               const leaguesArr = Array.isArray(res?.data?.leagues) ? res.data.leagues : [];
               const normalizedTarget = normalizeKey(name);
-              const candidateEntry = (leaguesArr.find((l: any) => {
+              const candidateEntry = (leaguesArr.find((l: Record<string, unknown>) => {
                 const candidateName = pickFirstString(
                   l?.league_name,
                   l?.name,
@@ -510,7 +533,7 @@ export default function MyTeamsPage() {
 
               if (!logo) {
                 try {
-                  const detail = await getLeagueTable(name);
+                  const detail = await getLeagueTable({ leagueName: name });
                   const maybeLeague = detail?.data?.league ?? detail?.data ?? null;
                   const leagueObj = Array.isArray(maybeLeague) && maybeLeague.length
                     ? maybeLeague[0]
@@ -623,13 +646,13 @@ export default function MyTeamsPage() {
                 return;
               }
               if (Array.isArray(hits) && hits.length) {
-                const hit = hits.find((h: any) => sanitizeLogoUrl(h?.logo)) || hits[0];
+                const hit = (hits.find((h: Record<string, unknown>) => sanitizeLogoUrl(h?.logo)) as Record<string, unknown> | undefined) || hits[0];
                 const hitLogo = sanitizeLogoUrl(hit?.logo);
                 if (hitLogo) {
                   map[normalizeKey(name)] = hitLogo;
                   console.debug('cached_leagues fuzzy matched', name, hit?.name, hitLogo);
                 } else {
-                  console.debug('cached_leagues fuzzy matched but no logo', name, hits.map((h: any) => ({ name: h?.name, logo: !!sanitizeLogoUrl(h?.logo) })));
+                  console.debug('cached_leagues fuzzy matched but no logo', name, hits.map((h: Record<string, unknown>) => ({ name: h?.name, logo: !!sanitizeLogoUrl(h?.logo) })));
                 }
               }
             } catch (e) {
@@ -645,7 +668,7 @@ export default function MyTeamsPage() {
         const combinedLeagueCache = { ...leagueLogoCache, ...map };
         const displayLeagueMap: Record<string, string> = {};
         leagues.forEach(leagueName => {
-          displayLeagueMap[String(leagueName)] = resolveLogoForDisplay(String(leagueName), leagueLogosMap, combinedLeagueCache) || '';
+          displayLeagueMap[String(leagueName)] = resolveLogoForDisplay(String(leagueName), leagueLogosMapRef.current, combinedLeagueCache) || '';
         });
         setLeagueLogosMap(displayLeagueMap);
       } catch {
@@ -653,7 +676,7 @@ export default function MyTeamsPage() {
       }
     })();
     return () => { mounted = false; };
-  }, [leagues, user, supabase]);
+  }, [leagues, user, supabase, leagueLogoCache, leagueLogosMap]);
 
   const topSuggestions = useMemo(() => {
     return suggestions.filter(s => !teams.includes(s)).slice(0, 12);
@@ -773,7 +796,7 @@ export default function MyTeamsPage() {
           }
         }
         if (!resolvedLogo) {
-          const candidateEntry = (leaguesArr.find((l: any) => {
+          const candidateEntry = (leaguesArr.find((l: Record<string, unknown>) => {
             const candidateName = pickFirstString(
               l?.league_name,
               l?.name,
@@ -806,8 +829,9 @@ export default function MyTeamsPage() {
   const removeTeam = (t: string) => {
     setTeams(prev => prev.filter(x => x !== t));
     setTeamLogos(prev => {
-      const { [t]: _, ...rest } = prev;
-      return rest;
+      const next = { ...prev };
+      delete next[t];
+      return next;
     });
   };
 
