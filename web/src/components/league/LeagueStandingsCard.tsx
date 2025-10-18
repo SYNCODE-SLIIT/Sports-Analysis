@@ -1,9 +1,8 @@
-import { useState } from "react";
+import React from "react";
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 
 export type StandingRow = {
   id: string;
@@ -18,6 +17,7 @@ export type StandingRow = {
   goalDifference?: number;
   points?: number;
   logo?: string;
+  team_logo?: string;
   stageKey?: string;
   stageLabel?: string;
   seasonKey?: string;
@@ -25,6 +25,15 @@ export type StandingRow = {
   form?: string;
   updatedAt?: string;
   country?: string;
+  // Raw API fields for fallback mapping
+  standing_P?: number;
+  standing_W?: number;
+  standing_D?: number;
+  standing_L?: number;
+  standing_F?: number;
+  standing_A?: number;
+  standing_GD?: number;
+  standing_PTS?: number;
 };
 
 export type SelectOption = {
@@ -43,7 +52,9 @@ type LeagueStandingsCardProps = {
   selectedStage: string;
   onSelectStage: (value: string) => void;
   lastUpdated?: string;
+  highlightTeams?: string[]; // Add highlightTeams prop
 };
+
 
 const stageButtonClasses = (active: boolean) =>
   [
@@ -62,11 +73,10 @@ export function LeagueStandingsCard({
   selectedStage,
   onSelectStage,
   lastUpdated,
+  highlightTeams = [],
 }: LeagueStandingsCardProps) {
-  const INITIAL_VISIBLE = 10;
-  const [expanded, setExpanded] = useState(false);
-  const visibleRows = expanded ? rows : rows.slice(0, INITIAL_VISIBLE);
-  const hasMore = rows.length > INITIAL_VISIBLE;
+  // Show the full retrieved table by default
+  const visibleRows = rows;
 
   // Helper to generate a unique key for each row
   const getRowKey = (row: StandingRow) => {
@@ -120,7 +130,7 @@ export function LeagueStandingsCard({
           </div>
         ) : null}
       </CardHeader>
-      <CardContent className="p-0">
+  <CardContent className="p-0 ml-4">
         {loading ? (
           <div className="space-y-2 p-6">
             {Array.from({ length: 6 }).map((_, index) => (
@@ -132,32 +142,41 @@ export function LeagueStandingsCard({
         ) : rows.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">No standings data available for this selection.</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-border/60">
+          <div className="overflow-x-auto pr-8">
+            <table className="min-w-full divide-y divide-border/60 mr-8">
               <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium">#</th>
                   <th className="px-4 py-2 text-left font-medium">Team</th>
-                  <th className="px-4 py-2 text-center font-medium">P</th>
-                  <th className="px-4 py-2 text-center font-medium">W</th>
-                  <th className="px-4 py-2 text-center font-medium">D</th>
-                  <th className="px-4 py-2 text-center font-medium">L</th>
-                  <th className="px-4 py-2 text-center font-medium">GF</th>
-                  <th className="px-4 py-2 text-center font-medium">GA</th>
-                  <th className="px-4 py-2 text-center font-medium">GD</th>
-                  <th className="px-4 py-2 text-center font-medium">PTS</th>
-                  <th className="px-4 py-2 text-center font-medium">Form</th>
+                  <th className="w-16 py-2 text-center font-medium whitespace-nowrap ml-2">Played</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">W</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">D</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">L</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">GF</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">GA</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">GD</th>
+                  <th className="w-12 py-2 text-center font-medium whitespace-nowrap ml-2">Pts</th>
+                  {/* Form column only if present in data */}
+                  {visibleRows.some(row => row.form) && (
+                    <th className="py-2 text-center font-medium whitespace-nowrap ml-2">Form</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40 text-sm">
-                {visibleRows.map(row => (
-                  <tr key={getRowKey(row)} className="hover:bg-muted/30">
+                {visibleRows.map(row => {
+                  // Highlight if team matches highlightTeams
+                  const norm = (s: unknown) => typeof s === "string" ? s.trim().toLowerCase() : "";
+                  const isHighlighted = row.team && highlightTeams.some(t => norm(t) === norm(row.team));
+                  return <tr
+                    key={getRowKey(row)}
+                    className={`hover:bg-muted/30 ${isHighlighted ? "ring-2 ring-primary/60 bg-primary/5" : ""}`}
+                  >
                     <td className="px-4 py-3 text-left font-medium text-muted-foreground">{row.position ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="relative h-8 w-8 overflow-hidden rounded-full border border-border/60 bg-muted/30">
-                          {row.logo ? (
-                            <Image src={row.logo} alt={row.team ?? "team"} fill sizes="32px" className="object-cover" />
+                        <div className={`relative h-8 w-8 overflow-hidden rounded-full border ${isHighlighted ? "border-primary/60" : "border-border/60"} bg-muted/30`}>
+                          {row.logo || row.team_logo ? (
+                            <Image src={row.logo || row.team_logo || ""} alt={row.team ?? "team"} width={32} height={32} className="object-cover w-8 h-8" />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-muted-foreground">
                               {row.team?.slice(0, 2).toUpperCase() ?? "NA"}
@@ -165,51 +184,50 @@ export function LeagueStandingsCard({
                           )}
                         </div>
                         <div>
-                          <div className="font-medium text-foreground">{row.team ?? "Unknown"}</div>
+                          <div className={`font-medium ${isHighlighted ? "text-primary" : "text-foreground"}`}>{row.team ?? "Unknown"}</div>
                           {row.stageKey && stageOptions.length > 1 ? (
                             <div className="text-xs text-muted-foreground">{row.stageLabel}</div>
                           ) : null}
                         </div>
+                        {isHighlighted && (
+                          <Badge className="ml-2 bg-primary/10 text-primary border-primary/40">Current</Badge>
+                        )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-center">{row.played ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{row.wins ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{row.draws ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{row.losses ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{row.goalsFor ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{row.goalsAgainst ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">{row.goalDifference ?? "—"}</td>
-                    <td className="px-4 py-3 text-center font-semibold text-foreground">{row.points ?? "—"}</td>
-                    <td className="px-4 py-3 text-center">
-                      {row.form ? (
-                        <div className="inline-flex items-center gap-1">
-                          {row.form.split("").map((value, idx) => {
-                            const trimmed = value.trim().toUpperCase();
-                            const variant =
-                              trimmed === "W" ? "bg-emerald-500/15 text-emerald-600" : trimmed === "L" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
-                            // Use composite key for form badge
-                            return (
-                              <Badge key={`${getRowKey(row)}-form-${idx}`} className={`px-1 text-[10px] font-semibold ${variant}`}>
-                                {trimmed || "—"}
-                              </Badge>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
+                    <td className="w-16 py-3 text-center font-mono">{row.played ?? row.standing_P ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono">{row.wins ?? row.standing_W ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono">{row.draws ?? row.standing_D ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono">{row.losses ?? row.standing_L ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono">{row.goalsFor ?? row.standing_F ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono">{row.goalsAgainst ?? row.standing_A ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono">{row.goalDifference ?? row.standing_GD ?? "—"}</td>
+                    <td className="w-12 py-3 text-center font-mono font-semibold text-foreground mr-6">{row.points ?? row.standing_PTS ?? "—"}</td>
+                    {/* Only show Form column if present in data */}
+                    {visibleRows.some(r => r.form) && (
+                      <td className="px-4 py-3 text-center">
+                        {row.form ? (
+                          <div className="inline-flex items-center gap-1">
+                            {row.form.split("").map((value, idx) => {
+                              const trimmed = value.trim().toUpperCase();
+                              const variant =
+                                trimmed === "W" ? "bg-emerald-500/15 text-emerald-600" : trimmed === "L" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
+                              return (
+                                <Badge key={`${getRowKey(row)}-form-${idx}`} className={`px-1 text-[10px] font-semibold ${variant}`}>
+                                  {trimmed || "—"}
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    )}
                   </tr>
-                ))}
+                })}
               </tbody>
             </table>
-            {hasMore ? (
-              <div className="flex items-center justify-center border-t border-border/60 p-4">
-                <Button variant="outline" size="sm" onClick={() => setExpanded(e => !e)}>
-                  {expanded ? "Show less" : `Show all (${rows.length})`}
-                </Button>
-              </div>
-            ) : null}
+            {/* Full table is shown by default; no 'Show all' control needed. */}
           </div>
         )}
       </CardContent>
