@@ -271,23 +271,72 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
   // Simple hover tooltip
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string; above?: boolean } | null>(null);
   const tooltipRef = useRef<{ x: number; y: number; html: string; above?: boolean } | null>(null);
+  const suppressedUntilRef = useRef(0);
 
   useEffect(() => {
     tooltipRef.current = tooltip;
   }, [tooltip]);
 
-  const hideTooltip = useCallback(() => {
-    setTooltip((prev) => (prev ? null : prev));
+  const hideTooltip = useCallback((suppressDuration = 0) => {
+    if (suppressDuration > 0) {
+      suppressedUntilRef.current = Date.now() + suppressDuration;
+    }
+    tooltipRef.current = null;
+    setTooltip(null);
   }, []);
+
+  const handleTooltipShow = useCallback(
+    (html: string, ev: MouseEvent | React.MouseEvent) => {
+      if (Date.now() < suppressedUntilRef.current) return;
+
+      const anyEv = ev as any;
+      const getRect = (): DOMRect | null => {
+        try {
+          if (anyEv?.currentTarget && typeof anyEv.currentTarget.getBoundingClientRect === "function") {
+            return anyEv.currentTarget.getBoundingClientRect();
+          }
+          if (anyEv?.target && typeof anyEv.target.getBoundingClientRect === "function") {
+            return anyEv.target.getBoundingClientRect();
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      };
+
+      const rect = typeof window !== "undefined" ? getRect() : null;
+      if (rect && rect.width) {
+        const centerX = rect.left + rect.width / 2;
+        const showAbove = rect.top > 160;
+        const baseY = showAbove ? rect.top : rect.bottom;
+        const nextTooltip = { x: Math.round(centerX), y: Math.round(baseY), html, above: showAbove };
+        tooltipRef.current = nextTooltip;
+        setTooltip(nextTooltip);
+        return;
+      }
+
+      if (typeof window === "undefined") return;
+      const mx = (anyEv?.clientX ?? window.innerWidth / 2) + 8;
+      const my = (anyEv?.clientY ?? window.innerHeight / 3) - 10;
+      const nextTooltip = { x: mx, y: my, html, above: true } as const;
+      tooltipRef.current = nextTooltip;
+      setTooltip(nextTooltip);
+    },
+    [],
+  );
+
+  const handleTooltipHide = useCallback(() => hideTooltip(), [hideTooltip]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     let raf = 0;
     const handleScroll = () => {
-      if (!tooltipRef.current) return;
-      if (raf) cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(hideTooltip);
+      suppressedUntilRef.current = Date.now() + 400;
+      if (tooltipRef.current) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = window.requestAnimationFrame(() => hideTooltip());
+      }
     };
     scroller.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
@@ -300,9 +349,11 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     if (typeof window === "undefined") return;
     let raf = 0;
     const handleWindowScroll = () => {
-      if (!tooltipRef.current) return;
-      if (raf) cancelAnimationFrame(raf);
-      raf = window.requestAnimationFrame(hideTooltip);
+      suppressedUntilRef.current = Date.now() + 400;
+      if (tooltipRef.current) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = window.requestAnimationFrame(() => hideTooltip());
+      }
     };
     window.addEventListener("scroll", handleWindowScroll, { passive: true });
     return () => {
@@ -642,7 +693,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
             const cx = positions.xs[i];
             const showLabel = true;
             return (
-        <Cluster
+    <Cluster
               key={`c-${c.minute}-${i}`}
               x={cx}
               minute={c.minute}
@@ -658,37 +709,8 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               sessionPrefix={sessionPrefix}
               showLabel={showLabel}
           isDark={isDark}
-              onHover={(html, ev) => {
-                // Prefer to position tooltip relative to the hovered element's bounding rect
-                const anyEv = ev as any;
-                const getRect = (): DOMRect | null => {
-                  try {
-                    if (anyEv && anyEv.currentTarget && typeof anyEv.currentTarget.getBoundingClientRect === 'function') {
-                      return anyEv.currentTarget.getBoundingClientRect();
-                    }
-                    if (anyEv && anyEv.target && typeof anyEv.target.getBoundingClientRect === 'function') {
-                      return anyEv.target.getBoundingClientRect();
-                    }
-                  } catch {
-                    return null;
-                  }
-                  return null;
-                };
-                const rect = getRect();
-                if (rect && rect.width) {
-                  const centerX = rect.left + rect.width / 2;
-                  // If there's enough space above the element, show above; otherwise below
-                  const showAbove = rect.top > 160;
-                  const baseY = showAbove ? rect.top : rect.bottom;
-                  setTooltip({ x: Math.round(centerX), y: Math.round(baseY), html, above: showAbove });
-                } else {
-                  // Fallback to mouse coords
-                  const mx = (ev as any)?.clientX ?? (window.innerWidth / 2);
-                  const my = (ev as any)?.clientY ?? (window.innerHeight / 3);
-                  setTooltip({ x: mx + 8, y: my - 10, html, above: true });
-                }
-              }}
-              onLeave={() => setTooltip(null)}
+              onHover={handleTooltipShow}
+              onLeave={handleTooltipHide}
             />
             );
           })}
