@@ -27,6 +27,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useRecommendations } from "@/hooks/useRecommendations";
 import { toast } from "sonner";
 import { searchLeagues, searchTeams } from "@/lib/collect";
+import { isAdminEmail } from "@/lib/admin";
 
 type ProfileState = {
   full_name: string;
@@ -222,6 +223,21 @@ const filterLogosForNames = (names: string[], map: Record<string, string>) => {
   return next;
 };
 
+type LogoMap = Record<string, string>;
+
+const mergeLogoMaps = (base: LogoMap, updates: LogoMap): LogoMap | null => {
+  let changed = false;
+  const next: LogoMap = { ...base };
+  Object.entries(updates).forEach(([key, value]) => {
+    const clean = sanitizeLogoUrl(value);
+    if (!clean) return;
+    if (next[key] === clean) return;
+    next[key] = clean;
+    changed = true;
+  });
+  return changed ? next : null;
+};
+
 const RECOMMENDATION_LIMIT = 4;
 
 type ItemDetails = {
@@ -267,7 +283,9 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 export default function ProfilePage() {
   const { user, supabase, loading, prefsVersion, interactionsVersion } = useAuth();
   const recs = useRecommendations();
+  const refetchRecommendations = recs.refetch;
   const router = useRouter();
+  const isAdmin = useMemo(() => isAdminEmail(user?.email ?? undefined), [user]);
 
   const [profile, setProfile] = useState<ProfileState>({ full_name: "", avatar_url: null });
   const [preferences, setPreferences] = useState<Preferences>(defaultPreferences);
@@ -288,7 +306,13 @@ export default function ProfilePage() {
   const hasPrefs = preferences.favorite_teams.length > 0 || preferences.favorite_leagues.length > 0;
 
   useEffect(() => {
-    if (!user) return;
+    if (!loading && user && isAdmin) {
+      router.replace("/admin");
+    }
+  }, [isAdmin, loading, router, user]);
+
+  useEffect(() => {
+    if (!user || isAdmin) return;
     let mounted = true;
     (async () => {
       try {
@@ -391,19 +415,20 @@ export default function ProfilePage() {
     return () => {
       mounted = false;
     };
-  }, [supabase, user, prefsVersion]);
+  }, [isAdmin, supabase, user, prefsVersion]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isAdmin || !refetchRecommendations) return;
     try {
-      recs.refetch?.();
+      refetchRecommendations();
     } catch {
       /* ignore */
     }
-  }, [user, prefsVersion, recs]);
+  }, [isAdmin, prefsVersion, refetchRecommendations, user]);
 
   const resolveLogos = useCallback(
     async (kind: "team" | "league", names: string[], existing: Record<string, string>) => {
+      if (isAdmin) return {} as Record<string, string>;
       if (!supabase || !names.length) return {} as Record<string, string>;
       const lookup = new Map<string, string>();
       const pending: string[] = [];
@@ -483,40 +508,48 @@ export default function ProfilePage() {
 
       return results;
     },
-    [supabase],
+    [isAdmin, supabase],
   );
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isAdmin) return;
     if (!preferences.favorite_teams.length) return;
     void (async () => {
       const resolved = await resolveLogos("team", preferences.favorite_teams, preferences.favorite_team_logos);
       if (Object.keys(resolved).length) {
-        setPreferences((prev) => ({
-          ...prev,
-          favorite_team_logos: { ...prev.favorite_team_logos, ...resolved },
-        }));
+        setPreferences((prev) => {
+          const merged = mergeLogoMaps(prev.favorite_team_logos, resolved);
+          if (!merged) return prev;
+          return {
+            ...prev,
+            favorite_team_logos: merged,
+          };
+        });
       }
     })();
-  }, [preferences.favorite_teams, preferences.favorite_team_logos, resolveLogos, user]);
+  }, [isAdmin, preferences.favorite_team_logos, preferences.favorite_teams, resolveLogos, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || isAdmin) return;
     if (!preferences.favorite_leagues.length) return;
     void (async () => {
       const resolved = await resolveLogos("league", preferences.favorite_leagues, preferences.favorite_league_logos);
       if (Object.keys(resolved).length) {
-        setPreferences((prev) => ({
-          ...prev,
-          favorite_league_logos: { ...prev.favorite_league_logos, ...resolved },
-        }));
+        setPreferences((prev) => {
+          const merged = mergeLogoMaps(prev.favorite_league_logos, resolved);
+          if (!merged) return prev;
+          return {
+            ...prev,
+            favorite_league_logos: merged,
+          };
+        });
       }
     })();
-  }, [preferences.favorite_leagues, preferences.favorite_league_logos, resolveLogos, user]);
+  }, [isAdmin, preferences.favorite_league_logos, preferences.favorite_leagues, resolveLogos, user]);
 
   const handleAvatarUpload = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
-      if (!user) return;
+      if (!user || isAdmin) return;
       const file = event.target.files?.[0];
       if (!file) return;
       if (file.size > 5 * 1024 * 1024) {
@@ -570,11 +603,11 @@ export default function ProfilePage() {
         setUploadingAvatar(false);
       }
     },
-    [profile.full_name, supabase, user],
+    [isAdmin, profile.full_name, supabase, user],
   );
 
   const handleSave = useCallback(async () => {
-    if (!user) return;
+    if (!user || isAdmin) return;
     setSaving(true);
     try {
       const trimmedTeams = preferences.favorite_teams.map((name) => name.trim()).filter(Boolean);
@@ -616,11 +649,11 @@ export default function ProfilePage() {
     } finally {
       setSaving(false);
     }
-  }, [user, preferences, profile.full_name, profile.avatar_url, supabase, recs]);
+  }, [isAdmin, preferences, profile.avatar_url, profile.full_name, recs, supabase, user]);
 
   const sendInteraction = useCallback(
     async (itemId: string, event: "like" | "save" | "dismiss" | "click" | "view" | "share") => {
-      if (!user) return;
+      if (!user || isAdmin) return;
       setSendingFeedbackId(itemId);
       try {
         await supabase.from("user_interactions").insert({ user_id: user.id, item_id: itemId, event });
@@ -633,7 +666,7 @@ export default function ProfilePage() {
         setSendingFeedbackId(null);
       }
     },
-    [recs, supabase, user],
+    [isAdmin, recs, supabase, user],
   );
 
   const toggleLocalLike = useCallback(
@@ -726,7 +759,7 @@ export default function ProfilePage() {
     return () => {
       active = false;
     };
-  }, [supabase, user, interactionsVersion, recs]);
+  }, [supabase, user, interactionsVersion]);
 
   const shareRecommendation = useCallback(
     async (itemId: string, item: Record<string, unknown> | undefined) => {
@@ -974,6 +1007,10 @@ export default function ProfilePage() {
 
   if (loading) {
     return <div className="container py-16 min-h-[60vh] flex items-center justify-center">Loading…</div>;
+  }
+
+  if (!loading && user && isAdmin) {
+    return <div className="container py-16 min-h-[60vh] flex items-center justify-center">Redirecting to admin dashboard…</div>;
   }
 
   if (!user) {
