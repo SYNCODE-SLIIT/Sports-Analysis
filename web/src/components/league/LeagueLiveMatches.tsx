@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MatchCard } from "@/components/MatchCard";
-import { getLiveEvents, type DataObject } from "@/lib/collect";
+import { getLiveEvents } from "@/lib/collect";
 import { parseFixtures, type Fixture } from "@/lib/schemas";
 
 type Props = {

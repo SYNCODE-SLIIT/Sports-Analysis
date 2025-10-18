@@ -18,6 +18,9 @@ export default function AuthCallbackPage() {
       if (!session || !active) return;
 
       // Ensure profile + preferences
+  let needsOnboarding = false;
+  const nextParam = params.get("next") || "/";
+  const next = nextParam.startsWith("/") ? nextParam : "/";
       try {
         await supabase.from("profiles").upsert({
           id: session.user.id,
@@ -29,10 +32,22 @@ export default function AuthCallbackPage() {
         } catch {
           await supabase.from("user_preferences").insert({ user_id: session.user.id });
         }
+        const { data: prefs } = await supabase
+          .from("user_preferences")
+          .select("favorite_teams, favorite_leagues, favorite_countries")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+        needsOnboarding = !prefs ||
+          (Array.isArray(prefs.favorite_teams) ? prefs.favorite_teams.length === 0 : true) &&
+          (Array.isArray(prefs.favorite_leagues) ? prefs.favorite_leagues.length === 0 : true) &&
+          (Array.isArray(prefs.favorite_countries) ? prefs.favorite_countries.length === 0 : true);
       } catch {}
 
-      const next = params.get("next") || "/";
-      router.replace(next);
+      if (needsOnboarding) {
+        router.replace(`/onboarding?next=${encodeURIComponent(next)}`);
+      } else {
+        router.replace(next);
+      }
     };
     finalize();
     return () => {

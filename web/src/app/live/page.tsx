@@ -1,10 +1,24 @@
 "use client";
 
+
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { LiveNowSection } from "@/components/LiveNowSection";
 import { ScheduledTodaySection } from "@/components/ScheduledTodaySection";
 
+const TABS = [
+  { key: "live", label: "Live Now" },
+  { key: "upcoming", label: "Upcoming Fixtures" },
+];
+
 export default function LivePage() {
+  const [activeTab, setActiveTab] = useState("live");
+
+  // Scroll to top of page
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     <div className="container py-8 space-y-10">
       <motion.header
@@ -21,9 +35,28 @@ export default function LivePage() {
         </div>
       </motion.header>
 
-      <LiveNowSection />
+      <div className="flex gap-4 border-b mb-6">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`px-4 py-2 font-semibold border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground"
+            }`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      <ScheduledTodaySection />
+      <div style={{ display: activeTab === "live" ? undefined : "none" }}>
+        <LiveNowSection onPageChangeAction={scrollToTop} />
+      </div>
+      <div style={{ display: activeTab === "upcoming" ? undefined : "none" }}>
+        <ScheduledTodaySection onPageChangeAction={scrollToTop} />
+      </div>
     </div>
   );
 }
