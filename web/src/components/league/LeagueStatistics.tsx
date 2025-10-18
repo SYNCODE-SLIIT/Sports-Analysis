@@ -155,7 +155,7 @@ function TopList({
         ) : (
           <ul className="space-y-2">
             {items.map((t, idx) => (
-              <li key={t.team} className="flex items-center justify-between gap-3">
+              <li key={`${t.team}-${idx}`} className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-muted-foreground w-5">{idx + 1}.</span>
                   {t.logo ? (

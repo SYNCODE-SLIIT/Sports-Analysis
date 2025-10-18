@@ -68,6 +68,11 @@ export function LeagueStandingsCard({
   const visibleRows = expanded ? rows : rows.slice(0, INITIAL_VISIBLE);
   const hasMore = rows.length > INITIAL_VISIBLE;
 
+  // Helper to generate a unique key for each row
+  const getRowKey = (row: StandingRow) => {
+    // Use team, season, stage, and position if available
+    return [row.team, row.seasonKey, row.stageKey, row.position, row.id].filter(Boolean).join("-");
+  };
   return (
     <Card className="border-border/60 shadow-sm">
       <CardHeader className="gap-3 space-y-0 pb-4">
@@ -146,7 +151,7 @@ export function LeagueStandingsCard({
               </thead>
               <tbody className="divide-y divide-border/40 text-sm">
                 {visibleRows.map(row => (
-                  <tr key={row.id} className="hover:bg-muted/30">
+                  <tr key={getRowKey(row)} className="hover:bg-muted/30">
                     <td className="px-4 py-3 text-left font-medium text-muted-foreground">{row.position ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -182,8 +187,9 @@ export function LeagueStandingsCard({
                             const trimmed = value.trim().toUpperCase();
                             const variant =
                               trimmed === "W" ? "bg-emerald-500/15 text-emerald-600" : trimmed === "L" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
+                            // Use composite key for form badge
                             return (
-                              <Badge key={`${row.id}-form-${idx}`} className={`px-1 text-[10px] font-semibold ${variant}`}>
+                              <Badge key={`${getRowKey(row)}-form-${idx}`} className={`px-1 text-[10px] font-semibold ${variant}`}>
                                 {trimmed || "—"}
                               </Badge>
                             );

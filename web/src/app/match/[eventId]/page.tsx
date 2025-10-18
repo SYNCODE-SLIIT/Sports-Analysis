@@ -2,6 +2,7 @@
 import Image from "next/image";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import { useParams, useSearchParams } from "next/navigation";
 import { Calendar, MapPin, Users, Trophy, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
 import { toast } from "sonner";
@@ -9,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { HighlightsCarousel } from "@/components/HighlightsCarousel";
+// HighlightsCarousel import removed
 import RichTimeline from "@/components/match/RichTimeline";
 import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
@@ -125,7 +126,7 @@ export default function MatchPage() {
   const sid = searchParams?.get("sid") ?? "card";
 
   const [event, setEvent] = useState<RenderEvent | null>(null);
-  const [highlights, setHighlights] = useState<Array<{ id: string; title?: string; url?: string; thumbnail?: string; provider?: string; duration?: number }>>([]);
+  // highlights state removed
   const [table, setTable] = useState<Array<{
     position?: number;
     team?: string;
@@ -148,7 +149,24 @@ export default function MatchPage() {
   const [teamsExtra, setTeamsExtra] = useState<{ home: DataObject | null; away: DataObject | null }>({ home: null, away: null });
   const [playersExtra, setPlayersExtra] = useState<{ home: DataObject[]; away: DataObject[] }>({ home: [], away: [] });
   const [oddsExtra, setOddsExtra] = useState<{ listed: DataObject[]; live: DataObject[] }>({ listed: [], live: [] });
-  const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] });
+  // const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] });
+  // const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] }); // Only for legacy fallback, not used in UI
+  interface TeamForm {
+    summary?: string;
+    [key: string]: unknown;
+  }
+  interface TeamMetrics {
+    last_results?: Record<string, unknown>[];
+    [key: string]: unknown;
+  }
+  interface AnalysisForm {
+    home_team?: TeamForm;
+    away_team?: TeamForm;
+    home_metrics?: TeamMetrics;
+    away_metrics?: TeamMetrics;
+    [key: string]: unknown;
+  }
+  const [analysisForm, setAnalysisForm] = useState<AnalysisForm | null>(null);
   const [h2hExtra, setH2hExtra] = useState<{ matches: DataObject[] } | null>(null);
   const [extrasLoading, setExtrasLoading] = useState(false);
   const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
@@ -640,100 +658,87 @@ export default function MatchPage() {
         provider: typeof v.provider === 'string' ? v.provider : undefined,
         duration: typeof v.duration === 'number' ? (v.duration as number) : undefined,
       }));
-      setHighlights(normalized);
+  // setHighlights removed
     }).catch(() => {});
 
     return () => { active = false; };
   }, [eventId]);
 
-  useEffect(() => {
-    if (!eventId) return;
-    let active = true;
-    setWinProbInsight(undefined);
-    postCollect("analysis.match_insights", { eventId: String(eventId) })
-      .then(env => {
-        if (!active) return;
-        const data = (env?.data ?? {}) as Record<string, unknown>;
-        const insightsRaw = data.insights;
-        const insights = insightsRaw && typeof insightsRaw === "object" ? (insightsRaw as Record<string, unknown>) : undefined;
-        const winprobContainer = insights ?? data;
-        const winprobRaw = winprobContainer.winprob;
-        setWinProbInsight(winprobContainer && typeof winprobContainer === "object" ? (winprobContainer as Record<string, unknown>) : null);
-        const winprob = winprobRaw && typeof winprobRaw === "object"
-          ? (winprobRaw as Record<string, unknown>)
-          : undefined;
-
-        const norm = (val?: unknown) => {
-          if (typeof val !== "number") return 0;
-          if (Number.isNaN(val)) return 0;
-          return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
+  // --- Parallelize win probability fetches and use SWR for caching ---
+  const fetchWinProbabilities = async (eventId: string) => {
+    // Fire both requests in parallel
+    const [insightsRes, fallbackRes] = await Promise.allSettled([
+      postCollect("analysis.match_insights", { eventId: String(eventId) }),
+      getWinProb(String(eventId)),
+    ]);
+    // Prefer analysis agent (insights) if valid
+    if (insightsRes.status === "fulfilled") {
+      const data = (insightsRes.value?.data ?? {}) as Record<string, unknown>;
+      const insightsRaw = data.insights;
+      const insights = insightsRaw && typeof insightsRaw === "object" ? (insightsRaw as Record<string, unknown>) : undefined;
+      const winprobContainer = insights ?? data;
+      const winprobRaw = winprobContainer.winprob;
+      const winprob = winprobRaw && typeof winprobRaw === "object"
+        ? (winprobRaw as Record<string, unknown>)
+        : undefined;
+      const norm = (val?: unknown) => {
+        if (typeof val !== "number") return 0;
+        if (Number.isNaN(val)) return 0;
+        return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
+      };
+      const homePct = norm(winprob?.home);
+      const drawPct = norm(winprob?.draw);
+      const awayPct = norm(winprob?.away);
+      if (homePct + drawPct + awayPct > 0) {
+        return {
+          display: { home: homePct, draw: drawPct, away: awayPct },
+          insight: winprobContainer,
         };
+      }
+    }
+    // Fallback to getWinProb if insights are missing or zero
+    if (fallbackRes.status === "fulfilled") {
+      const data = (fallbackRes.value && fallbackRes.value.data) || {};
+      const prob = (data && (data.winprob || data.win_prob || data.probabilities)) || {};
+      const norm = (val?: unknown) => {
+        if (typeof val !== "number") return 0;
+        if (Number.isNaN(val)) return 0;
+        return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
+      };
+      const h = norm(prob.home);
+      const d = norm(prob.draw);
+      const a = norm(prob.away);
+      return {
+        display: { home: h, draw: d, away: a },
+        insight: fallbackRes.value as unknown as Record<string, unknown>,
+      };
+    }
+    // If both fail, return zeros
+    return {
+      display: { home: 0, draw: 0, away: 0 },
+      insight: null,
+    };
+  };
 
-        const homePct = norm(winprob?.home);
-        const drawPct = norm(winprob?.draw);
-        const awayPct = norm(winprob?.away);
+  const { data: winProbData } = useSWR(
+    eventId ? ["winprob", eventId] : null,
+    () => fetchWinProbabilities(String(eventId)),
+    { revalidateOnFocus: false, dedupingInterval: 60000 }
+  );
 
-        setWinProbDisplay({ home: homePct, draw: drawPct, away: awayPct });
-        setEvent(prev => prev ? {
-          ...prev,
-          winProbabilities: {
-            home: homePct / 100,
-            draw: drawPct / 100,
-            away: awayPct / 100,
-          },
-        } : prev);
-        // If zero or missing, try override endpoint used by legacy match.js
-        const sum = homePct + drawPct + awayPct;
-        if (sum === 0) {
-          return getWinProb(String(eventId)).then(res => {
-            if (!active) return;
-            const data = (res && res.data) || {};
-            const prob = (data && (data.winprob || data.win_prob || data.probabilities)) || {};
-            const norm = (val?: unknown) => {
-              if (typeof val !== "number") return 0;
-              if (Number.isNaN(val)) return 0;
-              return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
-            };
-            const h = norm(prob.home);
-            const d = norm(prob.draw);
-            const a = norm(prob.away);
-            setWinProbDisplay({ home: h, draw: d, away: a });
-            setWinProbInsight(res as unknown as Record<string, unknown>);
-            setEvent(prev => prev ? {
-              ...prev,
-              winProbabilities: { home: h / 100, draw: d / 100, away: a / 100 },
-            } : prev);
-          }).catch(() => {});
-        }
-      })
-      .catch(() => {
-        if (!active) return;
-        setWinProbInsight(null);
-        // Try override endpoint as fallback when match_insights fails
-        getWinProb(String(eventId)).then(res => {
-          if (!active) return;
-          const data = (res && res.data) || {};
-          const prob = (data && (data.winprob || data.win_prob || data.probabilities)) || {};
-          const norm = (val?: unknown) => {
-            if (typeof val !== "number") return 0;
-            if (Number.isNaN(val)) return 0;
-            return val <= 1.0001 ? Math.round(val * 100) : Math.round(val);
-          };
-          const h = norm(prob.home);
-          const d = norm(prob.draw);
-          const a = norm(prob.away);
-          setWinProbDisplay({ home: h, draw: d, away: a });
-          setWinProbInsight(res as unknown as Record<string, unknown>);
-          setEvent(prev => prev ? {
-            ...prev,
-            winProbabilities: { home: h / 100, draw: d / 100, away: a / 100 },
-          } : prev);
-        }).catch(() => {
-          setWinProbDisplay({ home: 0, draw: 0, away: 0 });
-        });
-      });
-    return () => { active = false; };
-  }, [eventId]);
+  useEffect(() => {
+    if (!winProbData) return;
+    setWinProbDisplay(winProbData.display);
+    setWinProbInsight(winProbData.insight);
+    setEvent(prev => prev ? {
+      ...prev,
+      winProbabilities: {
+        home: winProbData.display.home / 100,
+        draw: winProbData.display.draw / 100,
+        away: winProbData.display.away / 100,
+      },
+    } : prev);
+  }, [winProbData]);
 
   useEffect(() => {
     const win = event?.winProbabilities;
@@ -917,7 +922,8 @@ export default function MatchPage() {
       setTeamsExtra({ home: null, away: null });
       setPlayersExtra({ home: [], away: [] });
       setOddsExtra({ listed: [], live: [] });
-      setFormExtra({ home: [], away: [] });
+  // setFormExtra({ home: [], away: [] });
+      setAnalysisForm(null);
       setH2hExtra(null);
       setExtrasLoading(false);
       return;
@@ -926,7 +932,9 @@ export default function MatchPage() {
     let active = true;
     setExtrasLoading(true);
 
-    const requests: [Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>] = [
+    // Use teamId for form data, not eventId
+    // Always fetch form data using eventId for analysis tab
+    const requests: [Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>] = [
       event.homeTeam ? getTeam(event.homeTeam) : Promise.resolve(null),
       event.awayTeam ? getTeam(event.awayTeam) : Promise.resolve(null),
       event.homeTeam ? listTeamPlayers(event.homeTeam) : Promise.resolve(null),
@@ -934,31 +942,60 @@ export default function MatchPage() {
       event.eventId ? postCollect("odds.list", { eventId: event.eventId }) : Promise.resolve(null),
       event.eventId ? postCollect("odds.live", { eventId: event.eventId }) : Promise.resolve(null),
       Promise.resolve(null),
-      event.eventId ? getForm(event.eventId) : Promise.resolve(null),
+      event.eventId ? getForm(event.eventId) : Promise.resolve({}),
+      Promise.resolve({}),
       event.homeTeam && event.awayTeam ? getH2HByTeams(event.homeTeam, event.awayTeam) : Promise.resolve(null),
+      event.eventId ? postCollect("analysis.match_insights", { eventId: event.eventId }) : Promise.resolve(null),
     ];
 
     Promise.allSettled(requests)
       .then(results => {
         if (!active) return;
-        const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, , formRes, h2hRes] = results;
+  const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, , formRes, , h2hRes, analysisRes] = results;
 
-  const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
-  const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
-  setTeamsExtra({ home: homeTeamData, away: awayTeamData });
+        const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
+        const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
+        setTeamsExtra({ home: homeTeamData, away: awayTeamData });
 
-  const homePlayers = isFulfilled(homePlayersRes) ? parsePlayersResponse(homePlayersRes.value as Awaited<ReturnType<typeof listTeamPlayers>> | null) : [];
-  const awayPlayers = isFulfilled(awayPlayersRes) ? parsePlayersResponse(awayPlayersRes.value as Awaited<ReturnType<typeof listTeamPlayers>> | null) : [];
-  setPlayersExtra({ home: homePlayers, away: awayPlayers });
+        const homePlayers = isFulfilled(homePlayersRes) ? parsePlayersResponse(homePlayersRes.value as Awaited<ReturnType<typeof listTeamPlayers>> | null) : [];
+        const awayPlayers = isFulfilled(awayPlayersRes) ? parsePlayersResponse(awayPlayersRes.value as Awaited<ReturnType<typeof listTeamPlayers>> | null) : [];
+        setPlayersExtra({ home: homePlayers, away: awayPlayers });
 
-  const listedOdds = isFulfilled(oddsListRes) ? parseOddsResponse(oddsListRes.value as { data?: unknown } | null) : [];
-  const liveOdds = isFulfilled(oddsLiveRes) ? parseOddsResponse(oddsLiveRes.value as { data?: unknown } | null) : [];
-  setOddsExtra({ listed: listedOdds, live: liveOdds });
+        const listedOdds = isFulfilled(oddsListRes) ? parseOddsResponse(oddsListRes.value as { data?: unknown } | null) : [];
+        const liveOdds = isFulfilled(oddsLiveRes) ? parseOddsResponse(oddsLiveRes.value as { data?: unknown } | null) : [];
+        setOddsExtra({ listed: listedOdds, live: liveOdds });
 
-  const formData = isFulfilled(formRes) ? parseFormResponse(formRes.value as unknown) : { home: [], away: [] };
-  setFormExtra(formData);
-  const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value as unknown) : null;
-  setH2hExtra(h2hData);
+        // Combine home and away form data
+        // Set analysisForm directly from backend response for form
+        let analysisFormObj = null;
+        if (isFulfilled(formRes) && formRes.value && typeof formRes.value === 'object') {
+          const data = (formRes.value as Record<string, unknown>).data;
+          if (data && typeof data === 'object') {
+            const d = data as Record<string, unknown>;
+            analysisFormObj = {
+              home_team: d.home_team as Record<string, unknown> ?? {},
+              home_metrics: d.home_metrics as Record<string, unknown> ?? {},
+              away_team: d.away_team as Record<string, unknown> ?? {},
+              away_metrics: d.away_metrics as Record<string, unknown> ?? {},
+            };
+          }
+        }
+        const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value as unknown) : null;
+        setH2hExtra(h2hData);
+
+        // If analysis agent output exists, prefer it
+        if (isFulfilled(analysisRes) && analysisRes.value && typeof analysisRes.value === 'object') {
+          const data = (analysisRes.value as { data?: unknown }).data;
+          if (data && typeof data === 'object') {
+            const dataObj = data as Record<string, unknown>;
+            if ('form' in dataObj) analysisFormObj = dataObj.form;
+            else if ('insights' in dataObj && typeof dataObj.insights === 'object' && dataObj.insights !== null) {
+              const insightsObj = dataObj.insights as Record<string, unknown>;
+              if ('form' in insightsObj) analysisFormObj = insightsObj.form;
+            }
+          }
+        }
+        setAnalysisForm(analysisFormObj as AnalysisForm);
       })
       .catch(() => {
         // Silently handle errors
@@ -971,7 +1008,7 @@ export default function MatchPage() {
     return () => {
       active = false;
     };
-  }, [event, eventRaw]);
+  }, [event, eventRaw, event?.homeTeam, event?.awayTeam]);
 
   const match = event;
 
@@ -1505,8 +1542,7 @@ export default function MatchPage() {
           </TabsContent>
 
           <TabsContent value="analysis" className="space-y-6">
-            <HighlightsCarousel highlights={highlights} isLoading={false} />
-
+            {/* Highlights section removed as requested */}
             {extrasLoading ? (
               <Card>
                 <CardContent className="p-6">
@@ -1584,59 +1620,87 @@ export default function MatchPage() {
                     </TabsContent>
 
                     <TabsContent value="form" className="space-y-4">
-                      {formExtra.home.length > 0 || formExtra.away.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="rounded-lg border p-4">
-                            <h4 className="font-semibold mb-3">{match.homeTeam}</h4>
-                            {formExtra.home.length > 0 ? (
-                              <div className="space-y-2">
-                                {formExtra.home.map((item, idx) => {
-                                  const record = item as Record<string, unknown>;
-                                  const result = pickString(record, ["result", "outcome"]);
-                                  const opponent = pickString(record, ["opponent", "against"]);
-                                  const score = pickString(record, ["score", "scoreline"]);
-                                  return (
-                                    <div key={idx} className="flex items-center justify-between rounded border p-2 text-sm">
-                                      <span className={`font-bold px-2 py-0.5 rounded ${
-                                        result === 'W' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' :
-                                        result === 'L' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' :
-                                        'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100'
-                                      }`}>{result || '?'}</span>
-                                      <span className="flex-1 text-center">{opponent || 'vs Unknown'}</span>
-                                      <span>{score || '-'}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-sm text-muted-foreground">No form data available.</div>
-                            )}
+                      {analysisForm ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {/* Home Team Form */}
+                          <div className="rounded-xl border bg-background/80 dark:bg-background/60 shadow p-6 flex flex-col gap-4">
+                            <div className="flex items-center gap-3 mb-2">
+                              <Avatar className="w-10 h-10 border object-contain bg-white dark:bg-zinc-900">
+                                {match.homeTeamLogo ? (
+                                  <AvatarImage src={match.homeTeamLogo} alt={String(analysisForm.home_team?.name || match.homeTeam)} />
+                                ) : (
+                                  <AvatarFallback className="bg-muted/40 border border-muted/50 font-bold text-lg text-primary dark:bg-zinc-800 dark:text-zinc-100">
+                                    {String(analysisForm.home_team?.name || match.homeTeam).substring(0,2).toUpperCase()}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <h4 className="font-semibold text-lg dark:text-zinc-100">{String(analysisForm.home_team?.name || match.homeTeam)}</h4>
+                            </div>
+                            <div className="mb-2 text-base font-semibold text-primary/90 dark:text-primary">{analysisForm.home_team?.summary || ''}</div>
+                            <div className="flex gap-1 mb-2">
+                              {Array.isArray(analysisForm.home_metrics?.last_results) && analysisForm.home_metrics.last_results.length > 0 ? (
+                                (analysisForm.home_metrics.last_results as unknown[])
+                                  .filter((result): result is string => typeof result === 'string')
+                                  .map((result, idx) => (
+                                    <span key={idx} className={`px-2 py-1 rounded font-bold text-xs shadow border transition-colors ${
+                                      result === 'W' ? 'bg-green-200 text-green-900 border-green-400 dark:bg-green-900 dark:text-green-100 dark:border-green-700' :
+                                      result === 'L' ? 'bg-red-200 text-red-900 border-red-400 dark:bg-red-900 dark:text-red-100 dark:border-red-700' :
+                                      result === 'D' ? 'bg-gray-300 text-gray-900 border-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-500' :
+                                      'bg-gray-200 text-gray-900 border-gray-300 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700'
+                                    }`}>{result}</span>
+                                  ))
+                              ) : (
+                                <span className="text-sm text-muted-foreground">No recent results</span>
+                              )}
+                            </div>
+                            <table className="w-full text-sm mb-2 border-separate border-spacing-y-1">
+                              <tbody>
+                                <tr className="border-b border-muted dark:border-zinc-700"><td className="text-muted-foreground">Games</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.home_metrics?.games ?? '—')}</td></tr>
+                                <tr className="border-b border-muted dark:border-zinc-700"><td className="text-muted-foreground">Wins / Draws / Losses</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.home_metrics?.wins ?? '—')} / {String(analysisForm.home_metrics?.draws ?? '—')} / {String(analysisForm.home_metrics?.losses ?? '—')}</td></tr>
+                                <tr className="border-b border-muted dark:border-zinc-700"><td className="text-muted-foreground">Goals For / Against</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.home_metrics?.gf ?? '—')} / {String(analysisForm.home_metrics?.ga ?? '—')}</td></tr>
+                                <tr><td className="text-muted-foreground">Goal Difference</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.home_metrics?.gd ?? '—')}</td></tr>
+                              </tbody>
+                            </table>
                           </div>
-                          <div className="rounded-lg border p-4">
-                            <h4 className="font-semibold mb-3">{match.awayTeam}</h4>
-                            {formExtra.away.length > 0 ? (
-                              <div className="space-y-2">
-                                {formExtra.away.map((item, idx) => {
-                                  const record = item as Record<string, unknown>;
-                                  const result = pickString(record, ["result", "outcome"]);
-                                  const opponent = pickString(record, ["opponent", "against"]);
-                                  const score = pickString(record, ["score", "scoreline"]);
-                                  return (
-                                    <div key={idx} className="flex items-center justify-between rounded border p-2 text-sm">
-                                      <span className={`font-bold px-2 py-0.5 rounded ${
-                                        result === 'W' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100' :
-                                        result === 'L' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100' :
-                                        'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-100'
-                                      }`}>{result || '?'}</span>
-                                      <span className="flex-1 text-center">{opponent || 'vs Unknown'}</span>
-                                      <span>{score || '-'}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="text-sm text-muted-foreground">No form data available.</div>
-                            )}
+                          {/* Away Team Form */}
+                          <div className="rounded-xl border bg-background/80 dark:bg-background/60 shadow p-6 flex flex-col gap-4">
+                            <div className="flex items-center gap-3 mb-2">
+                              <Avatar className="w-10 h-10 border object-contain bg-white dark:bg-zinc-900">
+                                {match.awayTeamLogo ? (
+                                  <AvatarImage src={match.awayTeamLogo} alt={String(analysisForm.away_team?.name || match.awayTeam)} />
+                                ) : (
+                                  <AvatarFallback className="bg-muted/40 border border-muted/50 font-bold text-lg text-primary dark:bg-zinc-800 dark:text-zinc-100">
+                                    {String(analysisForm.away_team?.name || match.awayTeam).substring(0,2).toUpperCase()}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <h4 className="font-semibold text-lg dark:text-zinc-100">{String(analysisForm.away_team?.name || match.awayTeam)}</h4>
+                            </div>
+                            <div className="mb-2 text-base font-semibold text-primary/90 dark:text-primary">{analysisForm.away_team?.summary || ''}</div>
+                            <div className="flex gap-1 mb-2">
+                              {Array.isArray(analysisForm.away_metrics?.last_results) && analysisForm.away_metrics.last_results.length > 0 ? (
+                                (analysisForm.away_metrics.last_results as unknown[])
+                                  .filter((result): result is string => typeof result === 'string')
+                                  .map((result, idx) => (
+                                    <span key={idx} className={`px-2 py-1 rounded font-bold text-xs shadow border transition-colors ${
+                                      result === 'W' ? 'bg-green-200 text-green-900 border-green-400 dark:bg-green-900 dark:text-green-100 dark:border-green-700' :
+                                      result === 'L' ? 'bg-red-200 text-red-900 border-red-400 dark:bg-red-900 dark:text-red-100 dark:border-red-700' :
+                                      result === 'D' ? 'bg-gray-300 text-gray-900 border-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-500' :
+                                      'bg-gray-200 text-gray-900 border-gray-300 dark:bg-gray-900 dark:text-gray-100 dark:border-gray-700'
+                                    }`}>{result}</span>
+                                  ))
+                              ) : (
+                                <span className="text-sm text-muted-foreground">No recent results</span>
+                              )}
+                            </div>
+                            <table className="w-full text-sm mb-2 border-separate border-spacing-y-1">
+                              <tbody>
+                                <tr className="border-b border-muted dark:border-zinc-700"><td className="text-muted-foreground">Games</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.away_metrics?.games ?? '—')}</td></tr>
+                                <tr className="border-b border-muted dark:border-zinc-700"><td className="text-muted-foreground">Wins / Draws / Losses</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.away_metrics?.wins ?? '—')} / {String(analysisForm.away_metrics?.draws ?? '—')} / {String(analysisForm.away_metrics?.losses ?? '—')}</td></tr>
+                                <tr className="border-b border-muted dark:border-zinc-700"><td className="text-muted-foreground">Goals For / Against</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.away_metrics?.gf ?? '—')} / {String(analysisForm.away_metrics?.ga ?? '—')}</td></tr>
+                                <tr><td className="text-muted-foreground">Goal Difference</td><td className="font-semibold text-right dark:text-zinc-100">{String(analysisForm.away_metrics?.gd ?? '—')}</td></tr>
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       ) : (
@@ -1744,26 +1808,7 @@ function parseOddsResponse(res: { data?: unknown } | null): DataObject[] {
   return [];
 }
 
-function parseFormResponse(res: unknown): { home: unknown[]; away: unknown[] } {
-  if (!res || typeof res !== "object") return { home: [], away: [] };
-  const record = res as Record<string, unknown>;
-  const data = record.data && typeof record.data === "object" ? (record.data as Record<string, unknown>) : record;
-  const homeMetrics = data.home_metrics as Record<string, unknown> | undefined;
-  const awayMetrics = data.away_metrics as Record<string, unknown> | undefined;
-  const homeTeam = data.home_team as Record<string, unknown> | undefined;
-  const awayTeam = data.away_team as Record<string, unknown> | undefined;
-  const home = Array.isArray(homeMetrics?.last_results)
-    ? (homeMetrics!.last_results as unknown[])
-    : Array.isArray(homeTeam?.recent)
-      ? (homeTeam!.recent as unknown[])
-      : [];
-  const away = Array.isArray(awayMetrics?.last_results)
-    ? (awayMetrics!.last_results as unknown[])
-    : Array.isArray(awayTeam?.recent)
-      ? (awayTeam!.recent as unknown[])
-      : [];
-  return { home, away };
-}
+// parseFormResponse removed (unused)
 
 function parseH2HResponse(res: unknown): { matches: DataObject[] } | null {
   if (!res || typeof res !== "object") return null;
