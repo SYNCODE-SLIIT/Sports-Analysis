@@ -19,11 +19,44 @@ create table if not exists public.system_settings (
   updated_at timestamp with time zone default now()
 );
 
+grant select on public.system_settings to anon, authenticated;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'system_settings'
+  ) then
+    execute 'alter publication supabase_realtime add table public.system_settings';
+  end if;
+end;$$;
+
 insert into public.system_settings(key, value)
 values
-  ('maintenance', jsonb_build_object('enabled', false)),
-  ('highlightsAutomation', jsonb_build_object('enabled', true)),
-  ('aiAlerts', jsonb_build_object('enabled', true))
+  (
+    'maintenance',
+    jsonb_build_object(
+      'enabled', false,
+      'metadata', jsonb_build_object('scheduledFor', null, 'message', null)
+    )
+  ),
+  (
+    'highlightsAutomation',
+    jsonb_build_object(
+      'enabled', true,
+      'metadata', '{}'::jsonb
+    )
+  ),
+  (
+    'aiAlerts',
+    jsonb_build_object(
+      'enabled', true,
+      'metadata', '{}'::jsonb
+    )
+  )
 on conflict (key) do nothing;
 
 -- Helper to gate admin-only RPCs
@@ -136,7 +169,17 @@ begin
     limit 8
   ),
   settings as (
-    select coalesce(jsonb_object_agg(key, to_jsonb(coalesce((value->>'enabled')::boolean, false))), '{}'::jsonb) as flags
+    select coalesce(
+      jsonb_object_agg(
+        key,
+        jsonb_build_object(
+          'enabled', coalesce((value->>'enabled')::boolean, false),
+          'metadata', coalesce(value->'metadata', '{}'::jsonb),
+          'updatedAt', to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SSZ')
+        )
+      ),
+      '{}'::jsonb
+    ) as flags
     from public.system_settings
   )
   select jsonb_build_object(
@@ -201,8 +244,8 @@ $$;
 
 grant execute on function public.admin_dashboard_snapshot() to authenticated;
 
--- Persist admin changes to system_settings
-create or replace function public.admin_set_system_flag(flag text, enabled boolean)
+-- Persist admin changes to system_settings (optionally updating metadata)
+create or replace function public.admin_set_system_flag(flag text, enabled boolean, metadata jsonb default null)
 returns jsonb
 language plpgsql
 security definer
@@ -216,14 +259,31 @@ begin
   end if;
 
   insert into public.system_settings(key, value, updated_at)
-  values (flag, jsonb_build_object('enabled', enabled), now())
+  values (
+    flag,
+    jsonb_build_object(
+      'enabled', enabled,
+      'metadata', coalesce(metadata, '{}'::jsonb)
+    ),
+    now()
+  )
   on conflict (key) do update
-    set value = jsonb_build_object('enabled', enabled),
+    set value = case
+      when metadata is null then jsonb_build_object(
+        'enabled', (excluded.value->>'enabled')::boolean,
+        'metadata', coalesce(public.system_settings.value->'metadata', '{}'::jsonb)
+      )
+      else jsonb_build_object(
+        'enabled', (excluded.value->>'enabled')::boolean,
+        'metadata', coalesce(excluded.value->'metadata', '{}'::jsonb)
+      )
+    end,
         updated_at = now();
 
   select jsonb_build_object(
     'key', key,
-    'enabled', (value->>'enabled')::boolean,
+    'enabled', coalesce((value->>'enabled')::boolean, false),
+    'metadata', coalesce(value->'metadata', '{}'::jsonb),
     'updatedAt', to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SSZ')
   )
   into result
@@ -234,4 +294,29 @@ begin
 end;
 $$;
 
-grant execute on function public.admin_set_system_flag(text, boolean) to authenticated;
+grant execute on function public.admin_set_system_flag(text, boolean, jsonb) to authenticated;
+
+-- Lightweight reader for maintenance state so clients don't require direct table access
+create or replace function public.get_maintenance_state()
+returns jsonb
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (
+      select jsonb_build_object(
+        'enabled', coalesce((value->>'enabled')::boolean, false),
+        'metadata', coalesce(value->'metadata', '{}'::jsonb)
+      )
+      from public.system_settings
+      where key = 'maintenance'
+    ),
+    jsonb_build_object(
+      'enabled', false,
+      'metadata', jsonb_build_object('scheduledFor', null, 'message', null)
+    )
+  );
+$$;
+
+grant execute on function public.get_maintenance_state() to anon, authenticated;
