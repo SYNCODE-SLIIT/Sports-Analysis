@@ -1,5 +1,4 @@
 "use client";
-import Image from "next/image";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
@@ -18,6 +17,7 @@ import MatchSummaryCard from "@/components/match/MatchSummaryCard";
 import WinProbabilityCard from "@/components/match/WinProbabilityCard";
 
 import { buildTimeline, computeLeaders, computeBestPlayer } from "@/lib/match-mappers";
+import { LeagueStandingsCard } from "@/components/league/LeagueStandingsCard";
 import type { TLItem } from "@/lib/match-mappers";
 import {
   getEventResults,
@@ -822,7 +822,7 @@ export default function MatchPage() {
         }
 
         if (tableData.length > 0) {
-          const mapped = tableData.slice(0, 12).map((r, index) => {
+          const mapped = tableData.map((r, index) => {
             const rec = r as Record<string, unknown>;
             const position = typeof rec.position === "number" ? rec.position :
               typeof rec.rank === "number" ? rec.rank :
@@ -832,7 +832,7 @@ export default function MatchPage() {
             // Use all possible team name fields, including 'standing_team'
             const teamName = pickString(rec, ["team", "team_name", "name", "standing_team"]);
 
-            // Extract league table data using the same fields as the old implementation
+            // Extract league table data using the correct fields for this API
             const played = parseNumber(rec.standing_P) ??
               parseNumber(rec.overall_league_payed) ??
               parseNumber(rec.overall_league_played) ??
@@ -855,15 +855,19 @@ export default function MatchPage() {
               parseNumber(rec.losses) ??
               parseNumber(rec.L) ?? 0;
 
-            const goalsFor = parseNumber(rec.goals_for) ??
+            // Updated mappings for GF, GA, GD
+            const goalsFor = parseNumber(rec.standing_F) ??
+              parseNumber(rec.goals_for) ??
               parseNumber(rec.overall_league_GF) ??
               parseNumber(rec.GF) ?? 0;
 
-            const goalsAgainst = parseNumber(rec.goals_against) ??
+            const goalsAgainst = parseNumber(rec.standing_A) ??
+              parseNumber(rec.goals_against) ??
               parseNumber(rec.overall_league_GA) ??
               parseNumber(rec.GA) ?? 0;
 
-            const goalDifference = parseNumber(rec.goal_difference) ??
+            const goalDifference = parseNumber(rec.standing_GD) ??
+              parseNumber(rec.goal_difference) ??
               parseNumber(rec.overall_league_GD) ??
               parseNumber(rec.GD) ?? 0;
 
@@ -1294,78 +1298,22 @@ export default function MatchPage() {
 
           <TabsContent value="league" className="space-y-4">
             {table.length > 0 ? (
-              <Card className="shadow-xl border-2 border-primary/20 bg-gradient-to-br from-background to-primary/5">
-                <CardHeader>
-                  <CardTitle className="text-2xl font-bold text-primary">League Table</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full rounded-xl bg-background text-base text-foreground">
-                      <thead className="bg-primary/10">
-                        <tr>
-                          <th className="px-4 py-3 text-left font-semibold">#</th>
-                          <th className="px-4 py-3 text-left font-semibold">Team</th>
-                          <th className="px-4 py-3 text-left font-semibold">Played</th>
-                          <th className="px-4 py-3 text-left font-semibold">W</th>
-                          <th className="px-4 py-3 text-left font-semibold">D</th>
-                          <th className="px-4 py-3 text-left font-semibold">L</th>
-                          <th className="px-4 py-3 text-left font-semibold">GF</th>
-                          <th className="px-4 py-3 text-left font-semibold">GA</th>
-                          <th className="px-4 py-3 text-left font-semibold">GD</th>
-                          <th className="px-4 py-3 text-left font-semibold">Pts</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {table.map((row, idx) => {
-                          // Try to get logo from teamsExtra first, fallback to row.logo or row.team_logo
-                          let logo: string | undefined = undefined;
-                          const teamName = typeof row.team === "string" ? row.team : String(row.team ?? "");
-                          const norm = (s: unknown) => typeof s === "string" ? s.trim().toLowerCase() : typeof s === "number" ? String(s).toLowerCase() : "";
-                          // Safely extract home team name
-                          const homeName = typeof teamsExtra.home?.team_name === "string" ? teamsExtra.home.team_name : typeof teamsExtra.home?.name === "string" ? teamsExtra.home.name : "";
-                          if (teamsExtra.home && norm(homeName) === norm(teamName)) {
-                            logo = typeof teamsExtra.home.logo === "string" ? teamsExtra.home.logo :
-                              typeof teamsExtra.home.team_logo === "string" ? teamsExtra.home.team_logo :
-                              typeof teamsExtra.home.badge === "string" ? teamsExtra.home.badge : undefined;
-                          } else {
-                            const awayName = typeof teamsExtra.away?.team_name === "string" ? teamsExtra.away.team_name : typeof teamsExtra.away?.name === "string" ? teamsExtra.away.name : "";
-                            if (teamsExtra.away && norm(awayName) === norm(teamName)) {
-                              logo = typeof teamsExtra.away.logo === "string" ? teamsExtra.away.logo :
-                                typeof teamsExtra.away.team_logo === "string" ? teamsExtra.away.team_logo :
-                                typeof teamsExtra.away.badge === "string" ? teamsExtra.away.badge : undefined;
-                            }
-                          }
-                          if (!logo) logo = typeof row.logo === "string" ? row.logo :
-                            typeof row.team_logo === "string" ? row.team_logo :
-                            typeof row.badge === "string" ? row.badge : undefined;
-
-                          return (
-                            <tr key={idx} className={idx < 3 ? "bg-primary/5" : idx % 2 === 0 ? "bg-background" : "bg-primary/2"}>
-                              <td className="px-4 py-3 font-bold text-lg text-primary/80">{row.position}</td>
-                              <td className="px-4 py-3 flex items-center gap-3">
-                                {logo ? (
-                                  <Image src={logo} alt={teamName} width={32} height={32} className="w-8 h-8 rounded-full border border-primary/30 bg-white object-contain" />
-                                ) : (
-                                  <span className="w-8 h-8 inline-block rounded-full bg-muted/30 border border-muted/40" />
-                                )}
-                                <span className="font-semibold text-base">{teamName}</span>
-                              </td>
-                              <td className="px-4 py-3 text-center">{row.played}</td>
-                              <td className="px-4 py-3 text-center">{row.won}</td>
-                              <td className="px-4 py-3 text-center">{row.drawn}</td>
-                              <td className="px-4 py-3 text-center">{row.lost}</td>
-                              <td className="px-4 py-3 text-center">{row.goalsFor}</td>
-                              <td className="px-4 py-3 text-center">{row.goalsAgainst}</td>
-                              <td className="px-4 py-3 text-center">{row.goalDifference}</td>
-                              <td className="px-4 py-3 text-center font-bold text-primary">{row.points}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+              <LeagueStandingsCard
+                rows={table.map((row, idx) => ({
+                  ...row,
+                  id: typeof row.id === "string" ? row.id : `${row.team ?? "row"}-${row.position ?? idx}`,
+                }))}
+                loading={false}
+                error={null}
+                seasonOptions={[]}
+                selectedSeason={""}
+                onSelectSeason={() => {}}
+                stageOptions={[]}
+                selectedStage={""}
+                onSelectStage={() => {}}
+                lastUpdated={undefined}
+                highlightTeams={[match.homeTeam, match.awayTeam]}
+              />
             ) : extrasLoading ? (
               <Card>
                 <CardContent className="p-6">
