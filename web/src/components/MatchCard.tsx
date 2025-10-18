@@ -26,23 +26,76 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
     typeof fixture.home_score === "number" &&
     typeof fixture.away_score === "number";
   
-  const formatTime = (dateTime: string) => {
-    try {
-      const date = new Date(dateTime);
+  const formatFixtureDateTime = (fixture: Fixture) => {
+    const rawDate = fixture.date?.trim();
+    const rawTime = fixture.time?.trim();
+
+    const parseDateParts = (value: string) => {
+      const iso = value.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+      if (iso) {
+        return {
+          year: Number.parseInt(iso[1], 10),
+          month: Number.parseInt(iso[2], 10),
+          day: Number.parseInt(iso[3], 10),
+        };
+      }
+      return null;
+    };
+
+    const parseTimeParts = (value: string) => {
+      const cleaned = value.replace(/[^\d:apm ]+/gi, " ").trim();
+      const match = cleaned.match(/^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*(am|pm)?$/i);
+      if (!match) return null;
+      let hours = Number.parseInt(match[1], 10);
+      const minutes = Number.parseInt(match[2] ?? "0", 10);
+      const seconds = Number.parseInt(match[3] ?? "0", 10);
+      const suffix = match[4]?.toLowerCase();
+      if (suffix === "pm" && hours < 12) hours += 12;
+      if (suffix === "am" && hours === 12) hours = 0;
+      return { hours, minutes, seconds };
+    };
+
+    if (!rawDate) {
       return {
-        date: date.toLocaleDateString(),
-        time: date.toLocaleTimeString('en-US', { 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: false 
-        })
+        date: "",
+        time: rawTime ?? "",
       };
-    } catch {
-      return { date: '', time: fixture.time || '' };
     }
+
+    const dateParts = parseDateParts(rawDate);
+    const timeParts = rawTime ? parseTimeParts(rawTime) : null;
+
+    if (dateParts) {
+      const { year, month, day } = dateParts;
+      const { hours, minutes, seconds } = timeParts ?? { hours: 0, minutes: 0, seconds: 0 };
+      const localDate = new Date(year, month - 1, day, hours, minutes, seconds);
+      const formattedDate = localDate.toLocaleDateString();
+      const formattedTime = timeParts
+        ? localDate.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+        : rawTime ?? "";
+      return { date: formattedDate, time: formattedTime };
+    }
+
+    // Fallback: attempt to parse via Date constructor (handles ISO timestamps)
+    const fallbackSource = rawTime ? `${rawDate} ${rawTime}` : rawDate;
+    const includesTime = Boolean(rawTime) || /[T ]\d{1,2}:\d{2}/.test(rawDate);
+    const parsed = new Date(fallbackSource);
+    if (!Number.isNaN(parsed.getTime())) {
+      return {
+        date: parsed.toLocaleDateString(),
+        time: includesTime
+          ? parsed.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+          : rawTime ?? "",
+      };
+    }
+
+    return {
+      date: rawDate,
+      time: rawTime ?? "",
+    };
   };
 
-  const { date, time } = formatTime(fixture.date);
+  const { date, time } = formatFixtureDateTime(fixture);
 
   return (
     <motion.div
