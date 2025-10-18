@@ -7,9 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { LeagueInfoHero, LeagueHeroInfo } from "@/components/league/LeagueInfoHero";
 import { LeagueStandingsCard, StandingRow, SelectOption } from "@/components/league/LeagueStandingsCard";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { getLeagueTable, listSeasons, postCollect, DataObject, Json } from "@/lib/collect";
-import { parseFixtures } from "@/lib/schemas";
+import { getLeagueTable, listSeasons, postCollect, Json } from "@/lib/collect";
 import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
 import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 import LeagueStatistics from "@/components/league/LeagueStatistics";
@@ -316,7 +314,7 @@ export default function LeagueDetailPage() {
 
   const [leagueName, setLeagueName] = useState<string>(initialNameParam);
   const [heroInfo, setHeroInfo] = useState<LeagueHeroInfo | null>(initialNameParam ? { name: initialNameParam } : null);
-  const [infoLoading, setInfoLoading] = useState<boolean>(false);
+  // const [infoLoading, setInfoLoading] = useState<boolean>(false); // removed unused
   const [infoError, setInfoError] = useState<string | null>(null);
 
   const [standingsLoading, setStandingsLoading] = useState<boolean>(false);
@@ -590,17 +588,6 @@ export default function LeagueDetailPage() {
         </Card>
       ) : heroInfo ? (
         <LeagueInfoHero info={heroInfo} />
-      ) : infoLoading ? (
-        <Card className="border-border/60">
-          <CardContent className="flex items-center gap-4 p-6">
-            <Skeleton className="h-20 w-20 rounded-xl" />
-            <div className="flex-1 space-y-3">
-              <Skeleton className="h-6 w-48" />
-              <Skeleton className="h-4 w-72" />
-              <Skeleton className="h-4 w-56" />
-            </div>
-          </CardContent>
-        </Card>
       ) : null}
 
       {standingsError && filteredRows.length === 0 ? (
