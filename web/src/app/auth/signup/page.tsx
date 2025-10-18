@@ -47,11 +47,11 @@ export default function SignUpPage() {
         password: formData.password,
         options: {
           data: { full_name: formData.name, newsletter: formData.newsletter },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
         },
       });
-      if (error) throw error;
-  toast.success("Check your email to confirm registration");
+    if (error) throw error;
+    toast.success("Check your email to confirm registration");
       // If Supabase returns a user immediately, try to create profile/preferences
       if (data?.user) {
         try {
@@ -64,7 +64,7 @@ export default function SignUpPage() {
           // ignore transient DB errors here
         }
       }
-  router.push("/");
+    router.push("/auth/login?redirect=/onboarding");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(message || "Failed to sign up");
@@ -254,7 +254,7 @@ export default function SignUpPage() {
                       const { error } = await supabase.auth.signInWithOAuth({
                         provider: "google",
                         options: {
-                          redirectTo: `${window.location.origin}/auth/oauth-callback`,
+                          redirectTo: `${window.location.origin}/auth/oauth-callback?next=/onboarding`,
                       },
                       });
                       if (error) throw error;
