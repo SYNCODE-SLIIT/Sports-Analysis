@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from 'react-dom';
 import { useTheme } from "next-themes";
 import { getEventBrief, postCollect, getComments } from "@/lib/collect";
@@ -270,7 +270,47 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
 
   // Simple hover tooltip
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string; above?: boolean } | null>(null);
-  
+  const tooltipRef = useRef<{ x: number; y: number; html: string; above?: boolean } | null>(null);
+
+  useEffect(() => {
+    tooltipRef.current = tooltip;
+  }, [tooltip]);
+
+  const hideTooltip = useCallback(() => {
+    setTooltip((prev) => (prev ? null : prev));
+  }, []);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let raf = 0;
+    const handleScroll = () => {
+      if (!tooltipRef.current) return;
+      if (raf) cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(hideTooltip);
+    };
+    scroller.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", handleScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [hideTooltip]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let raf = 0;
+    const handleWindowScroll = () => {
+      if (!tooltipRef.current) return;
+      if (raf) cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(hideTooltip);
+    };
+    window.addEventListener("scroll", handleWindowScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleWindowScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [hideTooltip]);
+
 
 
   // If the passed timeline is effectively empty (only HT/FT anchors), try to synthesize from raw match data
@@ -591,10 +631,10 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               {/* away logo removed per user request */}
           {/* Sparse ticks for 0,45,90(+ET) rendered on baseline */}
           {[0, 45, 90].map((t) => (
-            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}&apos;`} isDark={isDark} />
+            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}\u0027`} isDark={isDark} />
           ))}
           {maxMinute > 90 && (
-            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}&apos;`} isDark={isDark} />
+            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}\u0027`} isDark={isDark} />
           )}
 
           {/* Markers per cluster */}
@@ -677,7 +717,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
                     )}
                     style={{ backdropFilter: "blur(6px)" }}
                     >
-                    {formatMinuteLabel(c.minute)}&apos;
+                    {`${formatMinuteLabel(c.minute)}\u0027`}
                   </div>
                 </div>
               );
@@ -916,7 +956,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       ? `<div style="margin-top:12px;color:#94a3b8;font-size:14px;font-style:italic"><em>Loading details…</em></div>` 
       : (brief ? `<div style="margin-top:12px;color:#e2e8f0;font-size:14px;line-height:1.5;padding:12px;background:rgba(30,41,59,0.5);border-radius:8px;border-left:3px solid #3b82f6">${escapeHtml(brief)}</div>` : '');
     
-  const finalHtml = `<div style="color:white"><div style="font-weight:700;margin-bottom:12px;font-size:18px;color:#f1f5f9;text-shadow:0 2px 4px rgba(0,0,0,0.8)">${formatMinuteLabel(minute)}&apos;</div>${rows}${briefHtml}</div>`;
+  const finalHtml = `<div style="color:white"><div style="font-weight:700;margin-bottom:12px;font-size:18px;color:#f1f5f9;text-shadow:0 2px 4px rgba(0,0,0,0.8)">${formatMinuteLabel(minute)}'</div>${rows}${briefHtml}</div>`;
     return finalHtml;
   };
 
