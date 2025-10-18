@@ -971,11 +971,12 @@ export default function MatchPage() {
         if (isFulfilled(formRes) && formRes.value && typeof formRes.value === 'object') {
           const data = (formRes.value as Record<string, unknown>).data;
           if (data && typeof data === 'object') {
+            const d = data as Record<string, unknown>;
             analysisFormObj = {
-              home_team: (data as any).home_team ?? {},
-              home_metrics: (data as any).home_metrics ?? {},
-              away_team: (data as any).away_team ?? {},
-              away_metrics: (data as any).away_metrics ?? {},
+              home_team: d.home_team as Record<string, unknown> ?? {},
+              home_metrics: d.home_metrics as Record<string, unknown> ?? {},
+              away_team: d.away_team as Record<string, unknown> ?? {},
+              away_metrics: d.away_metrics as Record<string, unknown> ?? {},
             };
           }
         }
