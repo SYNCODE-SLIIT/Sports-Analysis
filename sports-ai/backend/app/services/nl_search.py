@@ -717,13 +717,13 @@ def _extract_date_window(s: str) -> Dict[str, str]:
         ents["date"] = _fmt_date(day)
         return ents
 
-    if re.search(r"\btoday\b", normalized_low):
+    if re.search(r"\btoday(?:'s|s)?\b", normalized_low):
         return _set_single(today)
-    if re.search(r"\byesterday\b", normalized_low):
+    if re.search(r"\byesterday(?:'s|s)?\b", normalized_low):
         return _set_single(today - timedelta(days=1))
-    if re.search(r"\btomorrow\b", normalized_low):
+    if re.search(r"\btomorrow(?:'s|s)?\b", normalized_low):
         return _set_single(today + timedelta(days=1))
-    if re.search(r"\btonight\b", normalized_low):
+    if re.search(r"\btonight(?:'s|s)?\b", normalized_low):
         return _set_single(today)
 
     # ISO or YYYY/MM/DD
@@ -935,21 +935,9 @@ def parse_nl_query(q: str) -> NLParsed:
                 ents["countryName"] = country
                 break
 
-    # topic intent hints
+    # topic intent hints (match-restricted)
     topic: Optional[str] = None
-    highlight_keywords = {"highlight", "highlights", "video", "videos", "clip", "clips"}
-    standings_keywords = {"table", "standings"}
-    odds_keywords = {"odds", "odd"}
-    probabilities_keywords = {"probability", "probabilities", "prob"}
-    if _has_keyword(normalized_low, highlight_keywords):
-        topic = "highlights"
-    elif _has_keyword(normalized_low, standings_keywords):
-        topic = "standings"
-    elif _has_keyword(normalized_low, odds_keywords):
-        topic = "odds"
-    elif _has_keyword(normalized_low, probabilities_keywords):
-        topic = "probabilities"
-    elif re.search(r"\bh2h\b", normalized_low) or re.search(r"head\s*to\s*head", normalized_low):
+    if re.search(r"\bh2h\b", normalized_low) or re.search(r"head\s*to\s*head", normalized_low):
         topic = "h2h"
     ents["topic"] = topic
 
@@ -975,29 +963,7 @@ def parse_nl_query(q: str) -> NLParsed:
             args["to"] = date_val
         cands.append({"intent": "events.list", "args": args, "reason": "Team A fixtures window"})
 
-    # 2) Topic routing
-    if topic == "highlights":
-        args: Dict[str, Any] = {}
-        for k in ("teamName", "leagueName", "countryName", "date"):
-            if k in ents:
-                args[k] = ents[k]
-        cands.append({"intent": "video.highlights", "args": args, "reason": "Highlights topic"})
-    elif topic == "standings" and ("leagueName" in ents or "countryName" in ents):
-        args = {k: ents[k] for k in ("leagueName", "countryName") if k in ents}
-        cands.append({"intent": "league.table", "args": args, "reason": "Standings topic"})
-    elif topic == "odds":
-        args = {k: ents[k] for k in ("leagueName", "teamName", "countryName", "date") if k in ents}
-        cands.append({
-            "intent": "odds.live" if ents.get("live") else "odds.list",
-            "args": args,
-            "reason": "Odds topic",
-        })
-    elif topic == "probabilities":
-        # Provider probabilities require match context; fall back to events list
-        args = {k: ents[k] for k in ("leagueName", "teamName", "countryName", "date") if k in ents}
-        cands.append({"intent": "events.list", "args": args, "reason": "Find matches for probabilities"})
-
-    # 3) General matches search
+    # 2) General matches search
     # live → events.live; else events.list with date/from-to if present
     base_args: Dict[str, Any] = {}
     for k in ("leagueName", "teamName", "countryName"):
@@ -1011,10 +977,13 @@ def parse_nl_query(q: str) -> NLParsed:
         base_args["from"] = ents["from"]
         base_args["to"] = ents["to"]
 
+    has_match_filters = bool(base_args)
+
     if ents.get("live"):
         cands.append({"intent": "events.live", "args": base_args, "reason": "Live matches filter"})
-    # Always include events.list as a catch‑all
-    cands.append({"intent": "events.list", "args": base_args, "reason": "General fixtures search"})
+    if has_match_filters:
+        # Only include fixtures search when we have meaningful filters to avoid empty-arg queries
+        cands.append({"intent": "events.list", "args": base_args, "reason": "General fixtures search"})
 
     deduped: List[Dict[str, Any]] = []
     seen: set[tuple[str, tuple[tuple[str, Any], ...]]] = set()

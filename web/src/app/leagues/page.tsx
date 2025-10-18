@@ -4,15 +4,15 @@ import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type Mou
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Check, ChevronRight, Plus, Search } from "lucide-react";
+import { Check, ChevronRight, Plus } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { sanitizeInput, postCollect, getLeagueNews } from "@/lib/collect";
+import { postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
+import { LeagueSearch } from "./LeagueSearch";
 
 type LeagueLite = {
   id: string;
@@ -536,7 +536,6 @@ export default function LeaguesPage() {
   const { user, supabase, bumpPreferences } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
   const [selectedLeague, setSelectedLeague] = useState<string>("");
   const [news, setNews] = useState<Array<{ id?: string; title?: string; url?: string; summary?: string; imageUrl?: string; source?: string; publishedAt?: string }>>([]);
   const [newsLoading, setNewsLoading] = useState(false);
@@ -560,7 +559,7 @@ export default function LeaguesPage() {
 
   useEffect(() => {
     setRemainingVisibleCount(INITIAL_REMAINING_COUNT);
-  }, [search, allLeagues]);
+  }, [allLeagues]);
 
   useEffect(() => {
     let active = true;
@@ -657,20 +656,8 @@ export default function LeaguesPage() {
     [findMetadataForLeague]
   );
 
-  const qSan = useMemo(() => sanitizeInput(search), [search]);
-
-  const filteredLeagues = useMemo(() => {
-    const query = qSan.toLowerCase();
-    if (!query) return allLeagues;
-    return allLeagues.filter(league => {
-      const name = league.league_name.toLowerCase();
-      const country = league.country_name?.toLowerCase() ?? "";
-      return name.includes(query) || country.includes(query);
-    });
-  }, [allLeagues, qSan]);
-
-  const visibleLeagues = useMemo(() => {
-    const ordered = [...filteredLeagues];
+  const orderedLeagues = useMemo(() => {
+    const ordered = [...allLeagues];
     ordered.sort((a, b) => {
       const aPop = isPopularLeague(a.league_name) ? 0 : 1;
       const bPop = isPopularLeague(b.league_name) ? 0 : 1;
@@ -678,9 +665,9 @@ export default function LeaguesPage() {
       return a.league_name.localeCompare(b.league_name);
     });
     return ordered;
-  }, [filteredLeagues]);
+  }, [allLeagues]);
 
-  const displayLeagues = useMemo(() => visibleLeagues.map(createDisplayLeague), [visibleLeagues, createDisplayLeague]);
+  const displayLeagues = useMemo(() => orderedLeagues.map(createDisplayLeague), [orderedLeagues, createDisplayLeague]);
 
   const { featuredSections, remainingLeagues } = useMemo(() => {
     const categoryMap = new Map<string, DisplayLeague[]>();
@@ -753,11 +740,6 @@ export default function LeaguesPage() {
 
   const canShowMore = remainingLeagues.length > visibleRemainingLeagues.length;
   const canShowLess = remainingVisibleCount > INITIAL_REMAINING_COUNT;
-
-  const totalVisibleCount = useMemo(
-    () => featuredSections.reduce((sum, section) => sum + section.leagues.length, 0) + remainingLeagues.length,
-    [featuredSections, remainingLeagues]
-  );
 
   const selectedDisplayLeague = useMemo(() => {
     const raw = allLeagues.find(l => l.league_name === selectedLeague);
@@ -1190,14 +1172,23 @@ export default function LeaguesPage() {
           <h2 className="text-2xl font-bold">Browse Leagues & Competitions</h2>
           <p className="text-muted-foreground">Use search or explore curated collections of the world&apos;s most followed leagues.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative w-full max-w-md">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search by league or country" value={search} onChange={(e)=> setSearch(e.target.value)} />
-          </div>
-        </div>
-        {totalVisibleCount === 0 ? (
-          <div className="text-sm text-muted-foreground">No leagues match your search.</div>
+        <LeagueSearch
+          leagues={displayLeagues}
+          renderResultCard={(league, index) => (
+            <LeagueCardItem
+              key={`search-${league.id ?? league.rawName}-${index}`}
+              league={league}
+              isSelected={selectedLeague === league.rawName}
+              onSelect={handleLeagueSelect}
+              onToggleFavorite={toggleFavoriteLeague}
+              isFavorited={favLeagues.includes(league.rawName)}
+              favoriteBusy={pendingFavorites.has(league.rawName)}
+              variant="carousel"
+            />
+          )}
+        />
+        {displayLeagues.length === 0 ? (
+          <div className="text-sm text-muted-foreground">Leagues will appear here once available.</div>
         ) : (
           <div className="space-y-8">
             {featuredSections.length > 0 && (
