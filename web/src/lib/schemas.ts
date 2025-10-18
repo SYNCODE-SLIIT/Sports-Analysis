@@ -163,8 +163,8 @@ export function parseFixtures(data: unknown): Fixture[] {
     const id = pick(item, ['id', 'event_key', 'idEvent', 'match_id', 'fixture_id', 'game_id', 'tsdb_event_id']);
     const home = pick(item, ['home_team', 'event_home_team', 'strHomeTeam', 'home']);
     const away = pick(item, ['away_team', 'event_away_team', 'strAwayTeam', 'away']);
-    const date = pick(item, ['date', 'event_date', 'strDate']);
-    const time = pick(item, ['time', 'event_time', 'strTime']);
+    const date = pick(item, ['date', 'event_date', 'match_date', 'matchDate', 'strDate']);
+    const time = pick(item, ['time', 'event_time', 'match_time', 'matchTime', 'strTime']);
     const league = pick(item, ['league', 'league_name', 'strLeague']);
     const status = pick(item, ['status', 'event_status']);
     const venue = pick(item, ['venue', 'stadium', 'event_venue', 'strVenue', 'location']);
@@ -205,7 +205,7 @@ export function parseFixtures(data: unknown): Fixture[] {
       away_team_logo: awayLogo,
       home_score: homeScore,
       away_score: awayScore,
-      date: date ?? new Date().toISOString().split('T')[0],
+      date: date ?? '',
       time,
       league,
       status,
