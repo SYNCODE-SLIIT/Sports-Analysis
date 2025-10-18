@@ -179,7 +179,7 @@ export async function getH2HByTeams(teamA: string, teamB: string, lookback = 10)
 
 export async function getForm(teamId: string, lookback = 5) {
   const u = new URL("/api/analysis/form", window.location.origin);
-  u.searchParams.set("eventId", teamId);
+  u.searchParams.set("teamId", teamId);
   u.searchParams.set("lookback", String(lookback));
   const r = await fetch(u.toString());
   return r.json();
