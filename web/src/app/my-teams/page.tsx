@@ -720,6 +720,33 @@ export default function MyTeamsPage() {
     return results.filter(r => (scope === "team" ? r.type === 'team' : r.type === 'league'));
   }, [results, activeSearchTab]);
 
+  const summaryTiles = useMemo(
+    () => [
+      {
+        label: "Teams tracked",
+        value: teams.length,
+        caption: teams.length
+          ? "Matchday alerts now reflect your club list."
+          : "Add clubs to personalise lineups, alerts, and recaps.",
+      },
+      {
+        label: "Leagues followed",
+        value: leagues.length,
+        caption: leagues.length
+          ? "Standings and run-in stories adapt in real time."
+          : "Follow a league to unlock standings and form heatmaps.",
+      },
+      {
+        label: "Fresh suggestions",
+        value: topSuggestions.length,
+        caption: topSuggestions.length
+          ? "Tap a tile to instantly pin it to this dashboard."
+          : "We will refresh picks as you explore matches.",
+      },
+    ],
+    [leagues.length, teams.length, topSuggestions.length],
+  );
+
   const addTeam = (t: string): boolean => {
     const name = t.trim();
     if (!name) return false;
@@ -752,6 +779,37 @@ export default function MyTeamsPage() {
     const cached = sanitizeLogoUrl(leagueLogoCache[normalizeKey(name)]);
     return cached;
   };
+
+  const createTeamTagline = (name: string): string => {
+    const normalized = name.toLowerCase();
+    if (normalized.includes("women")) {
+      return `Track ${name} fixtures, form swings, and headline players in one view.`;
+    }
+    if (normalized.includes("fc") || normalized.includes("club")) {
+      return `Lineups, momentum, and matchday alerts—stay dialed in on ${name}.`;
+    }
+    if (normalized.includes("national") || normalized.includes("united")) {
+      return `Follow call-ups, rivalry dates, and performance trends for ${name}.`;
+    }
+    return `Stay ahead of fixtures, form, and transfer buzz surrounding ${name}.`;
+  };
+
+  const createLeagueTagline = (name: string): string => {
+    const normalized = name.toLowerCase();
+    if (normalized.includes("champions") || normalized.includes("cup")) {
+      return `Key ties, bracket swings, and knockout narratives from the ${name}.`;
+    }
+    if (normalized.includes("league")) {
+      return `Table shifts, title chases, and relegation drama across the ${name}.`;
+    }
+    if (normalized.includes("series") || normalized.includes("division")) {
+      return `Standings, streaks, and playoff pushes inside the ${name}.`;
+    }
+    return `Follow headlines, fixtures, and storylines flowing through the ${name}.`;
+  };
+
+  const TEAM_CARD_TOKENS = ["Form tracker", "Lineup intel", "Match alerts"];
+  const LEAGUE_CARD_TOKENS = ["Table heat", "Run-in radar", "Storylines"];
 
   const handleResultSelect = async (item: SearchResult) => {
     const cleanedLogo = sanitizeLogoUrl(item.logo);
@@ -1012,173 +1070,302 @@ export default function MyTeamsPage() {
   }
 
   return (
-    <div className="container py-8 space-y-8">
-      {/* Header */}
+    <div className="container space-y-10 py-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between"
+        transition={{ duration: 0.6 }}
+        className="relative overflow-hidden rounded-3xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background/90 to-background/60 p-8 shadow-lg shadow-primary/10"
       >
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <Heart className="h-6 w-6 text-primary" />
-            <div>
-              <h1 className="text-3xl font-bold">My Teams</h1>
-              <p className="text-muted-foreground">Curate the clubs and competitions you care about most.</p>
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-4">
+            <Badge className="neon-chip w-max text-[11px] uppercase tracking-wide">Curated radar</Badge>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-primary">
+                <Heart className="h-6 w-6" />
+                <span className="text-sm font-medium">Your personalised football hub</span>
+              </div>
+              <h1 className="text-3xl font-semibold leading-tight md:text-4xl">My Teams Hub</h1>
+              <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
+                Pin the clubs and competitions you care about, then let ATHLETE surface fixtures, form streaks, and highlights the moment they matter.
+              </p>
             </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Header Add favourites button removed per user request; dialog remains accessible where needed */}
-          <Button variant="secondary" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save preferences'}
-          </Button>
-        </div>
-      </motion.div>
-
-      <Card>
-        <CardHeader className="space-y-1">
-          <CardTitle>Favorites overview</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Track the teams and competitions you follow most closely.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-8">
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Teams</h2>
-              {teams.length > 0 && (
-                <span className="text-xs text-muted-foreground">{teams.length} saved</span>
-              )}
-            </div>
-            {teams.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  You haven&apos;t added any teams yet. Use suggestions below or search to get started.
-                </p>
-                <Button size="sm" className="mt-4" onClick={() => { setActiveSearchTab("team"); setAddQuery(""); setIsAddDialogOpen(true); }}>
-                  <Plus className="h-4 w-4" />
-                  <span>Add a team</span>
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {teams.map(t => {
-                  const logo = resolveTeamLogo(t);
-                  return (
-                    <Badge key={t} variant="secondary" className="flex items-center gap-3 rounded-full px-3 py-2 text-sm">
-                      <Avatar className="h-6 w-6">
-                        {logo ? (
-                          <AvatarImage src={logo} alt={t} />
-                        ) : (
-                          <AvatarFallback>{t.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        )}
-                      </Avatar>
-                      <span className="font-medium">{t}</span>
-                      <button className="ml-2 rounded-full bg-black/5 p-1 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20" aria-label={`Remove ${t}`} onClick={() => removeTeam(t)}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Leagues</h2>
-              {leagues.length > 0 && (
-                <span className="text-xs text-muted-foreground">{leagues.length} following</span>
-              )}
-            </div>
-            {leagues.length === 0 ? (
-              <div className="rounded-lg border border-dashed bg-muted/10 p-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Add leagues to follow standings, live fixtures, and news in one place.
-                </p>
-                <Button size="sm" variant="outline" className="mt-4" onClick={() => { setActiveSearchTab("league"); setAddQuery(""); setIsAddDialogOpen(true); }}>
-                  <Plus className="h-4 w-4" />
-                  <span>Discover leagues</span>
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {leagues.map(l => {
-                  const logo = resolveLeagueLogo(l);
-                  return (
-                    <Badge key={l} variant="secondary" className="flex items-center gap-3 rounded-full px-3 py-2 text-sm">
-                      <Avatar className="h-6 w-6">
-                        {logo ? (
-                          <AvatarImage src={logo} alt={l} />
-                        ) : (
-                          <AvatarFallback>{l.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        )}
-                      </Avatar>
-                      <span className="font-medium">{l}</span>
-                      <button className="ml-2 rounded-full bg-black/5 p-1 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20" aria-label={`Unfollow ${l}`} onClick={() => unfollowLeague(l)}>
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Smart suggestions</h2>
-              <Button size="sm" variant="ghost" onClick={() => { setActiveSearchTab("team"); setAddQuery(""); setIsAddDialogOpen(true); }}>
-                Browse all
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={() => {
+                  setActiveSearchTab("team");
+                  setAddQuery("");
+                  setIsAddDialogOpen(true);
+                }}
+                className="gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add favourites
+              </Button>
+              <Button variant="secondary" onClick={save} disabled={saving} className="gap-2">
+                {saving ? (
+                  <span>Saving…</span>
+                ) : (
+                  <span>Save preferences</span>
+                )}
               </Button>
             </div>
-            {topSuggestions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">We&apos;ll surface tailored suggestions here once we learn more about the teams you follow.</p>
+          </div>
+          <Card className="neon-card w-full max-w-sm border border-primary/30 bg-background/80 backdrop-blur">
+            <CardContent className="flex flex-col gap-3 p-6">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshot</p>
+              <div className="text-4xl font-semibold text-primary">
+                {teams.length + leagues.length || "—"}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Total favourites connected to your live analytics feed.
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-[11px] uppercase tracking-wide text-primary/80">
+                <span className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-center">Teams {teams.length}</span>
+                <span className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-center">Leagues {leagues.length}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="pointer-events-none absolute inset-0 rounded-3xl border border-primary/10" />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05, duration: 0.4 }}
+        className="grid gap-4 md:grid-cols-3"
+      >
+        {summaryTiles.map((tile) => (
+          <div key={tile.label} className="neon-card h-full rounded-2xl border border-border/40 bg-background/80 p-5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{tile.label}</p>
+            <p className="mt-3 text-3xl font-semibold text-primary">{tile.value || "—"}</p>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{tile.caption}</p>
+          </div>
+        ))}
+      </motion.div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+        <Card className="neon-card h-full border border-border/40 bg-background/80">
+          <CardHeader className="space-y-4 pb-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-semibold">Pinned teams</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Deep dives, highlights, and match alerts tailored to your club list.
+                </p>
+              </div>
+              {teams.length > 0 && (
+                <Badge variant="outline" className="text-xs uppercase tracking-wide">{teams.length} saved</Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {teams.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Add your first club to start building a personalised match radar.
+                </p>
+                <Button
+                  variant="default"
+                  className="gap-2"
+                  onClick={() => {
+                    setActiveSearchTab("team");
+                    setAddQuery("");
+                    setIsAddDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add a team
+                </Button>
+              </div>
             ) : (
-              <div className="rounded-lg border bg-muted/10 p-4">
-                <p className="text-xs text-muted-foreground mb-3">Tap to add teams instantly.</p>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {topSuggestions.map(s => {
-                    const logo = resolveTeamLogo(s);
-                    return (
-                      <Button
-                        key={s}
-                        variant="outline"
-                        className="justify-start gap-3 rounded-lg border border-border/60 bg-background py-2"
-                        onClick={() => addTeam(s)}
-                      >
-                        <Avatar className="h-7 w-7">
-                          {logo ? (
-                            <AvatarImage src={logo} alt={s} />
-                          ) : (
-                            <AvatarFallback>{s.slice(0, 2).toUpperCase()}</AvatarFallback>
-                          )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {teams.map((team) => {
+                  const logo = resolveTeamLogo(team);
+                  return (
+                    <div
+                      key={team}
+                      className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-background/85 via-background/70 to-primary/10 p-4 transition hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10"
+                    >
+                      <div className="flex items-start gap-4">
+                        <Avatar className="mt-1 h-12 w-12 border border-primary/20 bg-background/90">
+                          {logo ? <AvatarImage src={logo} alt={team} /> : <AvatarFallback>{team.slice(0, 2).toUpperCase()}</AvatarFallback>}
                         </Avatar>
-                        <span className="font-medium">{s}</span>
-                      </Button>
-                    );
-                  })}
-                </div>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-base font-semibold leading-tight">{team}</p>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{createTeamTagline(team)}</p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="mt-[-4px] rounded-full border border-transparent bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                              onClick={() => removeTeam(team)}
+                              aria-label={`Remove ${team}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-primary/80">
+                            {TEAM_CARD_TOKENS.map((token) => (
+                              <span key={`${team}-${token}`} className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5">
+                                {token}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-          </section>
+          </CardContent>
+        </Card>
+
+        <Card className="neon-card h-full border border-border/40 bg-background/80">
+          <CardHeader className="space-y-4 pb-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <CardTitle className="text-xl font-semibold">Leagues board</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Follow standings swings, title races, and relegation battles in one glance.
+                </p>
+              </div>
+              {leagues.length > 0 && (
+                <Badge variant="outline" className="text-xs uppercase tracking-wide">{leagues.length} following</Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {leagues.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-primary/40 bg-background/70 p-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Add a league to unlock standings, fixtures, and storyline callouts tailored to you.
+                </p>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    setActiveSearchTab("league");
+                    setAddQuery("");
+                    setIsAddDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Discover leagues
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {leagues.map((league) => {
+                  const logo = resolveLeagueLogo(league);
+                  return (
+                    <div
+                      key={league}
+                      className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-background/85 via-background/70 to-primary/10 p-4 transition hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10"
+                    >
+                      <div className="flex items-start gap-4">
+                        <Avatar className="mt-1 h-11 w-11 border border-primary/20 bg-background/90">
+                          {logo ? <AvatarImage src={logo} alt={league} /> : <AvatarFallback>{league.slice(0, 2).toUpperCase()}</AvatarFallback>}
+                        </Avatar>
+                        <div className="flex-1 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <p className="text-base font-semibold leading-tight">{league}</p>
+                              <p className="text-xs text-muted-foreground leading-relaxed">{createLeagueTagline(league)}</p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="mt-[-4px] rounded-full border border-transparent bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                              onClick={() => unfollowLeague(league)}
+                              aria-label={`Unfollow ${league}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-primary/80">
+                            {LEAGUE_CARD_TOKENS.map((token) => (
+                              <span key={`${league}-${token}`} className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5">
+                                {token}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className="neon-card border border-border/40 bg-background/80">
+        <CardHeader className="flex flex-col gap-2 pb-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-lg font-semibold">Smart suggestions</CardTitle>
+            <p className="text-sm text-muted-foreground">Picks based on trending fixtures, rivalries, and fans like you.</p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="gap-2"
+            onClick={() => {
+              setActiveSearchTab("team");
+              setAddQuery("");
+              setIsAddDialogOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Browse all
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {topSuggestions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              We&apos;ll surface tailored options here once we learn more about your watch habits.
+            </p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {topSuggestions.map((suggestion) => {
+                const logo = resolveTeamLogo(suggestion);
+                return (
+                  <button
+                    key={suggestion}
+                    className="group flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-background/70 px-4 py-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
+                    onClick={() => addTeam(suggestion)}
+                  >
+                    <Avatar className="h-10 w-10 border border-primary/20 bg-background/80">
+                      {logo ? <AvatarImage src={logo} alt={suggestion} /> : <AvatarFallback>{suggestion.slice(0, 2).toUpperCase()}</AvatarFallback>}
+                    </Avatar>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium leading-tight">{suggestion}</p>
+                      <p className="text-[11px] text-muted-foreground">Tap to pin instantly</p>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] uppercase tracking-wide">Add</Badge>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog
-        open={isAddDialogOpen}
-        onOpenChange={(open) => setIsAddDialogOpen(open)}
-      >
-        <DialogContent>
+      <Dialog open={isAddDialogOpen} onOpenChange={(open) => setIsAddDialogOpen(open)}>
+        <DialogContent className="neon-card border border-border/50 bg-background/95">
           <DialogHeader>
             <DialogTitle>Add favourites</DialogTitle>
             <DialogDescription>
-              Search for clubs or leagues to follow. We&apos;ll keep you updated once they&apos;re saved.
+              Search for clubs or leagues to follow. Your dashboard refreshes the moment they&apos;re saved.
             </DialogDescription>
           </DialogHeader>
 
-          <Tabs value={activeSearchTab} onValueChange={(value) => setActiveSearchTab(value as "team" | "league")}> 
+          <Tabs value={activeSearchTab} onValueChange={(value) => setActiveSearchTab(value as "team" | "league")}>
             <TabsList className="w-full">
               <TabsTrigger value="team" className="flex-1">Teams</TabsTrigger>
               <TabsTrigger value="league" className="flex-1">Leagues</TabsTrigger>
@@ -1193,8 +1380,8 @@ export default function MyTeamsPage() {
           />
 
           {activeSearchTab === "team" && addQuery.trim().length === 0 && topSuggestions.length > 0 && (
-            <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Popular picks</p>
+            <div className="space-y-2 rounded-md border border-border/40 bg-background/70 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Popular picks</p>
               <div className="flex flex-wrap gap-2">
                 {topSuggestions.slice(0, 6).map((suggestion) => {
                   const logo = resolveTeamLogo(suggestion);
@@ -1224,32 +1411,29 @@ export default function MyTeamsPage() {
                   Start typing to search the global database, or pick from the suggestions above.
                 </p>
               )}
-              {searching && (
-                <p className="text-sm text-muted-foreground">Searching…</p>
-              )}
-              {!searching && filteredResults.length > 0 && filteredResults.map((item) => {
-                const logo = item.type === 'team' ? resolveTeamLogo(item.name) || sanitizeLogoUrl(item.logo) : resolveLeagueLogo(item.name) || sanitizeLogoUrl(item.logo);
-                return (
-                  <button
-                    key={`${item.type}-${item.name}`}
-                    className="flex w-full items-center gap-3 rounded-lg border border-border/70 bg-background px-3 py-2 text-left transition hover:border-primary/60 hover:bg-muted"
-                    onClick={() => handleResultSelect(item)}
-                  >
-                    <Avatar className="h-9 w-9">
-                      {logo ? (
-                        <AvatarImage src={logo} alt={item.name} />
-                      ) : (
-                        <AvatarFallback>{item.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                      )}
-                    </Avatar>
-                    <div className="flex-1">
-                      <div className="font-medium leading-tight">{item.name}</div>
-                      <p className="text-xs capitalize text-muted-foreground">{item.type}</p>
-                    </div>
-                    <Badge variant="outline" className="text-xs capitalize">{item.type}</Badge>
-                  </button>
-                );
-              })}
+              {searching && <p className="text-sm text-muted-foreground">Searching…</p>}
+              {!searching && filteredResults.length > 0 &&
+                filteredResults.map((item) => {
+                  const logo = item.type === 'team'
+                    ? resolveTeamLogo(item.name) || sanitizeLogoUrl(item.logo)
+                    : resolveLeagueLogo(item.name) || sanitizeLogoUrl(item.logo);
+                  return (
+                    <button
+                      key={`${item.type}-${item.name}`}
+                      className="flex w-full items-center gap-3 rounded-lg border border-border/70 bg-background px-3 py-2 text-left transition hover:border-primary/60 hover:bg-primary/5"
+                      onClick={() => handleResultSelect(item)}
+                    >
+                      <Avatar className="h-9 w-9">
+                        {logo ? <AvatarImage src={logo} alt={item.name} /> : <AvatarFallback>{item.name.slice(0, 2).toUpperCase()}</AvatarFallback>}
+                      </Avatar>
+                      <div className="flex-1">
+                        <div className="font-medium leading-tight">{item.name}</div>
+                        <p className="text-xs capitalize text-muted-foreground">{item.type}</p>
+                      </div>
+                      <Badge variant="outline" className="text-xs capitalize">{item.type}</Badge>
+                    </button>
+                  );
+                })}
               {!searching && addQuery.trim().length > 0 && filteredResults.length === 0 && (
                 <p className="text-sm text-muted-foreground">No matches found. Try a different spelling or switch tabs.</p>
               )}
