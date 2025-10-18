@@ -3,13 +3,10 @@
 import { Hero } from "@/components/Hero";
 import { LiveNowSection } from "@/components/LiveNowSection";
 import { LeagueTabs } from "@/components/LeagueTabs";
-import { HighlightsCarousel } from "@/components/HighlightsCarousel";
+import FootballNews from "@/components/FootballNews";
 import { InfoSpotlight } from "@/components/InfoSpotlight";
-import { useHighlights } from "@/hooks/useData";
 
 export default function Home() {
-  const { data: highlights = [], isLoading: highlightsLoading } = useHighlights();
-
   return (
     <div className="space-y-16">
       {/* Hero Section */}
@@ -31,18 +28,15 @@ export default function Home() {
         <LeagueTabs />
       </section>
 
-      {/* Highlights */}
+      {/* Football News */}
       <section className="container space-y-6">
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold">Match Highlights</h2>
+          <h2 className="text-2xl font-bold">Football News</h2>
           <p className="text-muted-foreground">
-            Watch the best moments from recent matches
+            Stay in the loop with breaking stories and match-day insights.
           </p>
         </div>
-        <HighlightsCarousel 
-          highlights={highlights} 
-          isLoading={highlightsLoading}
-        />
+        <FootballNews />
       </section>
 
       {/* Analysis Spotlight */}
