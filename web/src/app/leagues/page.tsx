@@ -17,6 +17,9 @@ import { LeagueSearch } from "./LeagueSearch";
 
 type LeagueLite = {
   id: string;
+  rawId?: string;
+  slug: string;
+  identityKey: string;
   league_name: string;
   country_name?: string;
   logo?: string;
@@ -253,13 +256,25 @@ function LeagueCardItem({
   const handleSelect = () => {
     onSelect(league);
     try {
-      const baseId = (league.id ?? league.displayName ?? league.rawName)?.toString();
-      if (!baseId) return;
-      const slug = encodeURIComponent(baseId);
-      let url = `/leagues/${slug}`;
-      if (league.rawName) {
-        url += `?name=${encodeURIComponent(league.rawName)}`;
-      }
+      const slugSource =
+        league.slug ??
+        league.rawId ??
+        league.id ??
+        league.displayName ??
+        league.rawName;
+      if (!slugSource) return;
+
+      const params = new URLSearchParams();
+      if (league.rawName) params.set("name", league.rawName);
+      const countryParam =
+        league.country_name ?? league.displayCountry ?? league.metadata?.primary.country;
+      if (countryParam) params.set("country", countryParam);
+      if (league.identityKey) params.set("key", league.identityKey);
+      if (league.rawId) params.set("providerId", league.rawId);
+
+      const slug = encodeURIComponent(slugSource);
+      const query = params.toString();
+      const url = query ? `/leagues/${slug}?${query}` : `/leagues/${slug}`;
       router.push(url);
     } catch {
       // ignore navigation errors
@@ -379,7 +394,7 @@ function FeaturedCategorySection({ section, onSelect, selectedLeague, favLeagues
       <div className="flex gap-3 overflow-x-auto pb-2">
         {section.leagues.map(league => (
           <LeagueCardItem
-            key={`${section.id}-${league.id}-${league.displayCountry ?? "global"}-${league.rawName}`}
+            key={`${section.id}-${league.identityKey}`}
             league={league}
             isSelected={selectedLeague === league.rawName}
             onSelect={onSelect}
@@ -473,38 +488,72 @@ const getLogoFromObject = (obj: Record<string, unknown>): string | undefined => 
 };
 
 const extractLeagueInfo = (entry: unknown): LeagueLite | null => {
+  const createIdentityKey = (idPart: string, namePart: string, countryPart: string) =>
+    [idPart, namePart, countryPart].join("|");
+
   if (typeof entry === "string") {
-    const name = entry.trim();
-    if (!name) return null;
+    const rawName = entry.trim();
+    if (!rawName) return null;
+    const normalizedName = rawName.toLowerCase();
+    const identityKey = createIdentityKey("", normalizedName, "");
     return {
-      id: name.toLowerCase(),
-      league_name: name,
+      id: normalizedName,
+      slug: rawName,
+      identityKey,
+      league_name: rawName,
     };
   }
+
   if (entry && typeof entry === "object") {
     const obj = entry as Record<string, unknown>;
-    const name = getFirstString(obj, ["league_name", "name", "league"]);
-    if (!name) return null;
-    const country = getFirstString(obj, ["country_name", "country", "nation"]);
+    const nameRaw = getFirstString(obj, ["league_name", "name", "league"]);
+    if (!nameRaw) return null;
+    const trimmedName = nameRaw.trim();
+    if (!trimmedName) return null;
+
+    const countryRaw = getFirstString(obj, ["country_name", "country", "nation"]);
+    const trimmedCountry = countryRaw ? countryRaw.trim() : undefined;
+
     const idRaw = getFirstString(obj, ["league_id", "league_key", "id", "key", "idLeague"]);
-    const logo = getLogoFromObject(obj) ?? getFirstString(obj, [
-      "league_logo",
-      "league_logo_url",
-      "league_badge",
-      "badge",
-      "logo",
-      "image",
-      "strLogo",
-      "strBadge",
-      "strBadgeWide",
-    ]);
+    const providerId = idRaw ? idRaw.trim() : undefined;
+
+    const logoCandidate =
+      getLogoFromObject(obj) ??
+      getFirstString(obj, [
+        "league_logo",
+        "league_logo_url",
+        "league_badge",
+        "badge",
+        "logo",
+        "image",
+        "strLogo",
+        "strBadge",
+        "strBadgeWide",
+      ]);
+    const trimmedLogo = logoCandidate ? logoCandidate.trim() : undefined;
+
+    const normalizedId = providerId?.toLowerCase() ?? "";
+    const normalizedName = trimmedName.toLowerCase();
+    const normalizedCountry = trimmedCountry?.toLowerCase() ?? "";
+    const identityKey = createIdentityKey(normalizedId, normalizedName, normalizedCountry);
+
+    const slugBase =
+      providerId && providerId.length > 0
+        ? providerId
+        : [trimmedName, trimmedCountry].filter(Boolean).join("::");
+    const slug = (slugBase || trimmedName).trim();
+
     return {
-      id: (idRaw || name).toLowerCase(),
-      league_name: name,
-      country_name: country || undefined,
-      logo: logo || undefined,
+      id: normalizedId || normalizedName,
+      rawId: providerId,
+      slug,
+      identityKey,
+      league_name: trimmedName,
+      country_name: trimmedCountry,
+      logo: trimmedLogo || undefined,
     };
   }
+
   return null;
 };
 
@@ -515,16 +564,8 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
   for (const entry of raw) {
     const info = extractLeagueInfo(entry);
     if (!info) continue;
-    const idKey = typeof info.id === "string"
-      ? info.id.toLowerCase()
-      : info.id !== undefined && info.id !== null
-        ? String(info.id).toLowerCase()
-        : "";
-    const nameKey = info.league_name.toLowerCase();
-    const countryKey = info.country_name ? info.country_name.toLowerCase() : "";
-    const uniqueKey = [idKey, nameKey, countryKey].join("|");
-    if (seen.has(uniqueKey)) continue;
-    seen.add(uniqueKey);
+    if (seen.has(info.identityKey)) continue;
+    seen.add(info.identityKey);
     normalized.push(info);
   }
   return normalized;
@@ -1088,7 +1129,7 @@ export default function LeaguesPage() {
           leagues={displayLeagues}
           renderResultCard={(league, index) => (
             <LeagueCardItem
-              key={`search-${league.id ?? league.rawName}-${index}`}
+              key={`search-${league.identityKey}-${index}`}
               league={league}
               isSelected={selectedLeague === league.rawName}
               onSelect={handleLeagueSelect}
@@ -1124,7 +1165,7 @@ export default function LeaguesPage() {
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {visibleRemainingLeagues.map(league => (
                     <LeagueCardItem
-                      key={`${league.id}-${league.displayCountry ?? "global"}-${league.rawName}`}
+                      key={league.identityKey}
                       league={league}
                       isSelected={selectedLeague === league.rawName}
                       onSelect={handleLeagueSelect}
