@@ -13,6 +13,7 @@ type Article = {
   summary?: string;
   imageUrl?: string;
   source?: string;
+  author?: string;
   publishedAt?: string;
 };
 
@@ -92,6 +93,7 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
             summary: asString(obj.summary) || asString(obj.description) || asString(obj.excerpt) || "",
             imageUrl: asString(imageCandidate) || undefined,
             source: asString(obj.source) || asString(obj.publisher) || "",
+            author: asString(obj.author) || asString(obj.byline) || asString(obj.creator) || asString(obj.contributor) || undefined,
             publishedAt: asString(obj.publishedAt) || asString(obj.pubDate) || asString(obj.published) || "",
           } as Article;
         });
@@ -132,7 +134,8 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
       filtered = filtered.filter((a) => {
         const title = a.title?.toLowerCase() || "";
         const source = a.source?.toLowerCase() || "";
-        return title.includes(q) || source.includes(q);
+        const author = a.author?.toLowerCase() || "";
+        return title.includes(q) || source.includes(q) || author.includes(q);
       });
     }
     return filtered;
@@ -141,10 +144,16 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
   const totalPages = Math.ceil(filteredArticles.length / ARTICLES_PER_PAGE) || 1;
   // Scroll to top of news list on page change
   const newsListRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  const scrollNewsListToTop = () => {
     if (newsListRef.current) {
       newsListRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  };
+
+  useEffect(() => {
+    scrollNewsListToTop();
   }, [page]);
 
   const pagedArticles = useMemo(() => {
@@ -299,25 +308,50 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
                 );
               })}
             </div>
-            {/* Pagination controls */}
+            {/* Pagination controls with ellipsis and scroll-to-top */}
             {totalPages > 1 && (
-              <div className="mt-8 flex justify-center items-center gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                  Prev
-                </Button>
-                {Array.from({ length: totalPages }).map((_, idx) => (
-                  <Button
-                    key={`page-btn-${idx + 1}`}
-                    size="sm"
-                    variant={page === idx + 1 ? "default" : "ghost"}
-                    onClick={() => setPage(idx + 1)}
-                  >
-                    {idx + 1}
+              <div className="mt-8 flex flex-col items-center justify-center gap-2">
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => { setPage(p => Math.max(1, p - 1)); scrollNewsListToTop(); }} disabled={page === 1}>
+                    Prev
                   </Button>
-                ))}
-                <Button size="sm" variant="ghost" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                  Next
-                </Button>
+                  {/* Page numbers with ellipsis logic */}
+                  {(() => {
+                    const pages = [];
+                    if (totalPages <= 7) {
+                      for (let i = 1; i <= totalPages; i++) {
+                        pages.push(i);
+                      }
+                    } else {
+                      if (page <= 4) {
+                        pages.push(1, 2, 3, 4, 5, '...', totalPages);
+                      } else if (page >= totalPages - 3) {
+                        pages.push(1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages);
+                      } else {
+                        pages.push(1, '...', page - 1, page, page + 1, '...', totalPages);
+                      }
+                    }
+                    return pages.map((p, idx) =>
+                      p === '...'
+                        ? <span key={"ellipsis-" + idx} className="px-2">...</span>
+                        : <button
+                            key={p}
+                            className={`px-3 py-1 border rounded font-semibold transition-colors ${page === p ? "bg-gray-400 text-black border-gray-400" : "bg-background text-foreground border-muted"}`}
+                            onClick={() => {
+                                  setPage(Number(p));
+                                  scrollNewsListToTop();
+                                }}
+                            disabled={page === p}
+                          >{p}</button>
+                    );
+                  })()}
+                  <Button size="sm" variant="ghost" onClick={() => { setPage(p => Math.min(totalPages, p + 1)); scrollNewsListToTop(); }} disabled={page === totalPages}>
+                    Next
+                  </Button>
+                </div>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
               </div>
             )}
           </>
