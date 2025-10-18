@@ -23,7 +23,6 @@ import type { TLItem } from "@/lib/match-mappers";
 import {
   getEventResults,
   getEventAllSports,
-  getHighlights,
   DataObject,
   getLeagueTable,
   postCollect,
@@ -647,11 +646,6 @@ export default function MatchPage() {
           setEvent(normalized);
         }).catch(() => {});
       });
-  getHighlights(String(eventId)).then(() => {
-      if (!active) return;
-  // setHighlights removed
-    }).catch(() => {});
-
     return () => { active = false; };
   }, [eventId]);
 

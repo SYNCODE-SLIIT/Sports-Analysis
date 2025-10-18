@@ -16,6 +16,7 @@ export default function LoginPage() {
   const { supabase } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const desiredRedirect = searchParams.get("redirect") || searchParams.get("next") || "/";
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
@@ -34,15 +35,33 @@ export default function LoginPage() {
       });
       if (error) throw error;
       // Create profile/preferences if not present
+      let needsOnboarding = false;
       if (data?.user) {
         try {
           await supabase.from("profiles").upsert({ id: data.user.id });
-          await supabase.from("user_preferences").insert({ user_id: data.user.id }).select();
+          try {
+            await supabase.rpc("ensure_user_preferences", { uid: data.user.id });
+          } catch {
+            await supabase.from("user_preferences").insert({ user_id: data.user.id }).select();
+          }
+          const { data: prefs } = await supabase
+            .from("user_preferences")
+            .select("favorite_teams, favorite_leagues, favorite_countries")
+            .eq("user_id", data.user.id)
+            .maybeSingle();
+          needsOnboarding = !prefs ||
+            (Array.isArray(prefs.favorite_teams) ? prefs.favorite_teams.length === 0 : true) &&
+            (Array.isArray(prefs.favorite_leagues) ? prefs.favorite_leagues.length === 0 : true) &&
+            (Array.isArray(prefs.favorite_countries) ? prefs.favorite_countries.length === 0 : true);
         } catch {}
       }
       toast.success("Signed in");
-      const redirectTo = searchParams.get("redirect") || "/";
-      router.replace(redirectTo);
+      if (needsOnboarding) {
+        const nextUrl = encodeURIComponent(desiredRedirect || "/");
+        router.replace(`/onboarding?next=${nextUrl}`);
+      } else {
+        router.replace(desiredRedirect);
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(message || "Failed to sign in");
@@ -170,7 +189,7 @@ export default function LoginPage() {
                       const { error } = await supabase.auth.signInWithOAuth({
                         provider: "google",
                         options: {
-                          redirectTo: `${window.location.origin}/auth/oauth-callback`,
+                          redirectTo: `${window.location.origin}/auth/oauth-callback?next=${encodeURIComponent(desiredRedirect)}`,
                         },
                       });
                       if (error) throw error;

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { AuthProvider } from "@/components/AuthProvider";
 import { Navbar } from "@/components/Navbar";
+import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { Footer } from "@/components/Footer";
 import { FloatingChatbot } from "@/components/chatbot/FloatingChatbot";
 import "./globals.css";
@@ -54,6 +55,7 @@ export default function RootLayout({
         <Providers>
           <AuthProvider>
             <Navbar />
+            <MaintenanceBanner />
             <main className="flex-1">{children}</main>
             <Footer />
             <FloatingChatbot />
