@@ -246,6 +246,39 @@ const mapLeagueEntriesToLogoLookup = (raw: unknown): Record<string, string> => {
   return result;
 };
 
+type LogoMap = Record<string, string>;
+
+const shallowEqualMap = (a: LogoMap, b: LogoMap): boolean => {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+};
+
+const mergeLogoCache = (
+  prev: LogoMap,
+  updates: LogoMap,
+  options?: { overrideExisting?: boolean },
+): LogoMap => {
+  const overrideExisting = options?.overrideExisting ?? true;
+  let next: LogoMap | null = null;
+  for (const [key, rawValue] of Object.entries(updates)) {
+    const value = sanitizeLogoUrl(rawValue);
+    if (!value) continue;
+    const existing = sanitizeLogoUrl(prev[key]);
+    const shouldUpdate = overrideExisting ? existing !== value : !existing;
+    if (!shouldUpdate) continue;
+    if (!next) {
+      next = { ...prev };
+    }
+    next[key] = value;
+  }
+  return next ?? prev;
+};
+
 export default function MyTeamsPage() {
   const { user, supabase, loading } = useAuth();
   const [teams, setTeams] = useState<string[]>([]);
@@ -325,7 +358,7 @@ export default function MyTeamsPage() {
               normalized[normalizeKey(String(c.name))] = logo;
             });
             if (Object.keys(normalized).length) {
-              setTeamLogoCache(prev => ({ ...normalized, ...prev }));
+              setTeamLogoCache(prev => mergeLogoCache(prev, normalized, { overrideExisting: false }));
             }
           }
         } catch {}
@@ -392,7 +425,7 @@ export default function MyTeamsPage() {
         }
 
         if (Object.keys(map).length) {
-          setTeamLogoCache(prev => ({ ...prev, ...map }));
+          setTeamLogoCache(prev => mergeLogoCache(prev, map));
         }
 
         const missing = teams.filter(teamName => {
@@ -439,7 +472,7 @@ export default function MyTeamsPage() {
 
               if (logo) {
                 map[normalizeKey(name)] = logo;
-                setTeamLogoCache(prev => ({ ...prev, [normalizeKey(name)]: logo }));
+                setTeamLogoCache(prev => mergeLogoCache(prev, { [normalizeKey(name)]: logo }));
                 try {
                   const { error: rpcErr } = await supabase.rpc('upsert_cached_team', {
                     p_provider_id: null,
@@ -463,9 +496,9 @@ export default function MyTeamsPage() {
         teams.forEach(teamName => {
           displayMap[String(teamName)] = resolveLogoForDisplay(String(teamName), teamLogosRef.current, combinedCache) || '';
         });
-        setTeamLogos(displayMap);
+  setTeamLogos(prev => (shallowEqualMap(prev, displayMap) ? prev : displayMap));
       } catch {
-        if (mounted) setTeamLogos({});
+  if (mounted) setTeamLogos(prev => (Object.keys(prev).length ? {} : prev));
       }
     })();
     return () => { mounted = false; };
@@ -662,7 +695,7 @@ export default function MyTeamsPage() {
         }
 
         if (Object.keys(map).length) {
-          setLeagueLogoCache(prev => ({ ...prev, ...map }));
+          setLeagueLogoCache(prev => mergeLogoCache(prev, map));
         }
 
         const combinedLeagueCache = { ...leagueLogoCache, ...map };
@@ -670,7 +703,7 @@ export default function MyTeamsPage() {
         leagues.forEach(leagueName => {
           displayLeagueMap[String(leagueName)] = resolveLogoForDisplay(String(leagueName), leagueLogosMapRef.current, combinedLeagueCache) || '';
         });
-        setLeagueLogosMap(displayLeagueMap);
+        setLeagueLogosMap(prev => (shallowEqualMap(prev, displayLeagueMap) ? prev : displayLeagueMap));
       } catch {
         if (mounted) setLeagueLogosMap({});
       }
@@ -699,8 +732,8 @@ export default function MyTeamsPage() {
     const found = results.find(r => r.name === name && r.type === "team");
     const optimisticLogo = found?.logo ? sanitizeLogoUrl(found.logo) : "";
     if (optimisticLogo) {
-      setTeamLogos(prev => ({ ...prev, [name]: optimisticLogo }));
-      setTeamLogoCache(prev => ({ ...prev, [normalizeKey(name)]: optimisticLogo }));
+      setTeamLogos(prev => (prev[name] === optimisticLogo ? prev : { ...prev, [name]: optimisticLogo }));
+      setTeamLogoCache(prev => mergeLogoCache(prev, { [normalizeKey(name)]: optimisticLogo }));
     }
     setAddQuery("");
     return true;
@@ -726,7 +759,7 @@ export default function MyTeamsPage() {
       const added = addTeam(item.name);
       if (!added) return;
       if (cleanedLogo) {
-        setTeamLogoCache(prev => ({ ...prev, [normalizeKey(item.name)]: cleanedLogo }));
+        setTeamLogoCache(prev => mergeLogoCache(prev, { [normalizeKey(item.name)]: cleanedLogo }));
         try {
           await supabase.rpc('upsert_cached_team', {
             p_provider_id: null,
@@ -739,7 +772,7 @@ export default function MyTeamsPage() {
     } else {
       await followLeague(item.name);
       if (cleanedLogo) {
-        setLeagueLogoCache(prev => ({ ...prev, [normalizeKey(item.name)]: cleanedLogo }));
+        setLeagueLogoCache(prev => mergeLogoCache(prev, { [normalizeKey(item.name)]: cleanedLogo }));
         try {
           await supabase.rpc('upsert_cached_league', {
             p_provider_id: null,
@@ -817,8 +850,8 @@ export default function MyTeamsPage() {
     }
 
     if (resolvedLogo) {
-      setLeagueLogosMap(prev => ({ ...prev, [name]: resolvedLogo }));
-      setLeagueLogoCache(prev => ({ ...prev, [normalizeKey(name)]: resolvedLogo }));
+      setLeagueLogosMap(prev => (prev[name] === resolvedLogo ? prev : { ...prev, [name]: resolvedLogo }));
+      setLeagueLogoCache(prev => mergeLogoCache(prev, { [normalizeKey(name)]: resolvedLogo }));
     }
   };
 

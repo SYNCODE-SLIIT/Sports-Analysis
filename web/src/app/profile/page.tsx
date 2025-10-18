@@ -223,6 +223,21 @@ const filterLogosForNames = (names: string[], map: Record<string, string>) => {
   return next;
 };
 
+type LogoMap = Record<string, string>;
+
+const mergeLogoMaps = (base: LogoMap, updates: LogoMap): LogoMap | null => {
+  let changed = false;
+  const next: LogoMap = { ...base };
+  Object.entries(updates).forEach(([key, value]) => {
+    const clean = sanitizeLogoUrl(value);
+    if (!clean) return;
+    if (next[key] === clean) return;
+    next[key] = clean;
+    changed = true;
+  });
+  return changed ? next : null;
+};
+
 const RECOMMENDATION_LIMIT = 4;
 
 type ItemDetails = {
@@ -268,6 +283,7 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 export default function ProfilePage() {
   const { user, supabase, loading, prefsVersion, interactionsVersion } = useAuth();
   const recs = useRecommendations();
+  const refetchRecommendations = recs.refetch;
   const router = useRouter();
   const isAdmin = useMemo(() => isAdminEmail(user?.email ?? undefined), [user]);
 
@@ -402,13 +418,13 @@ export default function ProfilePage() {
   }, [isAdmin, supabase, user, prefsVersion]);
 
   useEffect(() => {
-    if (!user || isAdmin) return;
+    if (!user || isAdmin || !refetchRecommendations) return;
     try {
-      recs.refetch?.();
+      refetchRecommendations();
     } catch {
       /* ignore */
     }
-  }, [isAdmin, prefsVersion, recs, user]);
+  }, [isAdmin, prefsVersion, refetchRecommendations, user]);
 
   const resolveLogos = useCallback(
     async (kind: "team" | "league", names: string[], existing: Record<string, string>) => {
@@ -501,10 +517,14 @@ export default function ProfilePage() {
     void (async () => {
       const resolved = await resolveLogos("team", preferences.favorite_teams, preferences.favorite_team_logos);
       if (Object.keys(resolved).length) {
-        setPreferences((prev) => ({
-          ...prev,
-          favorite_team_logos: { ...prev.favorite_team_logos, ...resolved },
-        }));
+        setPreferences((prev) => {
+          const merged = mergeLogoMaps(prev.favorite_team_logos, resolved);
+          if (!merged) return prev;
+          return {
+            ...prev,
+            favorite_team_logos: merged,
+          };
+        });
       }
     })();
   }, [isAdmin, preferences.favorite_team_logos, preferences.favorite_teams, resolveLogos, user]);
@@ -515,10 +535,14 @@ export default function ProfilePage() {
     void (async () => {
       const resolved = await resolveLogos("league", preferences.favorite_leagues, preferences.favorite_league_logos);
       if (Object.keys(resolved).length) {
-        setPreferences((prev) => ({
-          ...prev,
-          favorite_league_logos: { ...prev.favorite_league_logos, ...resolved },
-        }));
+        setPreferences((prev) => {
+          const merged = mergeLogoMaps(prev.favorite_league_logos, resolved);
+          if (!merged) return prev;
+          return {
+            ...prev,
+            favorite_league_logos: merged,
+          };
+        });
       }
     })();
   }, [isAdmin, preferences.favorite_league_logos, preferences.favorite_leagues, resolveLogos, user]);
@@ -735,7 +759,7 @@ export default function ProfilePage() {
     return () => {
       active = false;
     };
-  }, [supabase, user, interactionsVersion, recs]);
+  }, [supabase, user, interactionsVersion]);
 
   const shareRecommendation = useCallback(
     async (itemId: string, item: Record<string, unknown> | undefined) => {
