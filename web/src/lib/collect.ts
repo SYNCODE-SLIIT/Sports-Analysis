@@ -15,7 +15,7 @@ const TraceZ = z.array(z.any());
 const EnvelopeZ = z.object({
   ok: z.boolean(),
   data: z.any().optional(),
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
+  error: z.object({ code: z.string(), message: z.string() }).optional().nullable(),
   meta: z.object({ trace: TraceZ }).optional(),
 });
 
