@@ -12,6 +12,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { ASSETS } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
+import { isAdminEmail } from "@/lib/admin";
 import { NlSearchBar } from "@/components/search/NlSearchBar";
 
 const navItems = [
@@ -27,6 +28,7 @@ export function Navbar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = React.useState(false);
   const { user } = useAuth();
+  const isAdminUser = isAdminEmail(user?.email ?? undefined);
 
   // sign-out moved to profile page
 
@@ -35,7 +37,7 @@ export function Navbar() {
       initial={{ y: -100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.6, ease: "easeOut" }}
-      className="sticky top-0 z-50 w-full glass-bg border-b"
+      className="sticky top-0 z-40 w-full glass-bg border-b"
     >
       <nav className="container flex items-center justify-between h-16">
         {/* Logo & Brand */}
@@ -92,9 +94,9 @@ export function Navbar() {
           {user ? (
             <>
               <Button variant="ghost" size="sm" asChild className="hidden md:flex">
-                <Link href="/profile">
+                <Link href={isAdminUser ? "/admin" : "/profile"}>
                   <User className="h-4 w-4 mr-2" />
-                  Profile
+                  {isAdminUser ? "Admin" : "Profile"}
                 </Link>
               </Button>
             </>
@@ -138,9 +140,9 @@ export function Navbar() {
                   {user ? (
                     <>
                       <Button variant="outline" size="sm" asChild className="w-full justify-start">
-                        <Link href="/profile" onClick={() => setIsOpen(false)}>
+                        <Link href={isAdminUser ? "/admin" : "/profile"} onClick={() => setIsOpen(false)}>
                           <User className="h-4 w-4 mr-2" />
-                          Profile
+                          {isAdminUser ? "Admin" : "Profile"}
                         </Link>
                       </Button>
                     </>

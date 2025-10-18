@@ -22,7 +22,6 @@ import type { TLItem } from "@/lib/match-mappers";
 import {
   getEventResults,
   getEventAllSports,
-  getHighlights,
   DataObject,
   getLeagueTable,
   postCollect,
@@ -646,21 +645,6 @@ export default function MatchPage() {
           setEvent(normalized);
         }).catch(() => {});
       });
-    getHighlights(String(eventId)).then(env => {
-      if (!active) return;
-      const d = env.data as { videos?: Array<DataObject> } | undefined;
-      const vids: Array<DataObject> = (d && typeof d === 'object' && d.videos && Array.isArray(d.videos)) ? d.videos : [];
-      const normalized = vids.map((v) => ({
-        id: String((v.id as string | number | undefined) ?? `${Math.random()}`),
-        title: typeof v.title === 'string' ? v.title : undefined,
-        url: typeof v.url === 'string' ? v.url : undefined,
-        thumbnail: typeof v.thumbnail === 'string' ? v.thumbnail : undefined,
-        provider: typeof v.provider === 'string' ? v.provider : undefined,
-        duration: typeof v.duration === 'number' ? (v.duration as number) : undefined,
-      }));
-  // setHighlights removed
-    }).catch(() => {});
-
     return () => { active = false; };
   }, [eventId]);
 

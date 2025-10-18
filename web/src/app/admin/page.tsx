@@ -7,12 +7,14 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
+  CalendarClock,
   ClipboardCheck,
-  Eye,
   FilePlus2,
   Loader2,
   RefreshCcw,
   ShieldCheck,
+  Timer,
   TrendingUp,
   Users,
   UserPlus,
@@ -23,6 +25,9 @@ import { useAuth } from "@/components/AuthProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { isAdminEmail, PRIMARY_ADMIN_EMAIL } from "@/lib/admin";
 
@@ -94,12 +99,6 @@ type ManagedUserRow = SnapshotUser & {
   lastSeenLabel: string;
 };
 
-type PipelineRow = SnapshotContent & {
-  owner: string;
-  eta: string;
-  priority: "High" | "Medium" | "Low";
-};
-
 type AlertEntry = {
   title: string;
   message: string;
@@ -132,13 +131,112 @@ const FLAG_MESSAGES: Record<SystemFlag, { on: string; off: string }> = {
 const booleanOr = (value: unknown, fallback: boolean): boolean =>
   typeof value === "boolean" ? value : fallback;
 
-const resolveFlags = (payload: AdminSnapshot | null): SystemState => {
-  const base = payload?.flags ?? {};
+type FlagPayload = {
+  enabled?: boolean;
+  metadata?: Record<string, unknown> | null;
+  updatedAt?: string | null;
+};
+
+type MaintenanceMetadata = {
+  scheduledFor: string | null;
+  message: string;
+};
+
+const parseMaintenanceMetadata = (metadata: unknown): MaintenanceMetadata => {
+  if (!metadata || typeof metadata !== "object") {
+    return { scheduledFor: null, message: "" };
+  }
+  const record = metadata as Record<string, unknown>;
+  const scheduledRaw = record.scheduledFor;
+  const messageRaw = record.message;
   return {
-    maintenance: booleanOr((base as Record<string, unknown>).maintenance, DEFAULT_FLAGS.maintenance),
-    highlightsAutomation: booleanOr((base as Record<string, unknown>).highlightsAutomation, DEFAULT_FLAGS.highlightsAutomation),
-    aiAlerts: booleanOr((base as Record<string, unknown>).aiAlerts, DEFAULT_FLAGS.aiAlerts),
+    scheduledFor: typeof scheduledRaw === "string" ? scheduledRaw : null,
+    message: typeof messageRaw === "string" ? messageRaw : "",
   };
+};
+
+const extractFlagPayload = (flags: AdminSnapshot["flags"], key: string): FlagPayload => {
+  if (!flags) return {};
+  const base = flags as Record<string, unknown>;
+  const target = base[key];
+  if (typeof target === "boolean") {
+    return { enabled: target };
+  }
+  if (target && typeof target === "object") {
+    const record = target as Record<string, unknown>;
+    return {
+      enabled: typeof record.enabled === "boolean" ? record.enabled : undefined,
+      metadata: record.metadata && typeof record.metadata === "object" ? (record.metadata as Record<string, unknown>) : null,
+      updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : undefined,
+    };
+  }
+  return {};
+};
+
+const extractFlagEnabled = (flags: AdminSnapshot["flags"], key: SystemFlag, fallback: boolean): boolean => {
+  const payload = extractFlagPayload(flags, key);
+  return booleanOr(payload.enabled, fallback);
+};
+
+const extractMaintenanceMetadata = (flags: AdminSnapshot["flags"]): MaintenanceMetadata => {
+  const payload = extractFlagPayload(flags, "maintenance");
+  return parseMaintenanceMetadata(payload.metadata);
+};
+
+const resolveSystemState = (flags: AdminSnapshot["flags"]): SystemState => ({
+  maintenance: extractFlagEnabled(flags, "maintenance", DEFAULT_FLAGS.maintenance),
+  highlightsAutomation: extractFlagEnabled(flags, "highlightsAutomation", DEFAULT_FLAGS.highlightsAutomation),
+  aiAlerts: extractFlagEnabled(flags, "aiAlerts", DEFAULT_FLAGS.aiAlerts),
+});
+
+const formatDateTimeLabel = (iso: string | null): string => {
+  if (!iso) return "Not scheduled";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Invalid date";
+  return date.toLocaleString();
+};
+
+const toLocalInputValue = (iso: string | null): string => {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
+};
+
+const fromLocalInputValue = (value: string): string | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
+};
+
+const isFutureDate = (iso: string | null): boolean => {
+  if (!iso) return false;
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return false;
+  return target.getTime() > Date.now();
+};
+
+const formatCountdown = (iso: string | null): string | null => {
+  if (!iso) return null;
+  const target = new Date(iso);
+  if (Number.isNaN(target.getTime())) return null;
+  const diffMs = target.getTime() - Date.now();
+  if (diffMs <= 0) return null;
+  const minutes = Math.round(diffMs / 60000);
+  if (minutes >= 1440) {
+    const days = Math.floor(minutes / 1440);
+    const hours = Math.floor((minutes % 1440) / 60);
+    return `${days}d${hours ? ` ${hours}h` : ""}`;
+  }
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return `${hours}h${remaining ? ` ${remaining}m` : ""}`;
+  }
+  return `${minutes}m`;
 };
 
 const formatNumber = (value?: number | null): string => {
@@ -192,14 +290,6 @@ const deriveRole = (interactions: number): string => {
   return "Newcomer";
 };
 
-const deriveEta = (createdAt: Date): string => {
-  const diffHours = (Date.now() - createdAt.getTime()) / 3600000;
-  if (diffHours < 6) return "Due today";
-  if (diffHours < 24) return "Due in 1 day";
-  if (diffHours < 72) return "Due in 3 days";
-  return "In backlog";
-};
-
 const buildSparkline = (values: number[]): SparklineResult => {
   if (!values.length) {
     return { areaPath: "", linePoints: "", coordinates: [] };
@@ -244,6 +334,10 @@ export default function AdminPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [systemFlags, setSystemFlags] = useState<SystemState>(DEFAULT_FLAGS);
   const [updatingFlag, setUpdatingFlag] = useState<SystemFlag | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [maintenanceMetadata, setMaintenanceMetadata] = useState<MaintenanceMetadata>({ scheduledFor: null, message: "" });
+  const [maintenanceForm, setMaintenanceForm] = useState<MaintenanceMetadata>({ scheduledFor: null, message: "" });
+  const [maintenanceSaving, setMaintenanceSaving] = useState(false);
 
   const isAdmin = useMemo(() => isAdminEmail(user?.email ?? undefined), [user]);
 
@@ -273,7 +367,11 @@ export default function AdminPage() {
       .then((payload) => {
         if (!active) return;
         setSnapshot(payload);
-        setSystemFlags(resolveFlags(payload));
+        const nextFlags = resolveSystemState(payload?.flags);
+        setSystemFlags(nextFlags);
+        const nextMaintenance = extractMaintenanceMetadata(payload?.flags);
+        setMaintenanceMetadata(nextMaintenance);
+        setMaintenanceForm(nextMaintenance);
         setSnapshotError(null);
       })
       .catch((error: unknown) => {
@@ -296,7 +394,11 @@ export default function AdminPage() {
     try {
       const payload = await fetchSnapshot();
       setSnapshot(payload);
-      setSystemFlags(resolveFlags(payload));
+      const nextFlags = resolveSystemState(payload?.flags);
+      setSystemFlags(nextFlags);
+      const nextMaintenance = extractMaintenanceMetadata(payload?.flags);
+      setMaintenanceMetadata(nextMaintenance);
+      setMaintenanceForm(nextMaintenance);
       setSnapshotError(null);
       toast.success("Dashboard refreshed.");
     } catch (error) {
@@ -308,15 +410,28 @@ export default function AdminPage() {
   }, [fetchSnapshot, isAdmin]);
 
   const handleFlagChange = useCallback(
-    async (flag: SystemFlag, checked: boolean) => {
+    async (flag: SystemFlag, checked: boolean, metadataOverride?: Record<string, unknown> | null) => {
       if (!isAdmin) return;
       setSystemFlags((prev) => ({ ...prev, [flag]: checked }));
       setUpdatingFlag(flag);
+      const payload: { flag: SystemFlag; enabled: boolean; metadata?: Record<string, unknown> | null } = {
+        flag,
+        enabled: checked,
+      };
+      if (metadataOverride !== undefined) {
+        payload.metadata = metadataOverride;
+      }
       try {
-        const { data, error } = await supabase.rpc("admin_set_system_flag", { flag, enabled: checked });
+        const { data, error } = await supabase.rpc("admin_set_system_flag", payload);
         if (error) throw error;
-        const confirmed = booleanOr((data as Record<string, unknown>)?.enabled, checked);
+        const result = (data as Record<string, unknown>) ?? {};
+        const confirmed = booleanOr(result.enabled, checked);
         setSystemFlags((prev) => ({ ...prev, [flag]: confirmed }));
+        if (flag === "maintenance") {
+          const nextMaintenance = parseMaintenanceMetadata(result.metadata);
+          setMaintenanceMetadata(nextMaintenance);
+          setMaintenanceForm(nextMaintenance);
+        }
         const message = FLAG_MESSAGES[flag][confirmed ? "on" : "off"];
         toast.success(message);
       } catch (error) {
@@ -331,31 +446,172 @@ export default function AdminPage() {
   );
 
   const handleExport = useCallback(() => {
-    toast.success("System snapshot exported.");
-  }, []);
+    if (!snapshot) {
+      toast.error("No snapshot data available yet.");
+      return;
+    }
+    try {
+      const encodeCell = (value: unknown): string => {
+        if (value === null || value === undefined) return "";
+        const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
+        const escaped = raw.replace(/"/g, '""');
+        return /[",\r\n]/.test(raw) ? `"${escaped}"` : escaped;
+      };
+
+      const rows: string[] = [];
+      const pushRow = (cells: unknown[]) => {
+        rows.push(cells.map(encodeCell).join(","));
+      };
+      const addSection = (title: string, headers: string[], data: unknown[][]) => {
+        if (rows.length) rows.push("");
+        pushRow([title]);
+        if (headers.length) {
+          pushRow(headers);
+        }
+        data.forEach((entry) => pushRow(entry));
+      };
+
+      const generatedAt = new Date().toISOString();
+      pushRow(["Generated at", generatedAt]);
+
+      if (snapshot.stats) {
+        addSection(
+          "Platform stats",
+          ["Metric", "Value"],
+          [
+            ["Total users", snapshot.stats.totalUsers],
+            ["Weekly signups", snapshot.stats.weeklySignups],
+            ["Active users (24h)", snapshot.stats.activeUsers],
+            ["Total content items", snapshot.stats.totalItems],
+          ],
+        );
+      }
+
+      const interactions = snapshot.interactions ?? [];
+      if (interactions.length) {
+        addSection(
+          "Engagement (last 7 days)",
+          ["Day", "Total", "Likes", "Saves", "Views", "Unique users"],
+          interactions.map((entry) => [entry.day, entry.total, entry.likes, entry.saves, entry.views, entry.uniqueUsers]),
+        );
+      }
+
+      const retention = snapshot.retention ?? [];
+      if (retention.length) {
+        addSection(
+          "Retention",
+          ["Day", "Returning users"],
+          retention.map((entry) => [entry.day, entry.returningUsers]),
+        );
+      }
+
+      const exportUsers = snapshot.users ?? [];
+      if (exportUsers.length) {
+        addSection(
+          "User overview",
+          ["Name", "Email", "Role", "Status", "Interactions", "Likes", "Saves", "Created", "Last seen"],
+          exportUsers.map((entry) => {
+            const lastSeenDate = entry.lastSeen ? new Date(entry.lastSeen) : null;
+            return [
+              entry.name,
+              entry.email,
+              deriveRole(entry.interactions),
+              deriveStatus(lastSeenDate),
+              entry.interactions,
+              entry.likes,
+              entry.saves,
+              entry.createdAt,
+              entry.lastSeen ?? "",
+            ];
+          }),
+        );
+      }
+
+      const exportContent = snapshot.content ?? [];
+      if (exportContent.length) {
+        addSection(
+          "Content overview",
+          ["Title", "Kind", "Status", "Popularity", "Created"],
+          exportContent.map((item) => [item.title, item.kind, item.status ?? "", item.popularity, item.createdAt]),
+        );
+      }
+
+      const flagEntries = snapshot.flags ? Object.keys(snapshot.flags) : [];
+      if (flagEntries.length) {
+        addSection(
+          "System flags",
+          ["Key", "Enabled", "Updated at", "Metadata"],
+          flagEntries.map((key) => {
+            const payload = extractFlagPayload(snapshot.flags, key);
+            return [
+              key,
+              booleanOr(payload.enabled, false),
+              payload.updatedAt ?? "",
+              payload.metadata ? JSON.stringify(payload.metadata) : "",
+            ];
+          }),
+        );
+      }
+
+      const csvContent = rows.join("\r\n");
+      if (!csvContent.trim()) {
+        throw new Error("No data available for export");
+      }
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const filename = `sports-admin-report-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`;
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast.success("CSV report exported.");
+    } catch (error) {
+      console.error("Failed to export admin snapshot", error);
+      toast.error("Unable to export report. Please retry.");
+    }
+  }, [snapshot]);
 
   const handleSignOut = useCallback(async () => {
     await supabase.auth.signOut();
     router.replace("/");
   }, [router, supabase]);
 
-  if (loading) {
-    return <div className="container py-16 text-sm text-muted-foreground">Preparing admin console…</div>;
-  }
-
-  if (!user) {
-    return <div className="container py-16 text-sm text-muted-foreground">Redirecting to sign in…</div>;
-  }
-
-  if (!isAdmin) {
-    return <div className="container py-16 text-sm text-muted-foreground">Redirecting to profile…</div>;
-  }
+  const handleMaintenanceSchedule = useCallback(async () => {
+    if (!isAdmin) return;
+    setMaintenanceSaving(true);
+    try {
+      const metadataPayload: Record<string, unknown> = {
+        scheduledFor: maintenanceForm.scheduledFor,
+        message: maintenanceForm.message.trim() ? maintenanceForm.message.trim() : null,
+      };
+      const { data, error } = await supabase.rpc("admin_set_system_flag", {
+        flag: "maintenance",
+        enabled: systemFlags.maintenance,
+        metadata: metadataPayload,
+      });
+      if (error) throw error;
+      const result = (data as Record<string, unknown>) ?? {};
+      const nextMaintenance = parseMaintenanceMetadata(result.metadata);
+      setMaintenanceMetadata(nextMaintenance);
+      setMaintenanceForm(nextMaintenance);
+      toast.success("Maintenance window updated.");
+    } catch (error) {
+      console.error("Failed to schedule maintenance", error);
+      toast.error("Unable to schedule maintenance. Please retry.");
+    } finally {
+      setMaintenanceSaving(false);
+    }
+  }, [isAdmin, maintenanceForm, supabase, systemFlags.maintenance]);
 
   const stats = snapshot?.stats ?? null;
-  const interactionsSeries = snapshot?.interactions ?? [];
-  const retentionSeries = snapshot?.retention ?? [];
-  const users = snapshot?.users ?? [];
-  const content = snapshot?.content ?? [];
+  const interactionsSeries = useMemo(() => snapshot?.interactions ?? [], [snapshot?.interactions]);
+  const retentionSeries = useMemo(() => snapshot?.retention ?? [], [snapshot?.retention]);
+  const users = useMemo(() => snapshot?.users ?? [], [snapshot?.users]);
+  const content = useMemo(() => snapshot?.content ?? [], [snapshot?.content]);
 
   const totalTouchpoints = interactionsSeries.reduce((acc, entry) => acc + entry.total, 0);
   const likeEvents = interactionsSeries.reduce((acc, entry) => acc + entry.likes, 0);
@@ -368,7 +624,6 @@ export default function AdminPage() {
   const weeklyLabels = useMemo(() => interactionsSeries.map((entry) => formatDayLabel(entry.day)), [interactionsSeries]);
   const engagementSparkline = useMemo(() => buildSparkline(interactionsSeries.map((entry) => entry.total)), [interactionsSeries]);
   const retentionValues = useMemo(() => retentionSeries.map((entry) => Math.max(0, entry.returningUsers)), [retentionSeries]);
-  const retentionSparkline = useMemo(() => buildSparkline(retentionValues), [retentionValues]);
   const retentionDeltaPercent = useMemo(() => {
     if (retentionValues.length < 2) return 0;
     const first = retentionValues[0];
@@ -391,23 +646,27 @@ export default function AdminPage() {
     [users],
   );
 
-  const pipelineRows = useMemo<PipelineRow[]>(
-    () =>
-      content.map((item) => {
-        const createdAtDate = new Date(item.createdAt);
-        const owner = item.kind === "match" ? "Match ops" : item.kind === "clip" ? "Automation" : item.kind === "league" ? "Editorial" : "Content";
-        const priority: PipelineRow["priority"] = item.popularity > 80 ? "High" : item.popularity > 40 ? "Medium" : "Low";
-        return {
-          ...item,
-          owner,
-          priority,
-          eta: deriveEta(createdAtDate),
-        };
-      }),
+  const reviewCount = useMemo(
+    () => content.filter((row) => (row.status ?? "").toLowerCase().includes("review")).length,
     [content],
   );
 
-  const reviewCount = pipelineRows.filter((row) => (row.status ?? "").toLowerCase().includes("review")).length;
+  const maintenanceStartLabel = useMemo(() => formatDateTimeLabel(maintenanceMetadata.scheduledFor), [maintenanceMetadata.scheduledFor]);
+  const maintenanceCountdown = useMemo(() => formatCountdown(maintenanceMetadata.scheduledFor), [maintenanceMetadata.scheduledFor]);
+  const upcomingMaintenance = useMemo(
+    () => isFutureDate(maintenanceMetadata.scheduledFor) && !systemFlags.maintenance,
+    [maintenanceMetadata.scheduledFor, systemFlags.maintenance],
+  );
+
+  const maintenanceStatusBadge = useMemo(() => {
+    if (systemFlags.maintenance) {
+      return { label: "Active", className: "border-red-400/50 text-red-300" };
+    }
+    if (upcomingMaintenance) {
+      return { label: "Scheduled", className: "border-amber-400/50 text-amber-200" };
+    }
+    return { label: "Idle", className: "border-emerald-400/40 text-emerald-200" };
+  }, [systemFlags.maintenance, upcomingMaintenance]);
 
   const quickStats = useMemo(
     () => [
@@ -498,6 +757,20 @@ export default function AdminPage() {
     return list;
   }, [averageEngagement, interactionsSeries, retentionValues, stats]);
 
+  // NOTE: guard returns live after every hook invocation to keep hook ordering stable
+  // across auth state changes (prevents "Rendered fewer hooks than expected").
+  if (loading) {
+    return <div className="container py-16 text-sm text-muted-foreground">Preparing admin console…</div>;
+  }
+
+  if (!user) {
+    return <div className="container py-16 text-sm text-muted-foreground">Redirecting to sign in…</div>;
+  }
+
+  if (!isAdmin) {
+    return <div className="container py-16 text-sm text-muted-foreground">Redirecting to profile…</div>;
+  }
+
   return (
     <div className="container space-y-8 py-10">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
@@ -549,400 +822,454 @@ export default function AdminPage() {
         </motion.div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.6 }} className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-        {quickStats.map((stat) => {
-          const Icon = stat.icon;
-          return (
-            <Card key={stat.label} className="neon-card">
-              <CardContent className="space-y-3 p-6">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{stat.label}</p>
-                  <Icon className="h-4 w-4 text-primary" />
-                </div>
-                <p className="text-3xl font-semibold text-foreground">{stat.value}</p>
-                <p className="text-xs text-muted-foreground">{stat.change}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.6 }}>
+        <div className="overflow-x-auto pb-1">
+          <div className="flex min-w-max gap-4">
+            {quickStats.map((stat) => {
+              const Icon = stat.icon;
+              return (
+                <Card
+                  key={stat.label}
+                  className="neon-card flex-shrink-0 rounded-2xl border border-border/30 bg-background/80 shadow-xl shadow-primary/10"
+                >
+                  <CardContent className="flex h-full w-[225px] flex-col gap-2 p-5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{stat.label}</p>
+                      <Icon className="h-4 w-4 text-primary" />
+                    </div>
+                    <p className="text-2xl font-semibold text-foreground">{stat.value}</p>
+                    <p className="text-[11px] text-muted-foreground">{stat.change}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.6 }} className="lg:col-span-2">
-          <Card className="neon-card h-full">
-            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-primary" />
-                  <CardTitle className="text-foreground">Engagement trajectory</CardTitle>
-                </div>
-                <p className="text-sm text-muted-foreground">Live overview of platform-wide touchpoints across the past seven days.</p>
-              </div>
-              <Badge variant="outline" className="text-xs font-medium">
-                Avg interactions: {formatNumber(averageEngagement)}
-              </Badge>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="rounded-xl border border-border/40 bg-background/70 p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Total engagement (weekly)</p>
-                    <p className="text-lg font-semibold text-foreground">{formatNumber(totalTouchpoints)}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <span className="h-2 w-2 rounded-full bg-[var(--primary,#ef4444)]" aria-hidden /> Touchpoints
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <TrendingUp className="h-3.5 w-3.5 text-primary" /> {retentionDeltaLabel} retention delta
-                    </span>
-                  </div>
-                </div>
-                {snapshotLoading ? (
-                  <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading engagement…
-                  </div>
-                ) : engagementSparkline.coordinates.length ? (
-                  <div className="mt-6 h-40">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
-                      <defs>
-                        <linearGradient id="adminEngagementFill" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.6" />
-                          <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0.05" />
-                        </linearGradient>
-                      </defs>
-                      <path d={engagementSparkline.areaPath} fill="url(#adminEngagementFill)" opacity="0.55" />
-                      <polyline
-                        points={engagementSparkline.linePoints}
-                        fill="none"
-                        stroke="var(--primary)"
-                        strokeWidth="1.8"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                      />
-                      {engagementSparkline.coordinates.map((coord, index) => (
-                        <circle
-                          key={`engagement-point-${coord.x}-${index}`}
-                          cx={coord.x}
-                          cy={coord.y}
-                          r={1.6}
-                          fill="var(--primary)"
-                          stroke="var(--background)"
-                          strokeWidth="0.6"
-                        />
-                      ))}
-                    </svg>
-                  </div>
-                ) : (
-                  <p className="mt-6 text-sm text-muted-foreground">No engagement data yet — come back after the next campaign wave.</p>
-                )}
-                <div className="mt-4 flex justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
-                  {weeklyLabels.map((label, index) => {
-                    const shouldShow = index === 0 || index === weeklyLabels.length - 1 || index === Math.floor(weeklyLabels.length / 2);
-                    return (
-                      <span key={`${label}-${index}`} className="min-w-[3ch] text-center">
-                        {shouldShow ? label : ""}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3">
-                  <p className="text-2xl font-semibold text-foreground">{formatNumber(maxInteractions)}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Peak day interactions</p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3">
-                  <p className="text-2xl font-semibold text-foreground">{formatNumber(likeEvents)}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Likes this week</p>
-                </div>
-                <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3">
-                  <p className="text-2xl font-semibold text-foreground">{formatNumber(saveEvents)}</p>
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Saves this week</p>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 text-xs uppercase tracking-wide text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-                <span>
-                  Views captured: <span className="font-semibold text-foreground">{formatNumber(viewEvents)}</span>
-                </span>
-                <span>
-                  Active days: <span className="font-semibold text-foreground">{activeDays}</span>
-                </span>
-              </div>
-            </CardContent>
-          </Card>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="system">System</TabsTrigger>
+            </TabsList>
+          </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12, duration: 0.6 }}>
-          <Card className="neon-card h-full">
-            <CardHeader className="space-y-1">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                <CardTitle className="text-foreground">Retention control</CardTitle>
-              </div>
-              <p className="text-sm text-muted-foreground">Track cohort stickiness and monitor drop-off risk in real time.</p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="rounded-xl border border-border/40 bg-background/70 p-5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">VIP cohort retention</span>
-                  <Badge variant="outline" className="text-xs font-medium">{retentionValues.length ? formatNumber(retentionValues[retentionValues.length - 1]) : "—"}%</Badge>
-                </div>
-                {snapshotLoading ? (
-                  <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading retention…
-                  </div>
-                ) : retentionSparkline.coordinates.length ? (
-                  <div className="mt-4 h-28">
-                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
-                      <defs>
-                        <linearGradient id="retentionFill" x1="0" x2="0" y1="0" y2="1">
-                          <stop offset="0%" stopColor="var(--foreground)" stopOpacity="0.35" />
-                          <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0" />
-                        </linearGradient>
-                      </defs>
-                      <path d={retentionSparkline.areaPath} fill="url(#retentionFill)" opacity="0.8" />
-                      <polyline
-                        points={retentionSparkline.linePoints}
-                        fill="none"
-                        stroke="var(--foreground)"
-                        strokeWidth="1.6"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                        opacity={0.85}
-                      />
-                      {retentionSparkline.coordinates.map((coord, index) => (
-                        <circle
-                          key={`retention-point-${coord.x}-${index}`}
-                          cx={coord.x}
-                          cy={coord.y}
-                          r={1.4}
-                          fill="var(--foreground)"
-                          stroke="var(--background)"
-                          strokeWidth="0.6"
-                          opacity={0.9}
-                        />
-                      ))}
-                    </svg>
-                  </div>
-                ) : (
-                  <p className="mt-4 text-sm text-muted-foreground">Retention analytics will appear once cohorts engage with content.</p>
-                )}
-                <div className="mt-3 text-xs text-muted-foreground">
-                  Cohort momentum: <span className="font-semibold text-foreground">{retentionDeltaLabel}</span>
-                </div>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-3 text-sm">
-                  <span className="text-muted-foreground">Community escalations</span>
-                  <span className="font-semibold text-foreground">{formatNumber(alerts.length ? alerts.length : 0)} open</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-3 text-sm">
-                  <span className="text-muted-foreground">Creator payout queue</span>
-                  <span className="font-semibold text-foreground">$12.8K ready</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-3 text-sm">
-                  <span className="text-muted-foreground">Automation confidence</span>
-                  <span className="inline-flex items-center gap-1 font-semibold text-foreground">
-                    <ShieldCheck className="h-4 w-4 text-primary" /> 97%
-                  </span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16, duration: 0.6 }}>
-          <Card className="neon-card h-full">
-            <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <CardTitle className="text-foreground">User management</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-border/40 text-left text-sm">
-                <thead className="text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="py-3 pr-4">User</th>
-                    <th className="py-3 pr-4">Role</th>
-                    <th className="py-3 pr-4">Status</th>
-                    <th className="py-3 pr-4">Last seen</th>
-                    <th className="py-3 pl-4 text-right">Interactions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {managedUsers.map((entry) => (
-                    <tr key={entry.id} className="text-sm">
-                      <td className="py-3 pr-4 font-medium text-foreground">
-                        <div className="flex flex-col">
-                          <span>{entry.name}</span>
-                          <span className="text-xs text-muted-foreground">{entry.email}</span>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 text-muted-foreground">{entry.role}</td>
-                      <td className="py-3 pr-4">
-                        <Badge
-                          variant="outline"
-                          className={
-                            entry.status === "Active"
-                              ? "border-green-400/40 text-green-400"
-                              : entry.status === "Warning"
-                                ? "border-amber-400/40 text-amber-400"
-                                : "border-red-400/50 text-red-400"
-                          }
-                        >
-                          {entry.status}
-                        </Badge>
-                      </td>
-                      <td className="py-3 pr-4 text-muted-foreground">{entry.lastSeenLabel}</td>
-                      <td className="py-3 pl-4 text-right text-muted-foreground">{formatNumber(entry.interactions)}</td>
-                    </tr>
-                  ))}
-                  {!managedUsers.length && (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-xs text-muted-foreground">
-                        User activity will appear once members interact with the platform.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18, duration: 0.6 }} className="space-y-6">
-          <Card className="neon-card">
-            <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
-                <FilePlus2 className="h-5 w-5 text-primary" />
-                <CardTitle className="text-foreground">Content pipeline</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {pipelineRows.map((item) => (
-                <div key={item.id} className="rounded-lg border border-border/40 bg-background/60 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.kind} · Owned by {item.owner}</p>
+        <TabsContent value="overview">
+          <div className="container space-y-8 py-10">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+              <Card className="neon-card h-full">
+                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-5 w-5 text-primary" />
+                      <CardTitle className="text-foreground">Engagement trajectory</CardTitle>
                     </div>
-                    <Badge variant="outline" className="text-xs font-medium">{item.status ?? `${item.priority} priority`}</Badge>
+                    <p className="text-sm text-muted-foreground">Live overview of platform-wide touchpoints across the past seven days.</p>
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>ETA: {item.eta}</span>
-                    <span className="inline-flex items-center gap-1">
-                      <Eye className="h-3.5 w-3.5" /> {item.priority} focus
+                  <Badge variant="outline" className="text-xs font-medium">
+                    Avg interactions: {formatNumber(averageEngagement)}
+                  </Badge>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="rounded-xl border border-border/40 bg-background/70 p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">Total engagement (weekly)</p>
+                        <p className="text-lg font-semibold text-foreground">{formatNumber(totalTouchpoints)}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="h-2 w-2 rounded-full bg-[var(--primary,#ef4444)]" aria-hidden /> Touchpoints
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <TrendingUp className="h-3.5 w-3.5 text-primary" /> {retentionDeltaLabel} retention delta
+                        </span>
+                      </div>
+                    </div>
+                    {snapshotLoading ? (
+                      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading engagement…
+                      </div>
+                    ) : engagementSparkline.coordinates.length ? (
+                      <div className="mt-6 h-40">
+                        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+                          <defs>
+                            <linearGradient id="adminEngagementFill" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.6" />
+                              <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0.05" />
+                            </linearGradient>
+                          </defs>
+                          <path d={engagementSparkline.areaPath} fill="url(#adminEngagementFill)" opacity="0.55" />
+                          <polyline
+                            points={engagementSparkline.linePoints}
+                            fill="none"
+                            stroke="var(--primary)"
+                            strokeWidth="1.8"
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                          />
+                          {engagementSparkline.coordinates.map((coord, index) => (
+                            <circle
+                              key={`engagement-point-${coord.x}-${index}`}
+                              cx={coord.x}
+                              cy={coord.y}
+                              r={1.6}
+                              fill="var(--primary)"
+                              stroke="var(--background)"
+                              strokeWidth="0.6"
+                            />
+                          ))}
+                        </svg>
+                      </div>
+                    ) : (
+                      <p className="mt-6 text-sm text-muted-foreground">No engagement data yet — come back after the next campaign wave.</p>
+                    )}
+                    <div className="mt-4 flex justify-between text-[11px] uppercase tracking-wide text-muted-foreground">
+                      {weeklyLabels.map((label, index) => {
+                        const shouldShow = index === 0 || index === weeklyLabels.length - 1 || index === Math.floor(weeklyLabels.length / 2);
+                        return (
+                          <span key={`${label}-${index}`} className="min-w-[3ch] text-center">
+                            {shouldShow ? label : ""}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3">
+                      <p className="text-2xl font-semibold text-foreground">{formatNumber(maxInteractions)}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Peak day interactions</p>
+                    </div>
+                    <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3">
+                      <p className="text-2xl font-semibold text-foreground">{formatNumber(likeEvents)}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Likes this week</p>
+                    </div>
+                    <div className="rounded-lg border border-border/50 bg-background/70 px-4 py-3">
+                      <p className="text-2xl font-semibold text-foreground">{formatNumber(saveEvents)}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Saves this week</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 text-xs uppercase tracking-wide text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                    <span>
+                      Views captured: <span className="font-semibold text-foreground">{formatNumber(viewEvents)}</span>
+                    </span>
+                    <span>
+                      Active days: <span className="font-semibold text-foreground">{activeDays}</span>
                     </span>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="px-3"
-                      onClick={() => toast.success(`Sent to QA: ${item.title}`)}
-                    >
-                      Send to QA
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="neon-button px-3"
-                      onClick={() => toast.success(`Published: ${item.title}`)}
-                    >
-                      Publish
-                    </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.5 }}>
+              <Card className="neon-card h-full">
+                <CardHeader className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-foreground">Retention control</CardTitle>
                   </div>
-                </div>
-              ))}
-              {!pipelineRows.length && (
-                <p className="text-sm text-muted-foreground">No content items pulled from the database yet. Populate the backlog to see automation recommendations.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="neon-card">
-            <CardHeader className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Activity className="h-5 w-5 text-primary" />
-                <CardTitle className="text-foreground">System controls</CardTitle>
-              </div>
-              <p className="text-sm text-muted-foreground">Toggle platform-wide automation and safety layers instantly.</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/60 px-3 py-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Maintenance mode</p>
-                  <p className="text-xs text-muted-foreground">Redirect all users to system status page.</p>
-                </div>
-                <Switch
-                  checked={systemFlags.maintenance}
-                  disabled={updatingFlag === "maintenance" || snapshotLoading}
-                  onCheckedChange={(checked) => handleFlagChange("maintenance", checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/60 px-3 py-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Highlight automation</p>
-                  <p className="text-xs text-muted-foreground">Control AI-powered highlight reel generation.</p>
-                </div>
-                <Switch
-                  checked={systemFlags.highlightsAutomation}
-                  disabled={updatingFlag === "highlightsAutomation" || snapshotLoading}
-                  onCheckedChange={(checked) => handleFlagChange("highlightsAutomation", checked)}
-                />
-              </div>
-              <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/60 px-3 py-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">AI anomaly alerts</p>
-                  <p className="text-xs text-muted-foreground">Receive real-time incident notifications.</p>
-                </div>
-                <Switch
-                  checked={systemFlags.aiAlerts}
-                  disabled={updatingFlag === "aiAlerts" || snapshotLoading}
-                  onCheckedChange={(checked) => handleFlagChange("aiAlerts", checked)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="neon-card">
-            <CardHeader className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-primary" />
-              <CardTitle className="text-foreground">Active alerts</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-              {alerts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No alerts triggered. Monitoring continues in the background.</p>
-              ) : (
-                alerts.map((alert, index) => (
-                  <div key={`${alert.title}-${index}`} className="rounded-lg border border-border/40 bg-background/60 px-3 py-3">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-foreground">{alert.title}</p>
-                      <Badge
-                        variant="outline"
-                        className={
-                          alert.severity === "critical"
-                            ? "border-red-400/50 text-red-400"
-                            : alert.severity === "warning"
-                              ? "border-amber-400/50 text-amber-400"
-                              : "border-blue-400/50 text-blue-400"
-                        }
-                      >
-                        {alert.severity}
+                  <p className="text-sm text-muted-foreground">Track cohort stickiness and monitor drop-off risk in real time.</p>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <div className="rounded-xl border border-border/40 bg-background/70 p-5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">VIP cohort retention</span>
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {retentionValues.length ? formatNumber(retentionValues[retentionValues.length - 1]) : "—"}%
                       </Badge>
                     </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{alert.message}</p>
+                    {snapshotLoading ? (
+                      <div className="flex h-28 items-center justify-center text-sm text-muted-foreground">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading retention…
+                      </div>
+                    ) : retentionSparkline.coordinates.length ? (
+                      <div className="mt-4 h-28">
+                        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full">
+                          <defs>
+                            <linearGradient id="retentionFill" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="var(--foreground)" stopOpacity="0.35" />
+                              <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0" />
+                            </linearGradient>
+                          </defs>
+                          <path d={retentionSparkline.areaPath} fill="url(#retentionFill)" opacity="0.8" />
+                          <polyline
+                            points={retentionSparkline.linePoints}
+                            fill="none"
+                            stroke="var(--foreground)"
+                            strokeWidth="1.6"
+                            strokeLinejoin="round"
+                            strokeLinecap="round"
+                            opacity={0.85}
+                          />
+                          {retentionSparkline.coordinates.map((coord, index) => (
+                            <circle
+                              key={`retention-point-${coord.x}-${index}`}
+                              cx={coord.x}
+                              cy={coord.y}
+                              r={1.4}
+                              fill="var(--foreground)"
+                              stroke="var(--background)"
+                              strokeWidth="0.6"
+                              opacity={0.9}
+                            />
+                          ))}
+                        </svg>
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-muted-foreground">Retention analytics will appear once cohorts engage with content.</p>
+                    )}
+                    <div className="mt-3 text-xs text-muted-foreground">
+                      Cohort momentum: <span className="font-semibold text-foreground">{retentionDeltaLabel}</span>
+                    </div>
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-3 text-sm">
+                      <span className="text-muted-foreground">Community escalations</span>
+                      <span className="font-semibold text-foreground">{formatNumber(alerts.length ? alerts.length : 0)} open</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-3 text-sm">
+                      <span className="text-muted-foreground">Creator payout queue</span>
+                      <span className="font-semibold text-foreground">$12.8K ready</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/70 px-3 py-3 text-sm">
+                      <span className="text-muted-foreground">Automation confidence</span>
+                      <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                        <ShieldCheck className="h-4 w-4 text-primary" /> 97%
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div> */}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="users">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <Card className="neon-card">
+              <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-foreground">User management</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-border/40 text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="py-3 pr-4">User</th>
+                      <th className="py-3 pr-4">Role</th>
+                      <th className="py-3 pr-4">Status</th>
+                      <th className="py-3 pr-4">Last seen</th>
+                      <th className="py-3 pl-4 text-right">Interactions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {managedUsers.map((entry) => (
+                      <tr key={entry.id} className="text-sm">
+                        <td className="py-3 pr-4 font-medium text-foreground">
+                          <div className="flex flex-col">
+                            <span>{entry.name}</span>
+                            <span className="text-xs text-muted-foreground">{entry.email}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">{entry.role}</td>
+                        <td className="py-3 pr-4">
+                          <Badge
+                            variant="outline"
+                            className={
+                              entry.status === "Active"
+                                ? "border-green-400/40 text-green-400"
+                                : entry.status === "Warning"
+                                  ? "border-amber-400/40 text-amber-400"
+                                  : "border-red-400/50 text-red-400"
+                            }
+                          >
+                            {entry.status}
+                          </Badge>
+                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">{entry.lastSeenLabel}</td>
+                        <td className="py-3 pl-4 text-right text-muted-foreground">{formatNumber(entry.interactions)}</td>
+                      </tr>
+                    ))}
+                    {!managedUsers.length && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-xs text-muted-foreground">
+                          User activity will appear once members interact with the platform.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+          </motion.div>
+        </TabsContent>
+
+        <TabsContent value="system">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+              <Card className="neon-card h-full">
+                <CardHeader className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-primary" />
+                    <CardTitle className="text-foreground">System controls</CardTitle>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Toggle platform-wide automation and orchestrate downtime windows.</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-4 rounded-lg border border-border/40 bg-background/60 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">Maintenance mode</p>
+                        <p className="text-xs text-muted-foreground">Redirect all users to the status page or schedule upcoming downtime.</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className={`text-xs font-medium ${maintenanceStatusBadge.className}`}>
+                          {maintenanceStatusBadge.label}
+                        </Badge>
+                        <Switch
+                          checked={systemFlags.maintenance}
+                          disabled={updatingFlag === "maintenance" || snapshotLoading}
+                          onCheckedChange={(checked) =>
+                            handleFlagChange("maintenance", checked, {
+                              scheduledFor: maintenanceMetadata.scheduledFor,
+                              message: maintenanceMetadata.message || null,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarClock className="h-3.5 w-3.5 text-primary" /> Next window: {maintenanceStartLabel}
+                      </span>
+                      {maintenanceCountdown && (
+                        <span className="inline-flex items-center gap-1 text-primary">
+                          <Timer className="h-3.5 w-3.5" /> Starts in {maintenanceCountdown}
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-1">
+                        <Bell className="h-3.5 w-3.5 text-primary" /> {maintenanceMetadata.message ? `Banner: "${maintenanceMetadata.message}"` : "No banner message configured"}
+                      </span>
+                    </div>
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_auto]">
+                      <div className="space-y-1">
+                        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Start time</Label>
+                        <Input
+                          type="datetime-local"
+                          value={toLocalInputValue(maintenanceForm.scheduledFor)}
+                          onChange={(event) =>
+                            setMaintenanceForm((prev) => ({
+                              ...prev,
+                              scheduledFor: fromLocalInputValue(event.target.value),
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs uppercase tracking-wide text-muted-foreground">Banner message</Label>
+                        <textarea
+                          value={maintenanceForm.message}
+                          onChange={(event) =>
+                            setMaintenanceForm((prev) => ({
+                              ...prev,
+                              message: event.target.value,
+                            }))
+                          }
+                          className="min-h-[96px] w-full rounded-md border border-border/50 bg-background/80 p-3 text-sm text-foreground outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/30"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <Button
+                          onClick={handleMaintenanceSchedule}
+                          disabled={maintenanceSaving || snapshotLoading}
+                          className="neon-button w-full sm:w-auto"
+                        >
+                          {maintenanceSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Save schedule
+                        </Button>
+                      </div>
+                    </div>
+                    {systemFlags.maintenance && (
+                      <div className="rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                        Maintenance mode is active. Users are currently routed to the status experience.
+                      </div>
+                    )}
+                    {!systemFlags.maintenance && upcomingMaintenance && (
+                      <div className="rounded-md border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                        Scheduled maintenance banner will be shown to all users until the window begins.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/60 px-3 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Highlight automation</p>
+                        <p className="text-xs text-muted-foreground">Control AI-powered highlight reel generation.</p>
+                      </div>
+                      <Switch
+                        checked={systemFlags.highlightsAutomation}
+                        disabled={updatingFlag === "highlightsAutomation" || snapshotLoading}
+                        onCheckedChange={(checked) => handleFlagChange("highlightsAutomation", checked)}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg border border-border/40 bg-background/60 px-3 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">AI anomaly alerts</p>
+                        <p className="text-xs text-muted-foreground">Receive real-time incident notifications.</p>
+                      </div>
+                      <Switch
+                        checked={systemFlags.aiAlerts}
+                        disabled={updatingFlag === "aiAlerts" || snapshotLoading}
+                        onCheckedChange={(checked) => handleFlagChange("aiAlerts", checked)}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="neon-card h-full">
+                <CardHeader className="flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-foreground">Active alerts</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {alerts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No alerts triggered. Monitoring continues in the background.</p>
+                  ) : (
+                    alerts.map((alert, index) => (
+                      <div key={`${alert.title}-${index}`} className="rounded-lg border border-border/40 bg-background/60 px-3 py-3">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium text-foreground">{alert.title}</p>
+                          <Badge
+                            variant="outline"
+                            className={
+                              alert.severity === "critical"
+                                ? "border-red-400/50 text-red-400"
+                                : alert.severity === "warning"
+                                  ? "border-amber-400/50 text-amber-400"
+                                  : "border-blue-400/50 text-blue-400"
+                            }
+                          >
+                            {alert.severity}
+                          </Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{alert.message}</p>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </motion.div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

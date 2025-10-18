@@ -488,7 +488,6 @@ export default function OnboardingPage() {
             ensureTeamLogos(fallbackOptions.map(option => option.name));
           }
         } else {
-          const normalizedNames = names.map(name => normalize(name));
           let logoMap: Record<string, string> = {};
           try {
             const { data: cached } = await supabase
@@ -783,7 +782,7 @@ export default function OnboardingPage() {
                         </div>
                         <div className="flex items-center justify-end">
                           <Button size="lg" onClick={goNext} className="gap-2">
-                            Let's go
+                            Let&apos;s go
                             <ArrowRight className="h-4 w-4" />
                           </Button>
                         </div>
