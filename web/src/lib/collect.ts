@@ -81,9 +81,23 @@ export async function listEvents(args: { leagueName?: string; teamName?: string;
   return postCollect<{ events?: DataObject[] }>("events.list", cleanArgs);
 }
 
-/** League table/details */
-export async function getLeagueTable(leagueName: string) {
-  return postCollect<{ table?: DataObject[]; league?: DataObject }>("league.table", { leagueName: sanitizeInput(leagueName) });
+/** League table/details - supports both leagueId and leagueName like the old implementation */
+export async function getLeagueTable(args: { leagueId?: string; leagueName?: string; season?: string }) {
+  const payload: Record<string, Json> = {};
+
+  if (args.leagueId) {
+    payload.leagueId = sanitizeInput(String(args.leagueId));
+  } else if (args.leagueName) {
+    payload.leagueName = sanitizeInput(args.leagueName);
+  } else {
+    throw new Error("leagueId or leagueName is required");
+  }
+
+  if (args.season) {
+    payload.season = sanitizeInput(args.season);
+  }
+
+  return postCollect<{ table?: DataObject[]; result?: DataObject[]; total?: DataObject[]; standings?: DataObject[]; rows?: DataObject[]; league_table?: DataObject[] }>("league.table", payload);
 }
 
 /** Single match details */
@@ -165,7 +179,7 @@ export async function getH2HByTeams(teamA: string, teamB: string, lookback = 10)
 
 export async function getForm(teamId: string, lookback = 5) {
   const u = new URL("/api/analysis/form", window.location.origin);
-  u.searchParams.set("eventId", teamId);
+  u.searchParams.set("teamId", teamId);
   u.searchParams.set("lookback", String(lookback));
   const r = await fetch(u.toString());
   return r.json();

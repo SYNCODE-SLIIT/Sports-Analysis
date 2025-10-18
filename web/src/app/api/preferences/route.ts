@@ -1,12 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '@/lib/supabase/server';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = await getSupabaseServerClient();
   try {
-    // rely on supabase auth cookie/session being present in server context
-    const { data: user } = await supabase.auth.getUser();
-    const userId = user?.data?.user?.id;
+  // rely on supabase auth cookie/session being present in server context
+  const { data } = await supabase.auth.getUser();
+  const userId = data?.user?.id;
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     // fetch preferences
@@ -24,9 +24,9 @@ export async function GET(req: NextRequest) {
     // fill from cached_ tables for any missing logos
     const missingTeamNames = teams.filter(t => !teamLogos[t] || teamLogos[t] === '');
     if (missingTeamNames.length) {
-      const { data: rows } = await supabase.from('cached_teams').select('name, logo').in('name', missingTeamNames as any);
+      const { data: rows } = await supabase.from('cached_teams').select('name, logo').in('name', missingTeamNames as unknown[]);
       if (Array.isArray(rows)) {
-        for (const r of rows) {
+        for (const r of rows as Array<Record<string, unknown>>) {
           if (r?.name && r?.logo) teamLogos[String(r.name)] = String(r.logo);
         }
       }
@@ -34,9 +34,9 @@ export async function GET(req: NextRequest) {
 
     const missingLeagueNames = leagues.filter(l => !leagueLogos[l] || leagueLogos[l] === '');
     if (missingLeagueNames.length) {
-      const { data: rows } = await supabase.from('cached_leagues').select('name, logo').in('name', missingLeagueNames as any);
+      const { data: rows } = await supabase.from('cached_leagues').select('name, logo').in('name', missingLeagueNames as unknown[]);
       if (Array.isArray(rows)) {
-        for (const r of rows) {
+        for (const r of rows as Array<Record<string, unknown>>) {
           if (r?.name && r?.logo) leagueLogos[String(r.name)] = String(r.logo);
         }
       }
