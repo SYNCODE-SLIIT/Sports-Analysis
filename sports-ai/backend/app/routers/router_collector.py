@@ -24,6 +24,7 @@ from ..adapters.allsports_adapter import AllSportsAdapter
 ## Agents
 from ..agents.analysis_agent import AnalysisAgent
 from ..agents.collector_agent import AllSportsRawAgent
+from ..agents.highlight_agent import HighlightAgent
 from ..services.news_feed import LeagueNewsService, LeagueNewsError
 
 class RouterError(Exception):
@@ -210,6 +211,7 @@ class RouterCollector:
             tsdb_agent=None,              # TSDBAdapter exposes .call, not .handle
             all_sports_agent=self.allsports,
         )
+        self.highlight = HighlightAgent(self.asapi, self.tsdb)
         # News service (fetches from configured news provider)
         try:
             self.news = LeagueNewsService()
@@ -310,6 +312,28 @@ class RouterCollector:
                 if lookback is not None:
                     call_args["lookback"] = lookback
                 resp = self.analysis.handle("analysis.h2h", call_args)
+                return resp
+
+            elif intent in ("video.highlights", "highlights.video"):
+                merged_args = dict(args or {})
+                try:
+                    normalized_event = self._normalize_event_id(merged_args)
+                    if normalized_event:
+                        merged_args.setdefault("eventId", normalized_event)
+                except Exception:
+                    pass
+                resp = self.highlight.handle(intent, merged_args)
+                return resp
+
+            elif intent in ("highlight.timeline", "timeline.highlight"):
+                merged_args = dict(args or {})
+                try:
+                    normalized_event = self._normalize_event_id(merged_args)
+                    if normalized_event:
+                        merged_args.setdefault("eventId", normalized_event)
+                except Exception:
+                    pass
+                resp = self.highlight.handle(intent, merged_args)
                 return resp
 
             # league news intent -> use the news service if available

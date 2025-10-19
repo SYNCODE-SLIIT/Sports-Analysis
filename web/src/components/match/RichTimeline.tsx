@@ -3,10 +3,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from 'react-dom';
 import { useTheme } from "next-themes";
-import { getEventBrief, postCollect, getComments } from "@/lib/collect";
+import { getEventBrief, getMatchTimeline, postCollect, getComments } from "@/lib/collect";
 import { summarizeEventBriefs } from "@/lib/summarizer";
 import { resolvePlayerImageByName, resolvePlayerImageFromObj, getTeamRoster } from "@/lib/roster";
 import type { TLItem } from "@/lib/match-mappers";
@@ -16,7 +16,8 @@ type BasicRecord = Record<string, unknown>;
 type TeamContext = { home?: BasicRecord | null; away?: BasicRecord | null } | null;
 type PlayersContext = { home: BasicRecord[]; away: BasicRecord[] } | null;
 type Props = {
-  items: TLItem[];
+  eventId?: string;
+  items?: TLItem[];
   homeTeam?: string;
   awayTeam?: string;
   // optional context to resolve player photos / team logos
@@ -44,6 +45,61 @@ const toNumberSafe = (value: unknown): number | undefined => {
   if (typeof value === "string") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const EVENT_ID_KEYS = [
+  "eventId",
+  "event_id",
+  "matchId",
+  "fixture_id",
+  "event_key",
+  "idEvent",
+  "idAPIfootball",
+  "id",
+];
+
+const ALLOWED_TYPES: TLItem["type"][] = ["goal", "own_goal", "pen_miss", "pen_score", "yellow", "red", "sub", "ht", "ft"];
+const ALLOWED_TYPES_SET = new Set<string>(ALLOWED_TYPES);
+
+const sanitizeTimelineItems = (value: unknown): TLItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+    .map((entry) => {
+      const minuteRaw = entry.minute ?? entry["minute_display"];
+      const minute = typeof minuteRaw === "number" && Number.isFinite(minuteRaw)
+        ? minuteRaw
+        : toMinuteNumber(typeof minuteRaw === "string" ? minuteRaw : undefined) || 0;
+
+      const teamValue = (entry.team ?? entry.side ?? entry["team_side"] ?? "home") as unknown;
+      const team = typeof teamValue === "string" && teamValue.toLowerCase().includes("away") ? "away" : "home";
+
+      const typeValue = String(entry.type ?? "").toLowerCase();
+      const type = ALLOWED_TYPES_SET.has(typeValue) ? (typeValue as TLItem["type"]) : "goal";
+
+      const playerRaw = entry.player ?? entry.player_name ?? entry.playerName;
+      const player = typeof playerRaw === "string" && playerRaw.trim() ? playerRaw.trim() : undefined;
+
+      const assistRaw = entry.assist ?? entry.assist_name ?? entry.player_out ?? entry.out_player;
+      const assist = typeof assistRaw === "string" && assistRaw.trim() ? assistRaw.trim() : undefined;
+
+      const noteRaw = entry.note ?? entry.info ?? entry.reason ?? entry.detail;
+      const note = typeof noteRaw === "string" && noteRaw.trim() ? noteRaw.trim() : undefined;
+
+      return { minute, team, type, player, assist, note };
+    });
+};
+
+const resolveEventId = (eventId?: string, raw?: BasicRecord | null): string | undefined => {
+  if (eventId && eventId.trim()) return eventId;
+  const record = toRecord(raw);
+  if (!record) return undefined;
+  for (const key of EVENT_ID_KEYS) {
+    const value = record[key as keyof typeof record];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
   }
   return undefined;
 };
@@ -177,7 +233,7 @@ function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>) {
   return w;
 }
 
-export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, players, teams }: Props) {
+export default function RichTimeline({ eventId: eventIdProp, items: initialItems, homeTeam, awayTeam, matchRaw, players, teams }: Props) {
   const { resolvedTheme } = useTheme();
   const prefersDark = useMemo(() => {
     if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -188,6 +244,36 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     }
   }, []);
   const isDark = resolvedTheme ? resolvedTheme === "dark" : prefersDark;
+
+  const [agentItems, setAgentItems] = useState<TLItem[] | null>(null);
+  const resolvedEventId = useMemo(() => resolveEventId(eventIdProp, matchRaw), [eventIdProp, matchRaw]);
+  const initialSanitized = useMemo(() => sanitizeTimelineItems(initialItems ?? []), [initialItems]);
+  const timelineItems = agentItems ?? initialSanitized;
+
+  useEffect(() => {
+    if (!resolvedEventId) {
+      setAgentItems(null);
+      return;
+    }
+    setAgentItems(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await getMatchTimeline(resolvedEventId);
+        const payload = (resp?.data?.items ?? resp?.data?.timeline) as unknown;
+        const sanitized = sanitizeTimelineItems(payload);
+        if (!cancelled) setAgentItems(sanitized.length ? sanitized : null);
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[RichTimeline] highlight agent fetch failed", err);
+        }
+        if (!cancelled) setAgentItems(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedEventId]);
 
   const surfaceStyles = useMemo(() => {
     if (isDark) {
@@ -205,7 +291,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
 
   // Ensure we always have at least HT/FT anchors so the track is meaningful
   const baseItems = useMemo<TLItem[]>(() => {
-    const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+    const arr = Array.isArray(timelineItems) ? timelineItems.filter(Boolean) : [];
     if (!arr.length) {
       // Add some test events for demonstration
       return [
@@ -217,7 +303,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
       ];
     }
     return arr;
-  }, [items]);
+  }, [timelineItems]);
 
   const cleaned = useMemo(() => baseItems.slice().sort((a, b) => a.minute - b.minute), [baseItems]);
 
@@ -229,10 +315,10 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     // Helpful debug: print provided raw match payload and context so we can map fields
     if (process.env.NODE_ENV !== 'production') {
       try {
-        console.debug('[RichTimeline] debug', { matchRaw, items, players, teams });
+        console.debug('[RichTimeline] debug', { eventId: resolvedEventId, matchRaw, timelineItems, players, teams });
       } catch {}
     }
-  }, [matchRaw, items, players, teams]);
+  }, [resolvedEventId, matchRaw, timelineItems, players, teams]);
 
   // Pre-warm roster cache for home/away teams when match loads
   useEffect(() => {
@@ -270,7 +356,98 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
 
   // Simple hover tooltip
   const [tooltip, setTooltip] = useState<{ x: number; y: number; html: string; above?: boolean } | null>(null);
-  
+  const tooltipRef = useRef<{ x: number; y: number; html: string; above?: boolean } | null>(null);
+  const suppressedUntilRef = useRef(0);
+
+  useEffect(() => {
+    tooltipRef.current = tooltip;
+  }, [tooltip]);
+
+  const hideTooltip = useCallback((suppressDuration = 0) => {
+    if (suppressDuration > 0) {
+      suppressedUntilRef.current = Date.now() + suppressDuration;
+    }
+    tooltipRef.current = null;
+    setTooltip(null);
+  }, []);
+
+  const handleTooltipShow = useCallback(
+    (html: string, ev: MouseEvent | React.MouseEvent) => {
+      if (Date.now() < suppressedUntilRef.current) return;
+
+      const anyEv = ev as any;
+      const getRect = (): DOMRect | null => {
+        try {
+          if (anyEv?.currentTarget && typeof anyEv.currentTarget.getBoundingClientRect === "function") {
+            return anyEv.currentTarget.getBoundingClientRect();
+          }
+          if (anyEv?.target && typeof anyEv.target.getBoundingClientRect === "function") {
+            return anyEv.target.getBoundingClientRect();
+          }
+        } catch {
+          return null;
+        }
+        return null;
+      };
+
+      const rect = typeof window !== "undefined" ? getRect() : null;
+      if (rect && rect.width) {
+        const centerX = rect.left + rect.width / 2;
+        const showAbove = rect.top > 160;
+        const baseY = showAbove ? rect.top : rect.bottom;
+        const nextTooltip = { x: Math.round(centerX), y: Math.round(baseY), html, above: showAbove };
+        tooltipRef.current = nextTooltip;
+        setTooltip(nextTooltip);
+        return;
+      }
+
+      if (typeof window === "undefined") return;
+      const mx = (anyEv?.clientX ?? window.innerWidth / 2) + 8;
+      const my = (anyEv?.clientY ?? window.innerHeight / 3) - 10;
+      const nextTooltip = { x: mx, y: my, html, above: true } as const;
+      tooltipRef.current = nextTooltip;
+      setTooltip(nextTooltip);
+    },
+    [],
+  );
+
+  const handleTooltipHide = useCallback(() => hideTooltip(), [hideTooltip]);
+
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    let raf = 0;
+    const handleScroll = () => {
+      suppressedUntilRef.current = Date.now() + 400;
+      if (tooltipRef.current) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = window.requestAnimationFrame(() => hideTooltip());
+      }
+    };
+    scroller.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", handleScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [hideTooltip]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let raf = 0;
+    const handleWindowScroll = () => {
+      suppressedUntilRef.current = Date.now() + 400;
+      if (tooltipRef.current) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = window.requestAnimationFrame(() => hideTooltip());
+      }
+    };
+    window.addEventListener("scroll", handleWindowScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleWindowScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [hideTooltip]);
+
 
 
   // If the passed timeline is effectively empty (only HT/FT anchors), try to synthesize from raw match data
@@ -591,10 +768,10 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               {/* away logo removed per user request */}
           {/* Sparse ticks for 0,45,90(+ET) rendered on baseline */}
           {[0, 45, 90].map((t) => (
-            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}&apos;`} isDark={isDark} />
+            <Tick key={t} x={tickX(t, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(t)}\u0027`} isDark={isDark} />
           ))}
           {maxMinute > 90 && (
-            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}&apos;`} isDark={isDark} />
+            <Tick x={tickX(maxMinute, allClusters, positions.xs, cfg)} label={`${formatMinuteLabel(maxMinute)}\u0027`} isDark={isDark} />
           )}
 
           {/* Markers per cluster */}
@@ -602,7 +779,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
             const cx = positions.xs[i];
             const showLabel = true;
             return (
-        <Cluster
+    <Cluster
               key={`c-${c.minute}-${i}`}
               x={cx}
               minute={c.minute}
@@ -618,37 +795,8 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
               sessionPrefix={sessionPrefix}
               showLabel={showLabel}
           isDark={isDark}
-              onHover={(html, ev) => {
-                // Prefer to position tooltip relative to the hovered element's bounding rect
-                const anyEv = ev as any;
-                const getRect = (): DOMRect | null => {
-                  try {
-                    if (anyEv && anyEv.currentTarget && typeof anyEv.currentTarget.getBoundingClientRect === 'function') {
-                      return anyEv.currentTarget.getBoundingClientRect();
-                    }
-                    if (anyEv && anyEv.target && typeof anyEv.target.getBoundingClientRect === 'function') {
-                      return anyEv.target.getBoundingClientRect();
-                    }
-                  } catch {
-                    return null;
-                  }
-                  return null;
-                };
-                const rect = getRect();
-                if (rect && rect.width) {
-                  const centerX = rect.left + rect.width / 2;
-                  // If there's enough space above the element, show above; otherwise below
-                  const showAbove = rect.top > 160;
-                  const baseY = showAbove ? rect.top : rect.bottom;
-                  setTooltip({ x: Math.round(centerX), y: Math.round(baseY), html, above: showAbove });
-                } else {
-                  // Fallback to mouse coords
-                  const mx = (ev as any)?.clientX ?? (window.innerWidth / 2);
-                  const my = (ev as any)?.clientY ?? (window.innerHeight / 3);
-                  setTooltip({ x: mx + 8, y: my - 10, html, above: true });
-                }
-              }}
-              onLeave={() => setTooltip(null)}
+              onHover={handleTooltipShow}
+              onLeave={handleTooltipHide}
             />
             );
           })}
@@ -677,7 +825,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
                     )}
                     style={{ backdropFilter: "blur(6px)" }}
                     >
-                    {formatMinuteLabel(c.minute)}&apos;
+                    {`${formatMinuteLabel(c.minute)}\u0027`}
                   </div>
                 </div>
               );
@@ -916,7 +1064,7 @@ function Cluster({ x, minute, group, onHover, onLeave, findPlayerImage, findTeam
       ? `<div style="margin-top:12px;color:#94a3b8;font-size:14px;font-style:italic"><em>Loading details…</em></div>` 
       : (brief ? `<div style="margin-top:12px;color:#e2e8f0;font-size:14px;line-height:1.5;padding:12px;background:rgba(30,41,59,0.5);border-radius:8px;border-left:3px solid #3b82f6">${escapeHtml(brief)}</div>` : '');
     
-  const finalHtml = `<div style="color:white"><div style="font-weight:700;margin-bottom:12px;font-size:18px;color:#f1f5f9;text-shadow:0 2px 4px rgba(0,0,0,0.8)">${formatMinuteLabel(minute)}&apos;</div>${rows}${briefHtml}</div>`;
+  const finalHtml = `<div style="color:white"><div style="font-weight:700;margin-bottom:12px;font-size:18px;color:#f1f5f9;text-shadow:0 2px 4px rgba(0,0,0,0.8)">${formatMinuteLabel(minute)}'</div>${rows}${briefHtml}</div>`;
     return finalHtml;
   };
 

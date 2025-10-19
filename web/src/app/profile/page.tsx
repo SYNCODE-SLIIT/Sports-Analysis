@@ -203,6 +203,18 @@ const resolveLogoFromMap = (name: string, map: Record<string, string>): string |
   }
   return undefined;
 };
+    const pickString = (entry: Record<string, unknown> | null | undefined, keys: string[]): string | null => {
+      if (!entry) return null;
+      for (const key of keys) {
+        const value = entry[key];
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          if (trimmed) return trimmed;
+        }
+      }
+      return null;
+    };
+
 
 const initialsFromName = (value: string): string => {
   const trimmed = value.trim();
@@ -245,6 +257,7 @@ type ItemDetails = {
   data?: Record<string, unknown> | null;
   teams?: string[] | null;
   leagues?: string[] | null;
+  kind?: string | null;
 };
 
 type RecentView = {
@@ -254,6 +267,9 @@ type RecentView = {
   title: string;
   eventId: string | null;
   teams: string[];
+  leagues: string[];
+  primaryLeague: string | null;
+  kind: string | null;
 };
 
 type InteractionEvent = {
@@ -708,7 +724,7 @@ export default function ProfilePage() {
       try {
         const { data, error } = await supabase
           .from("user_interactions")
-          .select("item_id, event, created_at, items:items(title, data, teams, leagues)")
+          .select("item_id, event, created_at, items:items(title, kind, data, teams, leagues)")
           .eq("user_id", user.id)
           .in("event", ["view", "click"])
           .order("created_at", { ascending: false })
@@ -735,6 +751,24 @@ export default function ProfilePage() {
           const teams = Array.isArray(details?.teams)
             ? (details?.teams as unknown[]).map((team) => String(team ?? "").trim()).filter(Boolean)
             : [];
+          const leagues = Array.isArray(details?.leagues)
+            ? (details?.leagues as unknown[]).map((league) => String(league ?? "").trim()).filter(Boolean)
+            : [];
+          const detailKind = typeof details?.kind === "string" ? details.kind : null;
+          const rawKind = rawData && typeof rawData["kind"] === "string" ? (rawData["kind"] as string) : null;
+          const kind = detailKind ?? rawKind ?? null;
+          const leagueFromData = pickString(rawData, [
+            "league",
+            "league_name",
+            "leagueName",
+            "competition",
+            "competition_name",
+            "competitionName",
+            "league_display_name",
+            "leagueDisplayName",
+          ]);
+          const primaryLeagueCandidate = leagueFromData || leagues[0] || (kind === "league" && typeof details?.title === "string" ? details.title.trim() : "");
+          const primaryLeague = primaryLeagueCandidate ? primaryLeagueCandidate : null;
           const titleCandidate = typeof details?.title === "string" ? details?.title.trim() : "";
           const title = titleCandidate || (teams.length ? teams.join(" vs ") : "Match insight");
           mapped.push({
@@ -744,6 +778,9 @@ export default function ProfilePage() {
             title,
             eventId,
             teams,
+            leagues,
+            primaryLeague,
+            kind,
           });
         });
         if (!active) return;
@@ -1220,11 +1257,18 @@ export default function ProfilePage() {
                   {recentViews.map((view) => {
                     const relative = formatRelativeTime(view.viewedAt);
                     const metaPieces: string[] = [];
-                    if (view.teams.length) metaPieces.push(view.teams.join(" • "));
+                    const primarySubject = view.teams.length
+                      ? view.teams.join(" • ")
+                      : view.primaryLeague ?? (view.leagues.length ? view.leagues.join(" • ") : "");
+                    if (primarySubject) metaPieces.push(primarySubject);
                     if (relative) metaPieces.push(relative);
                     if (view.event && view.event !== "view") metaPieces.push(view.event);
                     const subtitle = metaPieces.join(" • ");
-                    const href = view.eventId ? `/match/${encodeURIComponent(view.eventId)}?src=profile_recent` : null;
+                    const href = view.eventId
+                      ? `/match/${encodeURIComponent(view.eventId)}?src=profile_recent`
+                      : view.primaryLeague
+                        ? `/leagues?league=${encodeURIComponent(view.primaryLeague)}&src=profile_recent`
+                        : null;
                     return (
                       <li
                         key={`${view.itemId}-${view.viewedAt}`}
