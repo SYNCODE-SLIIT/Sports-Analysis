@@ -18,13 +18,13 @@ export async function POST(req: Request) {
     }
     const text = await r.text();
     return new Response(text, { status: r.status, headers: { 'Content-Type': 'application/json' } });
-  } catch (e) {
+  } catch {
     // Network error on primary; attempt fallback
     try {
       const r2 = await tryFetch(baseFallback);
       const text2 = await r2.text();
       return new Response(text2, { status: r2.status, headers: { 'Content-Type': 'application/json' } });
-    } catch (e2) {
+    } catch {
       return new Response(JSON.stringify({ ok: false, error: 'summarizer backend unreachable' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
     }
   }
