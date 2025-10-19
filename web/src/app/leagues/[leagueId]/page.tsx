@@ -13,6 +13,7 @@ import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
 import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 import LeagueStatistics from "@/components/league/LeagueStatistics";
 
+
 type LeagueListEntry = {
   id?: string;
   name: string;
@@ -164,10 +165,10 @@ const extractLeagueEntries = (raw: unknown): LeagueListEntry[] => {
     const obj = value as Record<string, unknown>;
     const name = pickFirstString(obj, ["league_name", "name", "league", "strLeague"]);
     if (!name) return null;
-    const id =
-      pickFirstString(obj, ["league_id", "league_key", "idLeague", "id", "key"])?.toLowerCase() ??
-      name.toLowerCase();
-    const country = pickFirstString(obj, ["country_name", "country", "nation", "strCountry"]);
+    const idCandidate = pickFirstString(obj, ["league_id", "league_key", "idLeague", "id", "key"]);
+    const id = idCandidate ? idCandidate.trim().toLowerCase() : name.toLowerCase();
+    const countryRaw = pickFirstString(obj, ["country_name", "country", "nation", "strCountry"]);
+    const country = countryRaw ? countryRaw.trim() : undefined;
     const leagueLogo = pickFirstString(obj, [
       "league_logo",
       "league_logo_url",
@@ -203,16 +204,108 @@ const extractLeagueEntries = (raw: unknown): LeagueListEntry[] => {
   return entries;
 };
 
-const matchLeagueEntry = (entries: LeagueListEntry[], targetId?: string, targetName?: string): LeagueListEntry | null => {
-  if (!entries.length) return null;
-  const normalizedId = targetId?.toLowerCase();
-  const normalizedName = targetName?.toLowerCase();
+const normalizeString = (value: string | undefined | null): string => (value ?? "").trim().toLowerCase();
 
-  return (
-    entries.find(entry => (normalizedId && entry.id?.toLowerCase() === normalizedId) || (normalizedName && entry.name.toLowerCase() === normalizedName)) ??
-    entries.find(entry => (normalizedId && entry.id?.includes(normalizedId)) || (normalizedName && entry.name.toLowerCase().includes(normalizedName))) ??
-    entries[0]
+const buildEntryIdentityKey = (entry: LeagueListEntry): string =>
+  [normalizeString(entry.id), normalizeString(entry.name), normalizeString(entry.country)].join("|");
+
+const matchLeagueEntry = (
+  entries: LeagueListEntry[],
+  options: {
+    providerId?: string;
+    slugId?: string;
+    targetName?: string;
+    targetCountry?: string;
+    identityKey?: string;
+  } = {}
+): LeagueListEntry | null => {
+  if (!entries.length) return null;
+  const normalizedIdentity = normalizeString(options.identityKey);
+  if (normalizedIdentity) {
+    const byIdentity = entries.find(entry => buildEntryIdentityKey(entry) === normalizedIdentity);
+    if (byIdentity) return byIdentity;
+  }
+
+  const normalizedProviderId = normalizeString(options.providerId);
+  const normalizedSlugId = normalizeString(options.slugId);
+  const normalizedName = normalizeString(options.targetName);
+  const normalizedCountry = normalizeString(options.targetCountry);
+
+  let slugName: string | undefined;
+  let slugCountry: string | undefined;
+  if (normalizedSlugId) {
+    if (normalizedSlugId.includes("::")) {
+      const [slugNamePart, slugCountryPart] = normalizedSlugId.split("::");
+      slugName = slugNamePart || undefined;
+      slugCountry = slugCountryPart || undefined;
+    } else if (!normalizedProviderId) {
+      slugName = normalizedSlugId;
+    }
+  }
+
+  const candidateCountries = new Set<string>();
+  if (normalizedCountry) candidateCountries.add(normalizedCountry);
+  if (slugCountry) candidateCountries.add(slugCountry);
+
+  const nameCandidates = [normalizedName, slugName].filter(Boolean) as string[];
+  const idCandidates = [normalizedProviderId].filter(Boolean) as string[];
+  if (normalizedSlugId) idCandidates.push(normalizedSlugId);
+
+  const countryMatches = (entry: LeagueListEntry) => {
+    if (!candidateCountries.size) return true;
+    const entryCountry = normalizeString(entry.country);
+    return candidateCountries.has(entryCountry);
+  };
+
+  const tryFind = (predicate: (entry: LeagueListEntry) => boolean) => entries.find(predicate);
+
+  const idExact = tryFind(
+    entry => idCandidates.some(candidate => candidate === normalizeString(entry.id)) && countryMatches(entry)
   );
+  if (idExact) return idExact;
+
+  if (idCandidates.length) {
+    const idExactFallback = tryFind(entry => idCandidates.some(candidate => candidate === normalizeString(entry.id)));
+    if (idExactFallback) return idExactFallback;
+  }
+
+  const nameExact = tryFind(
+    entry => nameCandidates.some(candidate => candidate === normalizeString(entry.name)) && countryMatches(entry)
+  );
+  if (nameExact) return nameExact;
+
+  if (nameCandidates.length) {
+    const nameExactFallback = tryFind(entry => nameCandidates.some(candidate => candidate === normalizeString(entry.name)));
+    if (nameExactFallback) return nameExactFallback;
+  }
+
+  const idPartial = tryFind(
+    entry =>
+      idCandidates.some(candidate => normalizeString(entry.id).includes(candidate)) && countryMatches(entry)
+  );
+  if (idPartial) return idPartial;
+
+  if (idCandidates.length) {
+    const idPartialFallback = tryFind(entry =>
+      idCandidates.some(candidate => normalizeString(entry.id).includes(candidate))
+    );
+    if (idPartialFallback) return idPartialFallback;
+  }
+
+  const namePartial = tryFind(
+    entry =>
+      nameCandidates.some(candidate => normalizeString(entry.name).includes(candidate)) && countryMatches(entry)
+  );
+  if (namePartial) return namePartial;
+
+  if (nameCandidates.length) {
+    const namePartialFallback = tryFind(entry =>
+      nameCandidates.some(candidate => normalizeString(entry.name).includes(candidate))
+    );
+    if (namePartialFallback) return namePartialFallback;
+  }
+
+  return entries[0];
 };
 
 const parseSeasons = (
@@ -309,12 +402,23 @@ const computeLastUpdated = (rows: StandingRow[]): string | undefined => {
 
 export default function LeagueDetailPage() {
   const { leagueId } = useParams<{ leagueId: string }>();
+  const decodedLeagueId = leagueId ? decodeURIComponent(leagueId) : "";
   const searchParams = useSearchParams();
   const initialNameParam = searchParams?.get("name") ?? "";
-  const providerLeagueId = leagueId && /^\d+$/.test(leagueId) ? leagueId : undefined;
+  const initialCountryParam = searchParams?.get("country") ?? "";
+  const identityKeyParam = searchParams?.get("key") ?? "";
+  const providerOverrideParam = searchParams?.get("providerId") ?? "";
+  const providerLeagueId = providerOverrideParam?.trim()
+    ? providerOverrideParam.trim()
+    : decodedLeagueId && /^\d+$/.test(decodedLeagueId)
+      ? decodedLeagueId
+      : undefined;
+  const slugIdentifier = providerLeagueId ? undefined : decodedLeagueId || undefined;
 
   const [leagueName, setLeagueName] = useState<string>(initialNameParam);
-  const [heroInfo, setHeroInfo] = useState<LeagueHeroInfo | null>(initialNameParam ? { name: initialNameParam } : null);
+  const [heroInfo, setHeroInfo] = useState<LeagueHeroInfo | null>(
+    initialNameParam ? { name: initialNameParam, country: initialCountryParam || undefined } : null
+  );
   const [infoError, setInfoError] = useState<string | null>(null);
 
   const [standingsLoading, setStandingsLoading] = useState<boolean>(false);
@@ -345,7 +449,13 @@ export default function LeagueDetailPage() {
           const fallback = (await postCollect("leagues.list", {})) as ProviderResponse;
           entries = extractLeagueEntries(fallback?.data);
         }
-        const match = matchLeagueEntry(entries, providerLeagueId, initialNameParam || leagueName);
+        const match = matchLeagueEntry(entries, {
+          providerId: providerLeagueId,
+          slugId: slugIdentifier,
+          targetName: initialNameParam || leagueName,
+          targetCountry: initialCountryParam,
+          identityKey: identityKeyParam,
+        });
         if (!match || cancelled) return;
         if (!leagueName && match.name) setLeagueName(match.name);
         setHeroInfo(prev => mergeHeroInfo(prev, { name: match.name, country: match.country, leagueLogo: match.leagueLogo, countryLogo: match.countryLogo, alternateNames: match.aliases }));
@@ -356,7 +466,7 @@ export default function LeagueDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [providerLeagueId, initialNameParam, leagueName]);
+  }, [providerLeagueId, initialNameParam, leagueName, slugIdentifier, initialCountryParam, identityKeyParam]);
 
   // ---- Detailed league info (TSDB lookupleague) ----
   
