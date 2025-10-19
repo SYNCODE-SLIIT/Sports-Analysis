@@ -9,7 +9,7 @@ from .routers.chatbot import router as chatbot_router
 from .services.highlight_search import search_event_highlights
 from .services.nl_search import parse_nl_query
 from .agents.analysis_agent import AnalysisAgent
-from .agents.game_analytics_agent import AllSportsRawAgent
+from .agents.collector_agent import AllSportsRawAgent
 
 app = FastAPI(title="Sports Collector HM (Unified)", version="0.3.0")
 

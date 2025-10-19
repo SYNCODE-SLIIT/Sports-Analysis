@@ -13,7 +13,7 @@ Intents:
   - analysis.match_insights (eventId)
 
 Data source:
-  - self.sports: AllSportsRawAgent (from game_analytics_agent.py)
+  - self.sports: AllSportsRawAgent (from collector_agent.py)
 
 Response envelope matches existing agents:
   {
