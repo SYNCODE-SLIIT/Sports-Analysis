@@ -136,8 +136,16 @@ export async function getMatchTimeline(eventId: string, opts?: { eventRaw?: Data
 }
 
 /** Highlights for a match */
-export async function getHighlights(eventId: string) {
-  return postCollect<{ videos?: DataObject[] }>("video.highlights", { eventId: String(eventId) });
+export async function getHighlights(
+  eventId: string,
+  opts?: { eventRaw?: DataObject; homeTeam?: string; awayTeam?: string; date?: string }
+) {
+  const payload: Record<string, Json> = { eventId: String(eventId) };
+  if (opts?.eventRaw) payload.event = opts.eventRaw;
+  if (opts?.homeTeam) payload.homeTeam = opts.homeTeam;
+  if (opts?.awayTeam) payload.awayTeam = opts.awayTeam;
+  if (opts?.date) payload.date = opts.date;
+  return postCollect<{ videos?: DataObject[] }>("video.highlights", payload);
 }
 
 export async function getTeam(teamName: string) {

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-// HighlightsCarousel import removed
+import { HighlightsCarousel } from "@/components/HighlightsCarousel";
 import RichTimeline from "@/components/match/RichTimeline";
 import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
@@ -30,9 +30,11 @@ import {
   getForm,
   getH2HByTeams,
   getWinProb,
+  getHighlights,
 } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
+import { parseHighlights, type Highlight } from "@/lib/schemas";
 
 type TeamSideValue = { home?: number; away?: number };
 type MatchStats = {
@@ -125,7 +127,9 @@ export default function MatchPage() {
   const sid = searchParams?.get("sid") ?? "card";
 
   const [event, setEvent] = useState<RenderEvent | null>(null);
-  // highlights state removed
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [highlightsLoading, setHighlightsLoading] = useState(false);
+  const [highlightsError, setHighlightsError] = useState<string | null>(null);
   const [table, setTable] = useState<Array<{
     position?: number;
     team?: string;
@@ -910,7 +914,7 @@ export default function MatchPage() {
       setTeamsExtra({ home: null, away: null });
       setPlayersExtra({ home: [], away: [] });
       setOddsExtra({ listed: [], live: [] });
-  // setFormExtra({ home: [], away: [] });
+      // setFormExtra({ home: [], away: [] }); // legacy fallback removed
       setAnalysisForm(null);
       setH2hExtra(null);
       setExtrasLoading(false);
@@ -922,7 +926,19 @@ export default function MatchPage() {
 
     // Use teamId for form data, not eventId
     // Always fetch form data using eventId for analysis tab
-    const requests: [Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>, Promise<unknown>] = [
+    const requests: [
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+      Promise<unknown>,
+    ] = [
       event.homeTeam ? getTeam(event.homeTeam) : Promise.resolve(null),
       event.awayTeam ? getTeam(event.awayTeam) : Promise.resolve(null),
       event.homeTeam ? listTeamPlayers(event.homeTeam) : Promise.resolve(null),
@@ -939,7 +955,7 @@ export default function MatchPage() {
     Promise.allSettled(requests)
       .then(results => {
         if (!active) return;
-  const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, , formRes, , h2hRes, analysisRes] = results;
+        const [homeTeamRes, awayTeamRes, homePlayersRes, awayPlayersRes, oddsListRes, oddsLiveRes, , formRes, , h2hRes, analysisRes] = results;
 
         const homeTeamData = isFulfilled(homeTeamRes) ? parseTeamResponse(homeTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
         const awayTeamData = isFulfilled(awayTeamRes) ? parseTeamResponse(awayTeamRes.value as Awaited<ReturnType<typeof getTeam>> | null) : null;
@@ -997,6 +1013,46 @@ export default function MatchPage() {
       active = false;
     };
   }, [event, eventRaw, event?.homeTeam, event?.awayTeam]);
+  useEffect(() => {
+    if (!event || !event.eventId) {
+      setHighlights([]);
+      setHighlightsError(null);
+      setHighlightsLoading(false);
+      return;
+    }
+
+    let active = true;
+    setHighlightsLoading(true);
+    setHighlightsError(null);
+
+    getHighlights(event.eventId, {
+      eventRaw: eventRaw ?? undefined,
+      homeTeam: event.homeTeam,
+      awayTeam: event.awayTeam,
+      date: event.date,
+    })
+      .then((resp) => {
+        if (!active) return;
+        const payload = resp?.data as Record<string, unknown> | undefined;
+        const rawVideos = payload && typeof payload === "object" ? (payload.videos as unknown) : [];
+        const parsed = parseHighlights(Array.isArray(rawVideos) ? rawVideos : []);
+        setHighlights(parsed);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        const msg = err instanceof Error ? err.message : "Unable to load highlights";
+        setHighlightsError(msg);
+        setHighlights([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setHighlightsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [event?.eventId, event?.homeTeam, event?.awayTeam, event?.date, eventRaw]);
 
   const match = event;
 
@@ -1180,6 +1236,22 @@ export default function MatchPage() {
             matchRaw={eventRaw}
             players={playersExtra}
             teams={teamsExtra}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Video Highlights</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          {highlightsError && (
+            <p className="text-sm text-destructive mb-3">{highlightsError}</p>
+          )}
+          <HighlightsCarousel
+            highlights={highlights}
+            isLoading={highlightsLoading}
+            className="mt-2"
           />
         </CardContent>
       </Card>
