@@ -25,7 +25,7 @@ from ..services.news_feed import LeagueNewsService, LeagueNewsError
 
 ## Agents
 from ..agents.analysis_agent import AnalysisAgent
-from ..agents.game_analytics_agent import AllSportsRawAgent
+from ..agents.collector_agent import AllSportsRawAgent
 
 class RouterError(Exception):
     def __init__(self, code: str, message: str, details: Dict[str, Any] | None = None):

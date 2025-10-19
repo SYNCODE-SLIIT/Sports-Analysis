@@ -8,9 +8,9 @@ from typing import Any, Dict
 
 # Robust import to your RAW agent
 try:
-    from ..agents.game_analytics_agent import AllSportsRawAgent  # type: ignore
+    from ..agents.collector_agent import AllSportsRawAgent  # type: ignore
 except Exception:
-    from backend.app.agents.game_analytics_agent import AllSportsRawAgent  # type: ignore
+    from backend.app.agents.collector_agent import AllSportsRawAgent  # type: ignore
 
 
 class AllSportsAdapter:

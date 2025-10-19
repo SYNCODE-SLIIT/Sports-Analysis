@@ -23,7 +23,7 @@ from ..adapters.tsdb_adapter import TSDBAdapter
 from ..adapters.allsports_adapter import AllSportsAdapter
 ## Agents
 from ..agents.analysis_agent import AnalysisAgent
-from ..agents.game_analytics_agent import AllSportsRawAgent
+from ..agents.collector_agent import AllSportsRawAgent
 from ..services.news_feed import LeagueNewsService, LeagueNewsError
 
 class RouterError(Exception):
