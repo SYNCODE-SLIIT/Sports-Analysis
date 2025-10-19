@@ -121,12 +121,8 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
           try {
             raw = await summarize(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string });
           } catch {
-            try {
-              const response = await postCollect<{ summary?: SummaryResponse }>("analysis.match_summary", payload);
-              raw = response.data?.summary ?? (response.data as SummaryResponse | undefined);
-            } catch {
-              raw = undefined;
-            }
+            // Keep raw undefined; we'll fall back to local summary below
+            raw = undefined;
           }
 
           const normalized = normalizeSummary(raw) ?? fallback;
