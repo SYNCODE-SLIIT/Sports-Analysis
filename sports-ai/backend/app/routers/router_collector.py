@@ -25,7 +25,6 @@ from ..adapters.allsports_adapter import AllSportsAdapter
 from ..agents.analysis_agent import AnalysisAgent
 from ..agents.collector_agent import AllSportsRawAgent
 from ..agents.highlight_agent import HighlightAgent
-from ..agents.video_highlight_agent import VideoHighlightAgent
 from ..services.news_feed import LeagueNewsService, LeagueNewsError
 
 class RouterError(Exception):
@@ -213,7 +212,6 @@ class RouterCollector:
             all_sports_agent=self.allsports,
         )
         self.highlight = HighlightAgent(self.asapi, self.tsdb)
-        self.video_highlight = VideoHighlightAgent(self.asapi, self.tsdb)
         # News service (fetches from configured news provider)
         try:
             self.news = LeagueNewsService()
@@ -324,7 +322,7 @@ class RouterCollector:
                         merged_args.setdefault("eventId", normalized_event)
                 except Exception:
                     pass
-                resp = self.video_highlight.handle(intent, merged_args)
+                resp = self.highlight.handle(intent, merged_args)
                 return resp
 
             elif intent in ("highlight.timeline", "timeline.highlight"):

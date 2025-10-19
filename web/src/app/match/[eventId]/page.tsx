@@ -129,7 +129,6 @@ export default function MatchPage() {
   const [event, setEvent] = useState<RenderEvent | null>(null);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [highlightsLoading, setHighlightsLoading] = useState(false);
-  const [highlightsError, setHighlightsError] = useState<string | null>(null);
   const [table, setTable] = useState<Array<{
     position?: number;
     team?: string;
@@ -1016,14 +1015,12 @@ export default function MatchPage() {
   useEffect(() => {
     if (!event || !event.eventId) {
       setHighlights([]);
-      setHighlightsError(null);
       setHighlightsLoading(false);
       return;
     }
 
     let active = true;
     setHighlightsLoading(true);
-    setHighlightsError(null);
 
     getHighlights(event.eventId, {
       eventRaw: eventRaw ?? undefined,
@@ -1041,7 +1038,7 @@ export default function MatchPage() {
       .catch((err: unknown) => {
         if (!active) return;
         const msg = err instanceof Error ? err.message : "Unable to load highlights";
-        setHighlightsError(msg);
+        console.warn("highlight fetch failed", msg);
         setHighlights([]);
       })
       .finally(() => {
@@ -1240,21 +1237,21 @@ export default function MatchPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Video Highlights</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          {highlightsError && (
-            <p className="text-sm text-destructive mb-3">{highlightsError}</p>
-          )}
-          <HighlightsCarousel
-            highlights={highlights}
-            isLoading={highlightsLoading}
-            className="mt-2"
-          />
-        </CardContent>
-      </Card>
+
+      {highlights.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Video Highlights</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <HighlightsCarousel
+              highlights={highlights}
+              isLoading={highlightsLoading}
+              className="mt-2"
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <WinProbabilityCard
         homeTeam={match.homeTeam}

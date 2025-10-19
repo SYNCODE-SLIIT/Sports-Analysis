@@ -6,9 +6,15 @@ frontend components can display consistent highlight tracks.
 
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+import requests
+
+from ..services.highlight_search import search_event_highlights
 
 # Shared intent keys that might contain event identifiers
 _EVENT_ID_KEYS: Tuple[str, ...] = (
@@ -21,6 +27,9 @@ _EVENT_ID_KEYS: Tuple[str, ...] = (
     "idAPIfootball",
     "id",
 )
+
+
+# --- Timeline data structures ---
 
 
 @dataclass
@@ -43,6 +52,39 @@ class TimelineItem:
         }
 
 
+# --- Video highlight data structures ---
+
+
+@dataclass
+class VideoCandidate:
+    id: str
+    url: str
+    title: str
+    provider: str
+    thumbnail: Optional[str] = None
+    duration: Optional[int] = None
+    published_at: Optional[str] = None
+    source: Optional[str] = None
+    score: float = 0.0
+
+    def as_public(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "id": self.id,
+            "title": self.title,
+            "url": self.url,
+            "provider": self.provider,
+        }
+        if self.thumbnail:
+            payload["thumbnail"] = self.thumbnail
+        if self.duration is not None:
+            payload["duration"] = self.duration
+        if self.published_at:
+            payload["publishedAt"] = self.published_at
+        if self.source:
+            payload["source"] = self.source
+        return payload
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -56,6 +98,7 @@ def _mkresp(
     error: Optional[str] = None,
     trace: Optional[List[Dict[str, Any]]] = None,
     fallback: Optional[str] = None,
+    primary: str = "highlight",
 ) -> Dict[str, Any]:
     return {
         "ok": ok,
@@ -64,37 +107,46 @@ def _mkresp(
         "data": data if ok else None,
         "error": None if ok else (error or "Unknown error"),
         "meta": {
-            "source": {"primary": "highlight", "fallback": fallback},
+            "source": {"primary": primary, "fallback": fallback},
             "trace": trace or [],
         },
     }
 
 
 class HighlightAgent:
-    """Builds highlight-friendly timelines from provider data."""
+    """Builds match timelines and aggregates video highlights."""
 
-    SUPPORTED = {"highlight.timeline", "timeline.highlight"}
+    TIMELINE_INTENTS = {"highlight.timeline", "timeline.highlight"}
+    VIDEO_INTENTS = {"video.highlights", "highlights.video"}
+    SUPPORTED = TIMELINE_INTENTS | VIDEO_INTENTS
 
     def __init__(self, allsports_adapter=None, tsdb_adapter=None, logger=None):
         self.allsports = allsports_adapter
         self.tsdb = tsdb_adapter
         self.log = logger
+        self.youtube_key = os.getenv("YOUTUBE_API_KEY", "").strip()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
     def handle(self, intent: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        if intent not in self.SUPPORTED:
-            return _mkresp(False, intent, args, error=f"Unsupported intent: {intent}")
-
         args = dict(args or {})
+
+        if intent in self.TIMELINE_INTENTS:
+            return self._handle_timeline(intent, args)
+
+        if intent in self.VIDEO_INTENTS:
+            return self._handle_video(intent, args)
+
+        return _mkresp(False, intent, args, error=f"Unsupported intent: {intent}")
+
+    def _handle_timeline(self, intent: str, args: Dict[str, Any]) -> Dict[str, Any]:
         trace: List[Dict[str, Any]] = []
         try:
             event_id = self._normalize_event_id(args)
         except ValueError as exc:
-            return _mkresp(False, intent, args, error=str(exc))
+            return _mkresp(False, intent, args, error=str(exc), primary="highlight.timeline")
 
-        # Allow callers to supply a pre-fetched event payload to avoid duplicate I/O
         supplied = self._coerce_event_payload(args)
         if supplied:
             trace.append({"step": "payload.supplied", "info": "using provided event payload"})
@@ -107,12 +159,18 @@ class HighlightAgent:
             trace.extend(fetch_trace)
 
         if not event_payload:
-            return _mkresp(False, intent, {"eventId": event_id}, error="Event payload unavailable", trace=trace)
+            return _mkresp(
+                False,
+                intent,
+                {"eventId": event_id},
+                error="Event payload unavailable",
+                trace=trace,
+                primary="highlight.timeline",
+            )
 
         timeline = _build_timeline(event_payload)
         if not timeline:
             trace.append({"step": "timeline.empty", "note": "no events extracted"})
-            # Ensure HT/FT placeholders when no data at all
             timeline = [
                 TimelineItem(minute=45, team="home", type="ht"),
                 TimelineItem(minute=90, team="home", type="ft"),
@@ -125,7 +183,336 @@ class HighlightAgent:
             "source": fallback_source or ("supplied" if supplied else "unknown"),
         }
 
-        return _mkresp(True, intent, {"eventId": event_id}, data=data, trace=trace, fallback=fallback_source)
+        return _mkresp(
+            True,
+            intent,
+            {"eventId": event_id},
+            data=data,
+            trace=trace,
+            fallback=fallback_source,
+            primary="highlight.timeline",
+        )
+
+    def _handle_video(self, intent: str, args: Dict[str, Any]) -> Dict[str, Any]:
+        trace: List[Dict[str, Any]] = []
+        try:
+            event_id = self._normalize_event_id(args)
+        except ValueError as exc:
+            return _mkresp(False, intent, args, error=str(exc), primary="highlight.video")
+
+        context = self._build_video_context(event_id, args, trace)
+
+        candidates: Dict[str, VideoCandidate] = {}
+
+        provider_videos = self._fetch_provider_videos(event_id, trace)
+        for video in provider_videos:
+            candidates.setdefault(video.url, video)
+
+        youtube_videos = self._fetch_youtube_videos(context, trace)
+        for video in youtube_videos:
+            candidates.setdefault(video.url, video)
+
+        ordered = sorted(
+            candidates.values(),
+            key=lambda v: (-v.score, self._published_sort_key(v.published_at)),
+        )
+        public_videos = [video.as_public() for video in ordered]
+
+        search_links = None
+        if not public_videos and context:
+            try:
+                search_links = search_event_highlights(
+                    {
+                        "homeTeam": context.get("home_team"),
+                        "awayTeam": context.get("away_team"),
+                        "date": context.get("kickoff_date"),
+                    }
+                )
+                trace.append({"step": "search.links", "ok": True})
+            except Exception as exc:  # pragma: no cover - defensive
+                trace.append({"step": "search.links", "ok": False, "error": str(exc)})
+
+        data: Dict[str, Any] = {
+            "eventId": event_id,
+            "videos": public_videos,
+            "context": context,
+        }
+        if search_links:
+            data["search"] = search_links
+
+        return _mkresp(
+            True,
+            intent,
+            {"eventId": event_id},
+            data=data,
+            trace=trace,
+            primary="highlight.video",
+        )
+
+    # ------------------------------------------------------------------
+    # Video highlight helpers
+    # ------------------------------------------------------------------
+    def _build_video_context(self, event_id: str, args: Dict[str, Any], trace: List[Dict[str, Any]]) -> Dict[str, Any]:
+        payload = self._coerce_event_payload(args)
+        if not payload and self.allsports:
+            try:
+                resp = self.allsports.call("event.get", {"eventId": event_id})
+                trace.append({"step": "event.allsports", "ok": resp.get("ok")})
+                if resp.get("ok"):
+                    payload = self._extract_event_from_payload(resp.get("data"))
+            except Exception as exc:  # pragma: no cover - defensive
+                trace.append({"step": "event.allsports", "ok": False, "error": str(exc)})
+
+        if not payload and self.tsdb:
+            try:
+                resp = self.tsdb.call("event.results", {"eventId": event_id})
+                trace.append({"step": "event.tsdb", "ok": resp.get("ok")})
+                if resp.get("ok"):
+                    payload = self._extract_event_from_payload(resp.get("data"))
+            except Exception as exc:  # pragma: no cover - defensive
+                trace.append({"step": "event.tsdb", "ok": False, "error": str(exc)})
+
+        context: Dict[str, Any] = {"eventId": event_id}
+
+        if payload:
+            home = _pick_first(
+                payload,
+                [
+                    "home_team",
+                    "event_home_team",
+                    "homeTeam",
+                    "strHomeTeam",
+                    "HomeTeam",
+                ],
+            )
+            away = _pick_first(
+                payload,
+                [
+                    "away_team",
+                    "event_away_team",
+                    "awayTeam",
+                    "strAwayTeam",
+                    "AwayTeam",
+                ],
+            )
+            league = _pick_first(payload, ["league", "league_name", "strLeague", "competition"])
+            country = _pick_first(payload, ["country", "country_name", "event_country"])
+            kickoff = _parse_kickoff(
+                payload.get("event_date") or payload.get("date") or payload.get("match_date")
+            )
+            if kickoff is None and payload.get("time"):
+                date_only = _pick_first(payload, ["event_date", "date", "match_date"]) or args.get("date")
+                if date_only:
+                    kickoff = _parse_kickoff(f"{date_only} {payload.get('time')}")
+            context.update(
+                {
+                    "home_team": home,
+                    "away_team": away,
+                    "league": league,
+                    "country": country,
+                    "kickoff": kickoff.isoformat() if kickoff else None,
+                    "kickoff_date": kickoff.date().isoformat() if kickoff else _pick_first(payload, ["event_date", "date"]),
+                }
+            )
+        else:
+            context.update(
+                {
+                    "home_team": _to_string(args.get("homeTeam")),
+                    "away_team": _to_string(args.get("awayTeam")),
+                    "kickoff": _to_string(args.get("date")),
+                    "kickoff_date": _to_string(args.get("date")),
+                }
+            )
+
+        return context
+
+    def _fetch_provider_videos(self, event_id: str, trace: List[Dict[str, Any]]) -> List[VideoCandidate]:
+        if not self.allsports:
+            return []
+        try:
+            resp = self.allsports.call("video.highlights", {"eventId": event_id})
+            trace.append({"step": "videos.allsports", "ok": resp.get("ok")})
+            if not resp.get("ok"):
+                return []
+            data = resp.get("data") or {}
+            items = self._extract_video_list(data)
+            videos: List[VideoCandidate] = []
+            for entry in items:
+                video = self._normalize_video_entry(entry, default_provider="AllSports")
+                if video:
+                    video.score = 1.0
+                    video.source = "allsports"
+                    videos.append(video)
+            return videos
+        except Exception as exc:  # pragma: no cover - defensive
+            trace.append({"step": "videos.allsports", "ok": False, "error": str(exc)})
+            return []
+
+    def _extract_video_list(self, data: Any) -> List[Dict[str, Any]]:
+        if isinstance(data, list):
+            return [item for item in data if isinstance(item, dict)]
+        if not isinstance(data, dict):
+            return []
+        for key in ("videos", "result", "results", "items", "highlights"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return []
+
+    def _normalize_video_entry(self, entry: Dict[str, Any], default_provider: str) -> Optional[VideoCandidate]:
+        url = _pick_first(entry, ["url", "video_url", "matchviewUrl", "matchview_url"])
+        video_id = _pick_first(entry, ["id", "video_id", "videoId", "yt_id", "youtube_id"])
+        if not url and video_id:
+            url = f"https://www.youtube.com/watch?v={video_id}"
+        if not url:
+            return None
+        if not video_id:
+            video_id = url
+        title = _pick_first(entry, ["title", "video_title", "name", "caption"]) or "Match highlight"
+        thumbnail = _pick_first(entry, ["thumbnail", "video_thumbnail", "thumb", "image"])
+        provider = _pick_first(entry, ["provider", "source"]) or default_provider
+        duration = _duration_to_seconds(
+            entry.get("duration") or entry.get("video_duration") or entry.get("length")
+        )
+        published = _pick_first(entry, ["published", "published_at", "date", "created_at"])
+        return VideoCandidate(
+            id=str(video_id),
+            url=url,
+            title=title,
+            provider=provider,
+            thumbnail=thumbnail,
+            duration=duration,
+            published_at=published,
+        )
+
+    def _fetch_youtube_videos(self, context: Dict[str, Any], trace: List[Dict[str, Any]]) -> List[VideoCandidate]:
+        if not self.youtube_key:
+            trace.append({"step": "youtube.skip", "reason": "missing_key"})
+            return []
+        home = _to_string(context.get("home_team"))
+        away = _to_string(context.get("away_team"))
+        if not home or not away:
+            trace.append({"step": "youtube.skip", "reason": "missing_team_names"})
+            return []
+
+        kickoff_iso = _to_string(context.get("kickoff")) or _to_string(context.get("kickoff_date"))
+        kickoff_dt = _parse_kickoff(kickoff_iso)
+        window_after = kickoff_dt + timedelta(days=3) if kickoff_dt else None
+        window_before = kickoff_dt - timedelta(days=2) if kickoff_dt else None
+
+        query_parts = [home, "vs", away, "highlights"]
+        year = str(kickoff_dt.year) if kickoff_dt else None
+        if year:
+            query_parts.append(year)
+        league = _to_string(context.get("league"))
+        if league:
+            query_parts.append(league)
+        query = " ".join(part for part in query_parts if part)
+
+        params = {
+            "part": "snippet",
+            "type": "video",
+            "q": query,
+            "maxResults": 8,
+            "order": "relevance",
+            "safeSearch": "strict",
+            "key": self.youtube_key,
+        }
+        if window_before:
+            params["publishedAfter"] = (
+                window_before.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+        if window_after:
+            params["publishedBefore"] = (
+                window_after.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            )
+
+        try:
+            response = requests.get(
+                "https://www.googleapis.com/youtube/v3/search",
+                params=params,
+                timeout=10,
+            )
+            response.raise_for_status()
+            data = response.json()
+            items = data.get("items") or []
+        except Exception as exc:  # pragma: no cover - defensive
+            trace.append({"step": "youtube.search", "ok": False, "error": str(exc)})
+            return []
+
+        video_ids = [item.get("id", {}).get("videoId") for item in items if item.get("id")]
+        snippets = {item.get("id", {}).get("videoId"): item.get("snippet") for item in items if item.get("id")}
+
+        durations: Dict[str, Optional[int]] = {}
+        published: Dict[str, Optional[str]] = {}
+        if video_ids:
+            try:
+                details_resp = requests.get(
+                    "https://www.googleapis.com/youtube/v3/videos",
+                    params={
+                        "part": "contentDetails,snippet",
+                        "id": ",".join(video_ids),
+                        "key": self.youtube_key,
+                    },
+                    timeout=10,
+                )
+                details_resp.raise_for_status()
+                details = details_resp.json().get("items") or []
+                for item in details:
+                    vid = item.get("id")
+                    duration = _duration_to_seconds((item.get("contentDetails") or {}).get("duration"))
+                    published_at = _to_string((item.get("snippet") or {}).get("publishedAt"))
+                    if vid:
+                        durations[vid] = duration
+                        published[vid] = published_at
+            except Exception as exc:  # pragma: no cover - defensive
+                trace.append({"step": "youtube.details", "ok": False, "error": str(exc)})
+
+        team_terms = [_normalize_name(home), _normalize_name(away)]
+
+        videos: List[VideoCandidate] = []
+        for vid in video_ids:
+            snippet = snippets.get(vid) or {}
+            title = _to_string(snippet.get("title")) or "Match highlight"
+            description = _to_string(snippet.get("description")) or ""
+            full_text = f"{title} {description}"
+            if not _contains_all_terms(full_text, team_terms):
+                continue
+            published_at = published.get(vid)
+            if kickoff_dt and published_at:
+                pub_dt = _parse_kickoff(published_at)
+                if pub_dt and abs((pub_dt - kickoff_dt).days) > 5:
+                    continue
+            thumbnail = None
+            thumbs = snippet.get("thumbnails") or {}
+            for quality in ("maxres", "standard", "high", "medium", "default"):
+                thumb = _to_string((thumbs.get(quality) or {}).get("url"))
+                if thumb:
+                    thumbnail = thumb
+                    break
+            video = VideoCandidate(
+                id=str(vid),
+                url=f"https://www.youtube.com/watch?v={vid}",
+                title=title,
+                provider="YouTube",
+                thumbnail=thumbnail,
+                duration=durations.get(vid),
+                published_at=published_at,
+                source="youtube",
+                score=2.0,
+            )
+            videos.append(video)
+
+        trace.append({"step": "youtube.search", "ok": True, "count": len(videos)})
+        return videos
+
+    def _published_sort_key(self, value: Optional[str]) -> float:
+        if not value:
+            return float("inf")
+        dt = _parse_kickoff(value)
+        if not dt:
+            return float("inf")
+        return -dt.timestamp()
 
     # ------------------------------------------------------------------
     # Fetch helpers
@@ -358,12 +745,102 @@ def _score_rank(event_type: str) -> int:
     return 0
 
 
+def _pick_first(record: Dict[str, Any], keys: Iterable[str]) -> Optional[str]:
+    if not isinstance(record, dict):
+        return None
+    for key in keys:
+        val = record.get(key)
+        text = _to_string(val)
+        if text:
+            return text
+    return None
+
+
 def _to_string(value: Any) -> Optional[str]:
     if isinstance(value, str):
         trimmed = value.strip()
         if trimmed:
             return trimmed
     return None
+
+
+def _parse_kickoff(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    if isinstance(value, (int, float)) and value == value:
+        try:
+            return datetime.fromtimestamp(int(value), timezone.utc)
+        except Exception:
+            return None
+    text = _to_string(value)
+    if not text:
+        return None
+    normalized = text.replace("/", "-")
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+
+    formats = [
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+    ]
+    for fmt in formats:
+        try:
+            parsed = datetime.strptime(normalized, fmt)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except ValueError:
+            continue
+    return None
+
+
+def _duration_to_seconds(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)) and value == value:
+        seconds = int(value)
+        return max(seconds, 0)
+    text = _to_string(value)
+    if not text:
+        return None
+    upper = text.upper()
+    iso_match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", upper)
+    if iso_match:
+        hours = int(iso_match.group(1) or 0)
+        minutes = int(iso_match.group(2) or 0)
+        seconds = int(iso_match.group(3) or 0)
+        return hours * 3600 + minutes * 60 + seconds
+    parts = upper.split(":")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return None
+    if len(nums) == 3:
+        hours, minutes, seconds = nums
+    elif len(nums) == 2:
+        hours = 0
+        minutes, seconds = nums
+    elif len(nums) == 1:
+        hours = 0
+        minutes = 0
+        seconds = nums[0]
+    else:
+        return None
+    return max(hours * 3600 + minutes * 60 + seconds, 0)
+
+
+def _normalize_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _contains_all_terms(text: str, terms: Iterable[str]) -> bool:
+    normalized = _normalize_name(text)
+    return all(term in normalized for term in terms if term)
 
 
 def _to_bool(value: Any) -> bool:
