@@ -120,7 +120,10 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
           let raw: SummaryResponse | undefined | null = undefined;
           try {
             // Prefer safe summarizer which adds schema validation and moderation
-            const safe = await safeSummarize(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string });
+            const safe = await safeSummarize({
+              ...(payload as { eventId?: string; eventName?: string; date?: string; venue?: string; homeTeam?: string; awayTeam?: string }),
+              full: true,
+            });
             raw = { headline: safe.headline, paragraph: safe.paragraph, bullets: safe.bullets };
           } catch {
             // Keep raw undefined; we'll fall back to local summary below

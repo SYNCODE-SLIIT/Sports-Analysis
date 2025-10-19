@@ -1,10 +1,11 @@
-import { toSummary, EMPTY_SUMMARY } from '@/lib/summarySchema';
+import { toSummary, EMPTY_SUMMARY, coerceSummaryLoose } from '@/lib/summarySchema';
 import { moderateSummary } from '@/lib/moderation';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
+  const full = Boolean((body as { full?: boolean }).full);
 
   // Call backend summarizer directly (mirrors /api/summarizer logic)
   const basePrimary = process.env.API_BASE_INTERNAL || process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8030';
@@ -38,25 +39,29 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, ...EMPTY_SUMMARY }, { status: 200 });
   }
 
-  // Normalize with schema (length caps, shape coercion)
-  let safe = toSummary(raw);
-
-  // Basic moderation
-  const mod = moderateSummary(safe);
-  if (!mod.ok) {
-    // If unsafe, return minimal fallback without flagged text
-    return Response.json({ ok: true, headline: 'Match Summary', paragraph: 'Summary unavailable for this fixture.', bullets: [] }, { status: 200 });
+  let safe: { headline: string; paragraph: string; bullets: string[] };
+  if (full) {
+    const loose = coerceSummaryLoose(raw);
+    const mod = moderateSummary(loose, { clamp: false });
+    if (!mod.ok) {
+      return Response.json({ ok: true, headline: 'Match Summary', paragraph: 'Summary unavailable for this fixture.', bullets: [] }, { status: 200 });
+    }
+    safe = { ...loose, ...mod.cleaned };
+  } else {
+    const normal = toSummary(raw);
+    const mod = moderateSummary(normal, { clamp: true });
+    if (!mod.ok) {
+      return Response.json({ ok: true, headline: 'Match Summary', paragraph: 'Summary unavailable for this fixture.', bullets: [] }, { status: 200 });
+    }
+    safe = { ...normal, ...mod.cleaned };
   }
-
-  // Use cleaned values from moderation step
-  safe = { ...safe, ...mod.cleaned };
   // If paragraph is empty but bullets exist, synthesize a short paragraph
   if ((!safe.paragraph || !safe.paragraph.trim()) && Array.isArray(safe.bullets) && safe.bullets.length > 0) {
     const parts = safe.bullets
-      .slice(0, 5)
+      .slice(0, full ? 50 : 5)
       .map((b) => (b.endsWith('.') ? b : `${b}.`));
     const joined = parts.join(' ');
-    safe = { ...safe, paragraph: joined.slice(0, 800) };
+    safe = { ...safe, paragraph: full ? joined.slice(0, 10000) : joined.slice(0, 1000) };
   }
   return Response.json({ ok: true, ...safe }, { status: 200 });
 }

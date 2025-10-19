@@ -13,6 +13,7 @@ export async function safeSummarize(payload: {
   venue?: string;
   homeTeam?: string;
   awayTeam?: string;
+  full?: boolean;
 }): Promise<SafeSummary> {
   const r = await fetch('/api/safe-summarize', {
     method: 'POST',

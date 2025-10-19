@@ -37,11 +37,18 @@ function hasWord(haystack: string, list: string[]): boolean {
   return list.some((w) => lower.includes(w));
 }
 
-export function moderateSummary(input: { headline: string; paragraph: string; bullets: string[] }): ModerationResult {
+export function moderateSummary(
+  input: { headline: string; paragraph: string; bullets: string[] },
+  options?: { clamp?: boolean }
+): ModerationResult {
+  const clamp = options?.clamp !== false;
+  const clampStr = (s: string, n: number) => (clamp ? s.slice(0, n) : s);
+  const clampArr = <T,>(arr: T[], n: number) => (clamp ? arr.slice(0, n) : arr);
+
   const cleaned = {
-    headline: scrub(input.headline).slice(0, 200),
-    paragraph: scrub(input.paragraph).slice(0, 800),
-    bullets: (Array.isArray(input.bullets) ? input.bullets : []).map((b) => scrub(String(b)).slice(0, 200)).slice(0, 5),
+    headline: clampStr(scrub(input.headline), 200),
+    paragraph: clampStr(scrub(input.paragraph), 10000),
+    bullets: clampArr((Array.isArray(input.bullets) ? input.bullets : []).map((b) => clampStr(scrub(String(b)), 1000)), 50),
   };
 
   const reasons: string[] = [];

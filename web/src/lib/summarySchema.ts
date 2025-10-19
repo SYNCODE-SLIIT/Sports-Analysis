@@ -8,7 +8,7 @@ export const SummarySchema = z.object({
     .default('Match Summary'),
   paragraph: z
     .preprocess((v) => String(v ?? '').replace(/\s+/g, ' ').trim(), z.string())
-    .transform((s) => s.slice(0, 800))
+    .transform((s) => s.slice(0, 1000))
     .optional()
     .default(''),
   bullets: z
@@ -52,3 +52,17 @@ export const EMPTY_SUMMARY: Summary = {
   paragraph: '',
   bullets: [],
 };
+
+// Coerce without clamping: used when callers want the full model text.
+export function coerceSummaryLoose(input: unknown): { headline: string; paragraph: string; bullets: string[] } {
+  const shape: Record<string, unknown> =
+    typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+
+  const getStr = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v));
+  const bulletsRaw = Array.isArray((shape as any).bullets) ? ((shape as any).bullets as unknown[]) : [];
+  return {
+    headline: getStr((shape as any).headline || 'Match Summary'),
+    paragraph: getStr((shape as any).paragraph ?? (shape as any).one_paragraph ?? (shape as any).summary ?? ''),
+    bullets: bulletsRaw.map((b) => getStr(b)),
+  };
+}
