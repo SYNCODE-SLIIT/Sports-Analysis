@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 # These helpers adapt to your RAW AllSports agent shape.
-# They use pass-through intents defined in your game_analytics_agent.
+# They use pass-through intents defined in your collector_agent.
 
 
 def fetch_event(raw_agent, event_id: str) -> Optional[Dict]:

@@ -12,10 +12,10 @@ except Exception:  # noqa: blanket ok here
 # Optional AllSports API client import.  This provides a secondary
 # datasource so the collector can fall back if TheSportsDB is unavailable.
 try:  # pragma: no cover - import robustness
-    from .game_analytics_agent import allsports_client  # type: ignore
+    from .collector_agent import allsports_client  # type: ignore
 except Exception:  # noqa: blanket ok here
     try:
-        from backend.app.agents.game_analytics_agent import allsports_client  # type: ignore
+        from backend.app.agents.collector_agent import allsports_client  # type: ignore
     except Exception:  # If even this fails we operate without the fallback.
         allsports_client = None
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from .routers.router_collector import RouterCollector
 from .services.highlight_search import search_event_highlights
 from .agents.analysis_agent import AnalysisAgent
-from .agents.game_analytics_agent import AllSportsRawAgent
+from .agents.collector_agent import AllSportsRawAgent
 
 app = FastAPI(title="Sports Collector HM (Unified)", version="0.3.0")
 
