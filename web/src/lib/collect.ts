@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { TLItem } from "./match-mappers";
 
 // Translate stray legacy intents to new ones
 const LEGACY_INTENT_MAP: Record<string, string> = {
@@ -126,6 +127,12 @@ export async function getEventBrief(eventId: string, minute?: number | string, t
   if (minute !== undefined && minute !== null) payload.minute = String(minute);
   if (type) payload.type = String(type);
   return postCollect<{ brief?: string }>("event.brief", payload);
+}
+
+export async function getMatchTimeline(eventId: string, opts?: { eventRaw?: DataObject }) {
+  const payload: Record<string, Json> = { eventId: String(eventId) };
+  if (opts?.eventRaw) payload.event = opts.eventRaw;
+  return postCollect<{ items?: TLItem[]; timeline?: TLItem[] }>("highlight.timeline", payload);
 }
 
 /** Highlights for a match */

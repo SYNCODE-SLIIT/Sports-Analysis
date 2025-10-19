@@ -1173,6 +1173,7 @@ export default function MatchPage() {
       <Card>
         <CardContent className="p-4">
           <RichTimeline
+            eventId={match.eventId}
             items={timeline}
             homeTeam={match.homeTeam}
             awayTeam={match.awayTeam}

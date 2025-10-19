@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from 'react-dom';
 import { useTheme } from "next-themes";
-import { getEventBrief, postCollect, getComments } from "@/lib/collect";
+import { getEventBrief, getMatchTimeline, postCollect, getComments } from "@/lib/collect";
 import { summarizeEventBriefs } from "@/lib/summarizer";
 import { resolvePlayerImageByName, resolvePlayerImageFromObj, getTeamRoster } from "@/lib/roster";
 import type { TLItem } from "@/lib/match-mappers";
@@ -16,7 +16,8 @@ type BasicRecord = Record<string, unknown>;
 type TeamContext = { home?: BasicRecord | null; away?: BasicRecord | null } | null;
 type PlayersContext = { home: BasicRecord[]; away: BasicRecord[] } | null;
 type Props = {
-  items: TLItem[];
+  eventId?: string;
+  items?: TLItem[];
   homeTeam?: string;
   awayTeam?: string;
   // optional context to resolve player photos / team logos
@@ -44,6 +45,61 @@ const toNumberSafe = (value: unknown): number | undefined => {
   if (typeof value === "string") {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+const EVENT_ID_KEYS = [
+  "eventId",
+  "event_id",
+  "matchId",
+  "fixture_id",
+  "event_key",
+  "idEvent",
+  "idAPIfootball",
+  "id",
+];
+
+const ALLOWED_TYPES: TLItem["type"][] = ["goal", "own_goal", "pen_miss", "pen_score", "yellow", "red", "sub", "ht", "ft"];
+const ALLOWED_TYPES_SET = new Set<string>(ALLOWED_TYPES);
+
+const sanitizeTimelineItems = (value: unknown): TLItem[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
+    .map((entry) => {
+      const minuteRaw = entry.minute ?? entry["minute_display"];
+      const minute = typeof minuteRaw === "number" && Number.isFinite(minuteRaw)
+        ? minuteRaw
+        : toMinuteNumber(typeof minuteRaw === "string" ? minuteRaw : undefined) || 0;
+
+      const teamValue = (entry.team ?? entry.side ?? entry["team_side"] ?? "home") as unknown;
+      const team = typeof teamValue === "string" && teamValue.toLowerCase().includes("away") ? "away" : "home";
+
+      const typeValue = String(entry.type ?? "").toLowerCase();
+      const type = ALLOWED_TYPES_SET.has(typeValue) ? (typeValue as TLItem["type"]) : "goal";
+
+      const playerRaw = entry.player ?? entry.player_name ?? entry.playerName;
+      const player = typeof playerRaw === "string" && playerRaw.trim() ? playerRaw.trim() : undefined;
+
+      const assistRaw = entry.assist ?? entry.assist_name ?? entry.player_out ?? entry.out_player;
+      const assist = typeof assistRaw === "string" && assistRaw.trim() ? assistRaw.trim() : undefined;
+
+      const noteRaw = entry.note ?? entry.info ?? entry.reason ?? entry.detail;
+      const note = typeof noteRaw === "string" && noteRaw.trim() ? noteRaw.trim() : undefined;
+
+      return { minute, team, type, player, assist, note };
+    });
+};
+
+const resolveEventId = (eventId?: string, raw?: BasicRecord | null): string | undefined => {
+  if (eventId && eventId.trim()) return eventId;
+  const record = toRecord(raw);
+  if (!record) return undefined;
+  for (const key of EVENT_ID_KEYS) {
+    const value = record[key as keyof typeof record];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
   }
   return undefined;
 };
@@ -177,7 +233,7 @@ function useContainerWidth(ref: React.RefObject<HTMLDivElement | null>) {
   return w;
 }
 
-export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, players, teams }: Props) {
+export default function RichTimeline({ eventId: eventIdProp, items: initialItems, homeTeam, awayTeam, matchRaw, players, teams }: Props) {
   const { resolvedTheme } = useTheme();
   const prefersDark = useMemo(() => {
     if (typeof window === "undefined" || !window.matchMedia) return false;
@@ -188,6 +244,36 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     }
   }, []);
   const isDark = resolvedTheme ? resolvedTheme === "dark" : prefersDark;
+
+  const [agentItems, setAgentItems] = useState<TLItem[] | null>(null);
+  const resolvedEventId = useMemo(() => resolveEventId(eventIdProp, matchRaw), [eventIdProp, matchRaw]);
+  const initialSanitized = useMemo(() => sanitizeTimelineItems(initialItems ?? []), [initialItems]);
+  const timelineItems = agentItems ?? initialSanitized;
+
+  useEffect(() => {
+    if (!resolvedEventId) {
+      setAgentItems(null);
+      return;
+    }
+    setAgentItems(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await getMatchTimeline(resolvedEventId);
+        const payload = (resp?.data?.items ?? resp?.data?.timeline) as unknown;
+        const sanitized = sanitizeTimelineItems(payload);
+        if (!cancelled) setAgentItems(sanitized.length ? sanitized : null);
+      } catch (err) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[RichTimeline] highlight agent fetch failed", err);
+        }
+        if (!cancelled) setAgentItems(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedEventId]);
 
   const surfaceStyles = useMemo(() => {
     if (isDark) {
@@ -205,7 +291,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
 
   // Ensure we always have at least HT/FT anchors so the track is meaningful
   const baseItems = useMemo<TLItem[]>(() => {
-    const arr = Array.isArray(items) ? items.filter(Boolean) : [];
+    const arr = Array.isArray(timelineItems) ? timelineItems.filter(Boolean) : [];
     if (!arr.length) {
       // Add some test events for demonstration
       return [
@@ -217,7 +303,7 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
       ];
     }
     return arr;
-  }, [items]);
+  }, [timelineItems]);
 
   const cleaned = useMemo(() => baseItems.slice().sort((a, b) => a.minute - b.minute), [baseItems]);
 
@@ -229,10 +315,10 @@ export default function RichTimeline({ items, homeTeam, awayTeam, matchRaw, play
     // Helpful debug: print provided raw match payload and context so we can map fields
     if (process.env.NODE_ENV !== 'production') {
       try {
-        console.debug('[RichTimeline] debug', { matchRaw, items, players, teams });
+        console.debug('[RichTimeline] debug', { eventId: resolvedEventId, matchRaw, timelineItems, players, teams });
       } catch {}
     }
-  }, [matchRaw, items, players, teams]);
+  }, [resolvedEventId, matchRaw, timelineItems, players, teams]);
 
   // Pre-warm roster cache for home/away teams when match loads
   useEffect(() => {
