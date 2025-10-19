@@ -13,6 +13,7 @@ import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
 import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 import LeagueStatistics from "@/components/league/LeagueStatistics";
 
+
 type LeagueListEntry = {
   id?: string;
   name: string;

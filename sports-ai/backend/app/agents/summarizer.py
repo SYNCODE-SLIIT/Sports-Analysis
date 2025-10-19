@@ -37,14 +37,14 @@ if AGENT_MODE == "local":
     try:
         # Prefer relative imports when running inside the package
         from .collector import CollectorAgentV2 as _Collector
-        from .game_analytics_agent import AllSportsRawAgent as _Raw
+        from .collector_agent import AllSportsRawAgent as _Raw
         CollectorAgentV2 = _Collector
         AllSportsRawAgent = _Raw
     except Exception:
         try:
             # Fallback to absolute package path
             from backend.app.agents.collector import CollectorAgentV2 as _Collector2
-            from backend.app.agents.game_analytics_agent import AllSportsRawAgent as _Raw2
+            from backend.app.agents.collector_agent import AllSportsRawAgent as _Raw2
             CollectorAgentV2 = _Collector2
             AllSportsRawAgent = _Raw2
         except Exception:

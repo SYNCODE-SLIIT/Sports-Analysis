@@ -7,7 +7,7 @@ SPORTS_ROOT = Path(__file__).resolve().parents[3]
 if str(SPORTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SPORTS_ROOT))
 
-from backend.app.agents import game_analytics_agent as ga  # type: ignore
+from backend.app.agents import collector_agent as ga  # type: ignore
 
 
 class TestPlayerHotStreak(unittest.TestCase):

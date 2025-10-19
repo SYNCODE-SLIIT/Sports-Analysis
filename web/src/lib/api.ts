@@ -1,9 +1,12 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE!;
+// Base URL for direct backend calls (optional; prefer Next.js API proxy for browser)
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
 
 // Types for API responses
 export interface SummaryResponse {
   headline?: string;
   summary?: string;
+  one_paragraph?: string;
+  paragraph?: string;
   bullets?: string[];
   [key: string]: unknown;
 }
@@ -64,25 +67,27 @@ export async function summarize(payload: {
   eventName?: string;
   date?: string;
 }): Promise<SummaryResponse> {
-  const maxAttempts = 3;
+  const body = JSON.stringify({ provider: 'auto', ...payload });
   const timeoutPerAttempt = 30000; // 30s per summarize attempt
-  let attempt = 0;
-  let lastErr: unknown = null;
-  while (attempt < maxAttempts) {
-    attempt += 1;
-    try {
-      return await request<SummaryResponse>('/summarizer/summarize', {
-        method: 'POST',
-        body: JSON.stringify({ provider: 'auto', ...payload }),
-      }, timeoutPerAttempt);
-    } catch (err) {
-      lastErr = err;
-      // transient retryable conditions: network errors, aborted, 5xx
-      // simple backoff
-      const backoff = 500 * Math.pow(2, attempt - 1);
-      await new Promise((res) => setTimeout(res, backoff));
+
+  // Primary: use Next.js proxy route (works without CORS/env and in all environments)
+  try {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), timeoutPerAttempt);
+    const r = await fetch('/api/summarizer', { method: 'POST', body, headers: { 'Content-Type': 'application/json' }, signal: controller.signal });
+    clearTimeout(to);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch (err) {
+    // Fallback: if API_BASE is configured, try direct backend once
+    if (API_BASE) {
+      const controller = new AbortController();
+      const to = setTimeout(() => controller.abort(), timeoutPerAttempt);
+      const r2 = await fetch(`${API_BASE.replace(/\/$/, '')}/summarizer/summarize`, { method: 'POST', body, headers: { 'Content-Type': 'application/json' }, signal: controller.signal });
+      clearTimeout(to);
+      if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
+      return await r2.json();
     }
+    throw err;
   }
-  // If we reach here, rethrow the last error
-  throw lastErr;
 }
