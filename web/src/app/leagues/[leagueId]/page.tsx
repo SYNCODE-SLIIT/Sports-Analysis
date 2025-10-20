@@ -12,6 +12,8 @@ import { getLeagueTable, listSeasons, postCollect, Json } from "@/lib/collect";
 import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
 import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 import LeagueStatistics from "@/components/league/LeagueStatistics";
+import LeagueLatestNews from "@/components/league/LeagueLatestNews";
+
 
 type LeagueListEntry = {
   id?: string;
@@ -745,6 +747,8 @@ export default function LeagueDetailPage() {
         leagueName={leagueName || heroInfo?.name}
         seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
       />
+      {/* Latest news related to this league */}
+      <LeagueLatestNews leagueName={leagueName || heroInfo?.name} />
 
     </div>
   );
