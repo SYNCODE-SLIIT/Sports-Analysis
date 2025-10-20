@@ -85,11 +85,9 @@ export default function SignUpPage() {
     <div className="min-h-[80vh] flex items-center justify-center py-12 relative">
       {/* Background Image with Overlay */}
       <div className="absolute inset-0 z-0">
-        <div 
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: 'url(/loginbg.jpg)' }}
-        />
-        <div className="absolute inset-0 bg-white/80 dark:bg-black/75" />
+        <div className="absolute inset-0 bg-cover bg-center bg-[url('/loginbg_light.png')] dark:bg-[url('/loginbg.jpg')]" />
+        {/* Overlay keeps text legible in dark mode */}
+        <div className="absolute inset-0 hidden bg-black/75 dark:block" />
       </div>
       
       <div className="container max-w-lg relative z-10">
