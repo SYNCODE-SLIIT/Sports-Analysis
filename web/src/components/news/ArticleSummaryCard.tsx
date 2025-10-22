@@ -204,7 +204,7 @@ export function ArticleSummaryCard({
             ) : null}
             {state.status === "ready" ? (
               <>
-                <p className="text-sm leading-relaxed text-muted-foreground">{state.summary}</p>
+                <span className="text-sm leading-relaxed text-muted-foreground" style={{ display: 'block' }}>{state.summary}</span>
                 {bullets.length > 0 ? (
                   <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                     {bullets.map((bullet, idx) => (
