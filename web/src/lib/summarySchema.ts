@@ -59,10 +59,18 @@ export function coerceSummaryLoose(input: unknown): { headline: string; paragrap
     typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
 
   const getStr = (v: unknown) => (typeof v === 'string' ? v : v == null ? '' : String(v));
-  const bulletsRaw = Array.isArray((shape as any).bullets) ? ((shape as any).bullets as unknown[]) : [];
+  const bulletsRaw = Array.isArray((shape.bullets as unknown)) ? (shape.bullets as unknown[]) : [];
   return {
-    headline: getStr((shape as any).headline || 'Match Summary'),
-    paragraph: getStr((shape as any).paragraph ?? (shape as any).one_paragraph ?? (shape as any).summary ?? ''),
+    headline: getStr('headline' in shape ? shape.headline : 'Match Summary'),
+    paragraph: getStr(
+      'paragraph' in shape
+        ? shape.paragraph
+        : 'one_paragraph' in shape
+        ? (shape as { one_paragraph?: unknown }).one_paragraph
+        : 'summary' in shape
+        ? (shape as { summary?: unknown }).summary
+        : ''
+    ),
     bullets: bulletsRaw.map((b) => getStr(b)),
   };
 }

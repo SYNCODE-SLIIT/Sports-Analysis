@@ -38,7 +38,20 @@ export default function LeagueLatestNews({ leagueName, limit = 20 }: Props) {
       setError(null);
       try {
         const resp = await getLeagueNews(leagueName, limit || 20);
-        const articlesRaw = (resp as any)?.data?.articles || (resp as any)?.data?.result || (resp as any)?.data || [];
+        const getData = (resp: unknown): unknown[] => {
+          if (typeof resp !== 'object' || resp === null) return [];
+          const dataObj = resp as Record<string, unknown>;
+          return (
+            (Array.isArray((dataObj.data as { articles?: unknown[] })?.articles)
+              ? (dataObj.data as { articles: unknown[] }).articles
+              : Array.isArray((dataObj.data as { result?: unknown[] })?.result)
+              ? (dataObj.data as { result: unknown[] }).result
+              : Array.isArray(dataObj.data)
+              ? (dataObj.data as unknown[])
+              : [])
+          );
+        };
+        const articlesRaw = getData(resp);
 
         const asString = (value: unknown) => (typeof value === "string" && value.trim() ? value : undefined);
 
@@ -56,28 +69,26 @@ export default function LeagueLatestNews({ leagueName, limit = 20 }: Props) {
 
           // image/media detection
           let imageUrl = pick(["image", "imageUrl", "urlToImage", "thumbnail", "image_url", "thumb"]);
-          if (!imageUrl) {
-            const media = Array.isArray((obj as any).media) ? ((obj as any).media as any[]) : undefined;
-            if (media && media.length) {
-              for (const m of media) {
-                if (typeof m === "string" && m.trim()) { imageUrl = m.trim(); break; }
-                if (m && typeof m === "object") {
-                  const url = asString((m as any).url) || asString((m as any).src) || asString((m as any).image);
-                  if (url) { imageUrl = url; break; }
-                }
+          if (!imageUrl && Array.isArray(obj.media)) {
+            for (const m of obj.media) {
+              if (typeof m === "string" && m.trim()) { imageUrl = m.trim(); break; }
+              if (m && typeof m === "object") {
+                const mObj = m as Record<string, unknown>;
+                const url = asString(mObj.url) || asString(mObj.src) || asString(mObj.image);
+                if (url) { imageUrl = url; break; }
               }
             }
           }
 
           return {
-            id: asString(obj.id) || asString((obj as any).articleId) || asString((obj as any).url) || `news-${index}`,
-            title: asString((obj as any).title) || asString((obj as any).headline) || asString((obj as any).name) || "",
-            url: asString((obj as any).url) || asString((obj as any).link) || asString((obj as any).article_url) || "",
-            summary: asString((obj as any).summary) || asString((obj as any).description) || asString((obj as any).excerpt) || "",
+            id: asString(obj.id) || asString(obj.articleId) || asString(obj.url) || `news-${index}`,
+            title: asString(obj.title) || asString(obj.headline) || asString(obj.name) || "",
+            url: asString(obj.url) || asString(obj.link) || asString(obj.article_url) || "",
+            summary: asString(obj.summary) || asString(obj.description) || asString(obj.excerpt) || "",
             imageUrl: imageUrl || undefined,
-            source: asString((obj as any).source) || asString((obj as any).publisher) || "",
-            author: asString((obj as any).author) || asString((obj as any).byline) || asString((obj as any).creator) || asString((obj as any).contributor) || undefined,
-            publishedAt: asString((obj as any).publishedAt) || asString((obj as any).pubDate) || asString((obj as any).published) || "",
+            source: asString(obj.source) || asString(obj.publisher) || "",
+            author: asString(obj.author) || asString(obj.byline) || asString(obj.creator) || asString(obj.contributor) || undefined,
+            publishedAt: asString(obj.publishedAt) || asString(obj.pubDate) || asString(obj.published) || "",
           } as Article;
         });
 
