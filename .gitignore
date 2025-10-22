@@ -1,3 +1,5 @@
+# macOS system files
+.DS_Store
 # Virtual env
 venv/
 .venv/

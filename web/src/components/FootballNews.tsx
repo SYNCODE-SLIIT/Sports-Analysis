@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
@@ -21,9 +22,22 @@ type Article = {
 type Props = {
   articles?: Article[];
   limit?: number;
+  moreHref?: string;
+  moreLabel?: string;
+  variant?: "full" | "preview";
+  showSearch?: boolean;
 };
 
-export default function FootballNews({ articles: initialArticles, limit = 0 }: Props) {
+export default function FootballNews({
+  articles: initialArticles,
+  limit = 0,
+  moreHref,
+  moreLabel = "Explore more",
+  variant = "full",
+  showSearch: showSearchProp,
+}: Props) {
+  const showSearch = showSearchProp ?? variant === "full";
+
   const [articles, setArticles] = useState<Article[] | null>(initialArticles ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +83,21 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
           } as Article;
         });
 
+        const seen = new Set<string>();
+        const unique = normalized.filter((article) => {
+          const key = article.id || article.url;
+          if (!key) return true;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const finalPool =
+          limit && limit > 0 && unique.length < limit ? normalized : unique;
+
         if (!active) return;
-        setArticles(limit && limit > 0 ? normalized.slice(0, limit) : normalized);
+        setArticles(
+          limit && limit > 0 ? finalPool.slice(0, limit) : finalPool
+        );
       } catch (err: unknown) {
         if (!active) return;
         const toMessage = (value: unknown) => {
@@ -104,9 +131,13 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
     if (q) {
       filtered = filtered.filter((a) => {
         const title = a.title?.toLowerCase() || "";
-        const source = a.source?.toLowerCase() || "";
         const author = a.author?.toLowerCase() || "";
-        return title.includes(q) || source.includes(q) || author.includes(q);
+        const source = a.source?.toLowerCase() || "";
+        return (
+          title.includes(q) ||
+          author.includes(q) ||
+          source.includes(q)
+        );
       });
     }
     return filtered;
@@ -115,17 +146,23 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
   const totalPages = Math.ceil(filteredArticles.length / ARTICLES_PER_PAGE) || 1;
   // Scroll to top of news list on page change
   const newsListRef = useRef<HTMLDivElement>(null);
-  const scrollNewsListToTop = () => {
+  const scrollNewsListToTop = useCallback(() => {
+    if (variant === "full" && typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     if (newsListRef.current) {
       newsListRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     } else if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  };
+  }, [variant]);
 
   useEffect(() => {
+    if (variant !== "full") return;
     scrollNewsListToTop();
-  }, [page]);
+  }, [page, variant, scrollNewsListToTop]);
 
   const pagedArticles = useMemo(() => {
     const start = (page - 1) * ARTICLES_PER_PAGE;
@@ -150,30 +187,44 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
         <CardDescription className="text-sm text-muted-foreground">
           Hand-picked headlines from across the football world, refreshed throughout the day.
         </CardDescription>
-        {/* Search control */}
-        <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:gap-4 w-full">
-          <div className="relative w-full max-w-xl">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-              {/* Search icon (inline SVG) */}
-              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="text-muted-foreground">
-                <circle cx="11" cy="11" r="7" strokeWidth="2" />
-                <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35" />
-              </svg>
-            </span>
-            <Input
-              type="text"
-              placeholder="Search by title or source..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-10 pr-4 py-2 w-full text-base rounded-md border border-border focus:ring-2 focus:ring-primary/30 focus:border-primary/60 transition-colors"
-              style={{ minWidth: 320, width: "100%", maxWidth: 480 }}
-            />
+        {showSearch ? (
+          <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:gap-4 w-full">
+            <div className="relative w-full max-w-xl">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  className="text-muted-foreground"
+                >
+                  <circle cx="11" cy="11" r="7" strokeWidth="2" />
+                  <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35" />
+                </svg>
+              </span>
+              <Input
+                type="text"
+                placeholder="Search by title, author, or source..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-md border border-border py-2 pl-10 pr-4 text-base transition-colors focus:border-primary/60 focus:ring-2 focus:ring-primary/30"
+                style={{ minWidth: 320, width: "100%", maxWidth: 480 }}
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div ref={newsListRef} className="grid gap-4 md:grid-cols-2">
+          <div
+            ref={newsListRef}
+            className={
+              variant === "preview"
+                ? "grid gap-4 sm:grid-cols-2"
+                : "grid gap-4 md:grid-cols-2"
+            }
+          >
             {Array.from({ length: skeletonCount }).map((_, index) => (
               <div
                 key={`news-skeleton-${index}`}
@@ -200,7 +251,14 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
           <div className="text-sm text-muted-foreground">No football headlines available right now.</div>
         ) : (
           <>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div
+              ref={newsListRef}
+              className={
+                variant === "preview"
+                  ? "grid gap-4 sm:grid-cols-2"
+                  : "grid gap-4 md:grid-cols-2"
+              }
+            >
               {pagedArticles.map((article, index) => {
                 const articleKey = article.id || article.url || `football-news-${index}`;
                 return (
@@ -219,7 +277,7 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
               })}
             </div>
             {/* Pagination controls with ellipsis and scroll-to-top */}
-            {totalPages > 1 && (
+            {variant === "full" && totalPages > 1 && (
               <div className="mt-8 flex flex-col items-center justify-center gap-2">
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="ghost" onClick={() => { setPage(p => Math.max(1, p - 1)); scrollNewsListToTop(); }} disabled={page === 1}>
@@ -264,6 +322,13 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
                 </span>
               </div>
             )}
+            {moreHref ? (
+              <div className="mt-8 flex justify-center">
+                <Button asChild variant="default" size="default">
+                  <Link href={moreHref}>{moreLabel}</Link>
+                </Button>
+              </div>
+            ) : null}
           </>
         )}
       </CardContent>
