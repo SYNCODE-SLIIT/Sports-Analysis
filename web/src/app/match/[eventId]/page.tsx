@@ -1049,7 +1049,7 @@ export default function MatchPage() {
     return () => {
       active = false;
     };
-  }, [event?.eventId, event?.homeTeam, event?.awayTeam, event?.date, eventRaw]);
+  }, [event, event?.eventId, event?.homeTeam, event?.awayTeam, event?.date, eventRaw]);
 
   const match = event;
 
