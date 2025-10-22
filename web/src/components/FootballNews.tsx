@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -146,7 +146,7 @@ export default function FootballNews({
   const totalPages = Math.ceil(filteredArticles.length / ARTICLES_PER_PAGE) || 1;
   // Scroll to top of news list on page change
   const newsListRef = useRef<HTMLDivElement>(null);
-  const scrollNewsListToTop = () => {
+  const scrollNewsListToTop = useCallback(() => {
     if (variant === "full" && typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
@@ -157,12 +157,12 @@ export default function FootballNews({
     } else if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  };
+  }, [variant]);
 
   useEffect(() => {
     if (variant !== "full") return;
     scrollNewsListToTop();
-  }, [page, variant]);
+  }, [page, variant, scrollNewsListToTop]);
 
   const pagedArticles = useMemo(() => {
     const start = (page - 1) * ARTICLES_PER_PAGE;

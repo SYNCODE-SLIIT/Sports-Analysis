@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useTheme } from "next-themes";
+// ...existing code...
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LiveNowSection } from "@/components/LiveNowSection";
@@ -15,8 +15,7 @@ import { Button } from "@/components/ui/button";
 
 // ...existing code...
 export function LiveUpcomingTabs() {
-  const { resolvedTheme } = useTheme();
-  const exploreVariant = resolvedTheme === "dark" ? "outline" : "default";
+  // ...existing code...
 
   return (
     <section className="space-y-6">
