@@ -101,6 +101,23 @@ export async function getLeagueTable(args: { leagueId?: string; leagueName?: str
   return postCollect<{ table?: DataObject[]; result?: DataObject[]; total?: DataObject[]; standings?: DataObject[]; rows?: DataObject[]; league_table?: DataObject[] }>("league.table", payload);
 }
 
+export async function getLeagueInfo(args: { leagueId?: string; leagueName?: string }) {
+  const payload: Record<string, Json> = {};
+
+  if (args.leagueId) {
+    payload.leagueId = sanitizeInput(String(args.leagueId));
+  }
+  if (args.leagueName) {
+    payload.leagueName = sanitizeInput(args.leagueName);
+  }
+
+  if (!Object.keys(payload).length) {
+    throw new Error("leagueId or leagueName is required");
+  }
+
+  return postCollect<{ league?: DataObject }>("league.get", payload);
+}
+
 /** Single match details */
 export async function getEventResults(eventId: string) {
   return postCollect<{ event?: DataObject; stats?: DataObject; score?: DataObject }>("event.results", { eventId: String(eventId) });
