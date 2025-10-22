@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ASSETS } from "@/lib/assets";
+
+import { useTheme } from "next-themes";
 import { useAuth } from "@/components/AuthProvider";
 import { useRecommendations } from "@/hooks/useRecommendations";
 import { getEventAllSports, getEventResults, getTeam } from "@/lib/collect";
@@ -605,12 +606,21 @@ export function Hero() {
     );
   };
 
+  const { resolvedTheme } = useTheme();
+  const bannerSrc = resolvedTheme === "light" ? "/banner_light.png" : "/banner.jpg";
   return (
-    <section className="relative flex min-h-[70vh] items-center overflow-hidden">
+  <section className="relative flex min-h-[90vh] items-center overflow-hidden">
       <div className="absolute inset-0 z-0">
-        <Image src={ASSETS.hero} alt="Football stadium background" fill className="object-cover" priority />
-        <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/60 to-background/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
+        <Image src={bannerSrc} alt="Football stadium background" fill className="object-cover" priority />
+        {/* Overlay: Only show overlays in dark mode for text contrast, and a left-side overlay in light mode */}
+        {resolvedTheme === "dark" ? (
+          <>
+            <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/60 to-background/20" />
+            <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
+          </>
+        ) : (
+          <div className="absolute left-0 top-0 bottom-0 w-1/2 bg-white/70" style={{pointerEvents:'none'}} />
+        )}
       </div>
 
       <div className="container relative z-10">
@@ -621,7 +631,11 @@ export function Hero() {
                 <span className="block">Live Football</span>
                 <span className="block text-gradient">Analytics & Insights</span>
               </h1>
-              <p className="max-w-lg text-lg text-muted-foreground">
+              <p
+                className={
+                  `max-w-lg text-lg ${resolvedTheme === 'light' ? 'text-zinc-700' : 'text-muted-foreground'}`
+                }
+              >
                 Dive into tailored match analysis, real-time probabilities, and stories curated around the clubs and leagues you care about most.
               </p>
             </motion.div>
