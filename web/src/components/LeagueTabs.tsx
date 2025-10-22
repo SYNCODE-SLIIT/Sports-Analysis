@@ -30,7 +30,7 @@ type MajorLeague = {
   id: string;
   code: string;
   name: string;
-  country?: string;
+  country: string | undefined;
   queryName: string;
 };
 
