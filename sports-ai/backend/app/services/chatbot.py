@@ -36,7 +36,17 @@ class ChatbotServiceError(Exception):
 # Temperatures read once; override via env if desired.
 PLANNER_TEMPERATURE = float(os.getenv("GROQ_PLANNER_TEMPERATURE", "0.1"))
 WRITER_TEMPERATURE = float(os.getenv("GROQ_WRITER_TEMPERATURE", "0.2"))
+SUGGESTION_TEMPERATURE = float(os.getenv("GROQ_SUGGESTION_TEMPERATURE", "0.35"))
 MAX_HISTORY_MESSAGES = int(os.getenv("CHATBOT_HISTORY_LIMIT", "12"))
+
+DEFAULT_SUGGESTED_PROMPTS: List[str] = [
+    "What storylines should I watch in this weekend's Premier League matches?",
+    "Which players are in top form ahead of the Champions League fixtures?",
+    "Show me recent results and trends for Manchester City and Liverpool.",
+    "Who are the underdog teams to watch across major European leagues this week?",
+    "How do the league tables look for the top five European competitions right now?",
+    "Give me key stats from the most talked-about match in world football today.",
+]
 
 
 def _get_tavily_api_key() -> str:
@@ -71,8 +81,20 @@ def _get_planner_model() -> str:
     ).strip()
 
 
-def _ensure_api_keys() -> None:
-    if not _get_tavily_api_key():
+def _get_default_suggestion_model() -> str:
+    return _get_default_planner_model()
+
+
+def _get_suggestion_model() -> str:
+    return (
+        os.getenv("GROQ_SUGGESTION_MODEL")
+        or os.getenv("GROQ_MODEL")
+        or _get_default_suggestion_model()
+    ).strip()
+
+
+def _ensure_api_keys(*, require_tavily: bool = True) -> None:
+    if require_tavily and not _get_tavily_api_key():
         raise ChatbotServiceError(
             "Missing Tavily API key. Set TAVIL_API_KEY or TAVILY_API_KEY in the environment.",
             code="missing_credentials",
@@ -118,7 +140,7 @@ def _call_groq_chat(
     temperature: float,
 ) -> str:
     """Invoke Groq chat completion with shared plumbing."""
-    _ensure_api_keys()
+    _ensure_api_keys(require_tavily=False)
     api_key = _get_groq_api_key()
     if not model:
         raise ChatbotServiceError("Groq model name is not configured.", code="missing_configuration")
@@ -157,6 +179,170 @@ def _coerce_json_block(text: str) -> Dict[str, Any]:
             except json.JSONDecodeError as exc:
                 raise ChatbotServiceError("Planner returned malformed JSON.", code="planner_invalid_json") from exc
         raise ChatbotServiceError("Planner returned non-JSON response.", code="planner_invalid_json")
+
+
+def _coerce_prompt_list(text: str, *, limit: int) -> List[str]:
+    """Extract a list of prompt strings from a model response."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return []
+
+    if "```" in cleaned:
+        matches = re.findall(r"```(?:json)?\s*(\[[\s\S]*?\])\s*```", cleaned, flags=re.DOTALL)
+        if matches:
+            cleaned = matches[0].strip()
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        array_match = re.search(r"\[[\s\S]*\]", cleaned, flags=re.DOTALL)
+        if not array_match:
+            return []
+        try:
+            parsed = json.loads(array_match.group())
+        except json.JSONDecodeError:
+            return []
+
+    candidates: List[str] = []
+    sequence: Any = parsed
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("prompts"), list):
+            sequence = parsed["prompts"]
+        else:
+            sequence = list(parsed.values())
+
+    if isinstance(sequence, list):
+        for item in sequence:
+            if isinstance(item, str):
+                text_item = item.strip()
+                if text_item:
+                    candidates.append(text_item)
+            elif isinstance(item, dict):
+                for key in ("prompt", "text", "question", "suggestion"):
+                    candidate = item.get(key)
+                    if isinstance(candidate, str):
+                        text_item = candidate.strip()
+                        if text_item:
+                            candidates.append(text_item)
+                            break
+            if len(candidates) >= limit:
+                break
+
+    return candidates[:limit]
+
+
+def generate_suggested_prompts(
+    recommendations: Optional[List[Dict[str, Any]]] = None,
+    *,
+    limit: int = 4,
+) -> List[str]:
+    """Generate suggested starter prompts using Groq with optional recommendation context."""
+    effective_limit = max(1, min(limit, 6))
+
+    seeds: List[str] = []
+    if recommendations:
+        for rec in recommendations[:8]:
+            if not isinstance(rec, dict):
+                continue
+            parts: List[str] = []
+
+            title = rec.get("title")
+            if isinstance(title, str) and title.strip():
+                parts.append(f"Title: {title.strip()}")
+
+            summary = rec.get("summary")
+            if isinstance(summary, str) and summary.strip():
+                parts.append(f"Summary: {summary.strip()}")
+
+            reason = rec.get("reason")
+            if isinstance(reason, str) and reason.strip():
+                parts.append(f"Reason: {reason.strip()}")
+
+            league = rec.get("league")
+            if isinstance(league, str) and league.strip():
+                parts.append(f"League: {league.strip()}")
+
+            teams = rec.get("teams")
+            if isinstance(teams, (list, tuple)):
+                team_names = [str(team).strip() for team in teams if isinstance(team, str) and team.strip()]
+                if team_names:
+                    parts.append(f"Teams: {', '.join(team_names)}")
+
+            metadata = rec.get("metadata")
+            if isinstance(metadata, dict):
+                notable_meta: List[str] = []
+                for key, label in (("kickoff", "Kickoff"), ("date", "Date"), ("stage", "Stage")):
+                    value = metadata.get(key)
+                    if isinstance(value, str) and value.strip():
+                        notable_meta.append(f"{label}: {value.strip()}")
+                if notable_meta:
+                    parts.append("Meta: " + "; ".join(notable_meta))
+
+            if parts:
+                seeds.append("; ".join(parts))
+
+    context_block = (
+        "Personalized recommendation seeds:\n- " + "\n- ".join(seeds)
+        if seeds
+        else "No personalized recommendation data was available. Focus on high-interest soccer storylines."
+    )
+
+    instructions = (
+        f"Generate {effective_limit} concise, engaging questions a fan could ask a soccer analytics assistant. "
+        "Each question should be 8-18 words, grounded in current competitions, players, or trends. "
+        "Prefer concrete matchups, form comparisons, or tactical angles. "
+        "If recommendation seeds are provided, tie at least half of the suggestions to them. "
+        "Respond with only a JSON array of strings."
+    )
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You generate onboarding suggestions for a soccer-focused AI assistant. "
+                "Keep prompts specific, time-relevant, and helpful for starting a conversation."
+            ),
+        },
+        {"role": "user", "content": f"{instructions}\n\n{context_block}"},
+    ]
+
+    try:
+        raw = _call_groq_chat(
+            messages,
+            model=_get_suggestion_model(),
+            temperature=SUGGESTION_TEMPERATURE,
+        )
+    except ChatbotServiceError:
+        return DEFAULT_SUGGESTED_PROMPTS[:effective_limit]
+
+    prompts = _coerce_prompt_list(raw, limit=effective_limit)
+    if not prompts:
+        return DEFAULT_SUGGESTED_PROMPTS[:effective_limit]
+
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for prompt in prompts:
+        normalized = prompt.strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+        if len(deduped) >= effective_limit:
+            break
+
+    if len(deduped) < effective_limit:
+        for fallback in DEFAULT_SUGGESTED_PROMPTS:
+            key = fallback.strip().lower()
+            if key and key not in seen:
+                deduped.append(fallback)
+                seen.add(key)
+            if len(deduped) >= effective_limit:
+                break
+
+    return deduped[:effective_limit]
 
 
 def _tavily_search(query: str, *, max_results: int = 5) -> Dict[str, Any]:

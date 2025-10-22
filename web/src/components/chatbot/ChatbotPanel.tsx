@@ -37,11 +37,11 @@ type ApiResponse =
 
 const DEFAULT_TOP_K = 5;
 
-const SUGGESTED_PROMPTS = [
-  "Show me the latest Premier League results.",
-  "Compare Lionel Messi and Cristiano Ronaldo's stats this season.",
-  "What were the key moments in yesterday's NBA games?",
-  "Which underdog teams are trending in the NFL right now?",
+const FALLBACK_PROMPTS = [
+  "What storylines should I watch in this weekend's Premier League matches?",
+  "Which players are in top form ahead of the Champions League fixtures?",
+  "Show me recent results and trends for Manchester City and Liverpool.",
+  "Who are the underdog teams to watch across major European leagues this week?",
 ];
 
 export function ChatbotPanel() {
@@ -51,12 +51,49 @@ export function ChatbotPanel() {
   const [error, setError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
+  const [isLoadingPrompts, setIsLoadingPrompts] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPrompts = async () => {
+      setIsLoadingPrompts(true);
+      try {
+        const resp = await fetch("/api/chatbot/prompts", { cache: "no-store" });
+        if (!resp.ok) {
+          throw new Error(`Prompts request failed with status ${resp.status}`);
+        }
+        const data: { prompts?: unknown } = await resp.json();
+        if (!isMounted) return;
+        const prompts = Array.isArray(data.prompts)
+          ? (data.prompts as unknown[]).filter(
+              (entry): entry is string => typeof entry === "string" && entry.trim().length > 0
+            )
+          : [];
+        setSuggestedPrompts(prompts.slice(0, 4));
+      } catch {
+        if (isMounted) {
+          setSuggestedPrompts([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingPrompts(false);
+        }
+      }
+    };
+
+    void loadPrompts();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const sendQuestion = async (rawQuestion: string) => {
     const question = rawQuestion.trim();
@@ -147,6 +184,8 @@ export function ChatbotPanel() {
     pendingQuestion && pendingQuestion.trim().length > 0
       ? `Searching ${pendingQuestion.replace(/[?!.\s]+$/, "")}...`
       : "Searching for results...";
+
+  const promptsToRender = (suggestedPrompts.length > 0 ? suggestedPrompts : FALLBACK_PROMPTS).slice(0, 4);
 
   return (
     <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full">
@@ -248,18 +287,25 @@ export function ChatbotPanel() {
                 </div>
               </div>
               <div className="grid w-full gap-2 sm:grid-cols-2">
-                {SUGGESTED_PROMPTS.map((prompt) => (
+                {promptsToRender.map((prompt) => (
                   <Button
                     key={prompt}
                     type="button"
                     variant="outline"
                     className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-xs"
                     onClick={() => handleSuggestionSelect(prompt)}
+                    disabled={isLoading}
                   >
                     {prompt}
                   </Button>
                 ))}
               </div>
+              {isLoadingPrompts && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Updating suggestions…
+                </div>
+              )}
             </div>
           )}
         </div>

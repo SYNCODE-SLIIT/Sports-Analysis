@@ -4,8 +4,19 @@ from fastapi import APIRouter, HTTPException
 from typing import Any, Dict
 from starlette.concurrency import run_in_threadpool
 
-from ..schemas.chatbot import ChatbotRequest, ChatbotResponse, ChatCitation
-from ..services.chatbot import ChatbotServiceError, ask_with_web_search
+from ..schemas.chatbot import (
+    ChatCitation,
+    ChatbotRequest,
+    ChatbotResponse,
+    SuggestedPromptsRequest,
+    SuggestedPromptsResponse,
+)
+from ..services.chatbot import (
+    DEFAULT_SUGGESTED_PROMPTS,
+    ChatbotServiceError,
+    ask_with_web_search,
+    generate_suggested_prompts,
+)
 
 
 router = APIRouter(prefix="/chatbot", tags=["chatbot"])
@@ -44,3 +55,16 @@ async def chatbot_web_search(payload: ChatbotRequest) -> ChatbotResponse:
         citations=citations,
         meta=meta_payload,
     )
+
+
+@router.post("/suggested-prompts", response_model=SuggestedPromptsResponse)
+async def chatbot_suggested_prompts(payload: SuggestedPromptsRequest) -> SuggestedPromptsResponse:
+    try:
+        prompts = await run_in_threadpool(
+            generate_suggested_prompts,
+            [item.model_dump(exclude_none=True) for item in payload.recommendations],
+            limit=payload.limit,
+        )
+    except ChatbotServiceError:
+        prompts = DEFAULT_SUGGESTED_PROMPTS[: payload.limit]
+    return SuggestedPromptsResponse(prompts=prompts)
