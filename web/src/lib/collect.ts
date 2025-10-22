@@ -250,6 +250,25 @@ export async function getLeagueNews(leagueName: string, limit = 20) {
   });
 }
 
+export async function summarizeNewsArticle(args: { url: string; title?: string }) {
+  if (!args?.url) throw new Error("Article url is required");
+  const payload = { url: args.url, title: args.title?.trim() || undefined };
+  const r = await fetch("/api/news/summary", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  let data: unknown = null;
+  try { data = await r.json(); } catch { data = null; }
+  const body = (data ?? {}) as { ok?: boolean; summary?: string; bullets?: string[]; error?: string; title?: string };
+  if (!r.ok) {
+    throw new Error(body?.error || `News summarizer request failed (${r.status})`);
+  }
+  if (!body?.ok) {
+    throw new Error(body?.error || "News summary unavailable");
+  }
+  return body;
+}
 // Analysis win probability override (parity with legacy match.js)
 export async function getWinProb(eventId: string, source = "auto", lookback = 10) {
   const u = new URL("/api/analysis/winprob", window.location.origin);
