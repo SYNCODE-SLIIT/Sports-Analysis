@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { ArticleSummaryCard } from "@/components/news/ArticleSummaryCard";
 import { getLeagueNews } from "@/lib/collect";
 
 type Article = {
@@ -18,34 +19,6 @@ type Article = {
 type Props = {
   leagueName?: string | null;
   limit?: number;
-};
-
-const formatRelativeTime = (value?: string) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  const divisions: { amount: number; name: Intl.RelativeTimeFormatUnit }[] = [
-    { amount: 60, name: "second" },
-    { amount: 60, name: "minute" },
-    { amount: 24, name: "hour" },
-    { amount: 7, name: "day" },
-    { amount: 4.34524, name: "week" },
-    { amount: 12, name: "month" },
-    { amount: Number.POSITIVE_INFINITY, name: "year" },
-  ];
-
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  let duration = seconds;
-
-  for (const division of divisions) {
-    if (Math.abs(duration) < division.amount) {
-      return formatter.format(Math.round(duration), division.name);
-    }
-    duration /= division.amount;
-  }
-  return null;
 };
 
 export default function LeagueLatestNews({ leagueName, limit = 20 }: Props) {
@@ -65,7 +38,20 @@ export default function LeagueLatestNews({ leagueName, limit = 20 }: Props) {
       setError(null);
       try {
         const resp = await getLeagueNews(leagueName, limit || 20);
-        const articlesRaw = (resp as any)?.data?.articles || (resp as any)?.data?.result || (resp as any)?.data || [];
+        const getData = (resp: unknown): unknown[] => {
+          if (typeof resp !== 'object' || resp === null) return [];
+          const dataObj = resp as Record<string, unknown>;
+          return (
+            (Array.isArray((dataObj.data as { articles?: unknown[] })?.articles)
+              ? (dataObj.data as { articles: unknown[] }).articles
+              : Array.isArray((dataObj.data as { result?: unknown[] })?.result)
+              ? (dataObj.data as { result: unknown[] }).result
+              : Array.isArray(dataObj.data)
+              ? (dataObj.data as unknown[])
+              : [])
+          );
+        };
+        const articlesRaw = getData(resp);
 
         const asString = (value: unknown) => (typeof value === "string" && value.trim() ? value : undefined);
 
@@ -83,28 +69,26 @@ export default function LeagueLatestNews({ leagueName, limit = 20 }: Props) {
 
           // image/media detection
           let imageUrl = pick(["image", "imageUrl", "urlToImage", "thumbnail", "image_url", "thumb"]);
-          if (!imageUrl) {
-            const media = Array.isArray((obj as any).media) ? ((obj as any).media as any[]) : undefined;
-            if (media && media.length) {
-              for (const m of media) {
-                if (typeof m === "string" && m.trim()) { imageUrl = m.trim(); break; }
-                if (m && typeof m === "object") {
-                  const url = asString((m as any).url) || asString((m as any).src) || asString((m as any).image);
-                  if (url) { imageUrl = url; break; }
-                }
+          if (!imageUrl && Array.isArray(obj.media)) {
+            for (const m of obj.media) {
+              if (typeof m === "string" && m.trim()) { imageUrl = m.trim(); break; }
+              if (m && typeof m === "object") {
+                const mObj = m as Record<string, unknown>;
+                const url = asString(mObj.url) || asString(mObj.src) || asString(mObj.image);
+                if (url) { imageUrl = url; break; }
               }
             }
           }
 
           return {
-            id: asString(obj.id) || asString((obj as any).articleId) || asString((obj as any).url) || `news-${index}`,
-            title: asString((obj as any).title) || asString((obj as any).headline) || asString((obj as any).name) || "",
-            url: asString((obj as any).url) || asString((obj as any).link) || asString((obj as any).article_url) || "",
-            summary: asString((obj as any).summary) || asString((obj as any).description) || asString((obj as any).excerpt) || "",
+            id: asString(obj.id) || asString(obj.articleId) || asString(obj.url) || `news-${index}`,
+            title: asString(obj.title) || asString(obj.headline) || asString(obj.name) || "",
+            url: asString(obj.url) || asString(obj.link) || asString(obj.article_url) || "",
+            summary: asString(obj.summary) || asString(obj.description) || asString(obj.excerpt) || "",
             imageUrl: imageUrl || undefined,
-            source: asString((obj as any).source) || asString((obj as any).publisher) || "",
-            author: asString((obj as any).author) || asString((obj as any).byline) || asString((obj as any).creator) || asString((obj as any).contributor) || undefined,
-            publishedAt: asString((obj as any).publishedAt) || asString((obj as any).pubDate) || asString((obj as any).published) || "",
+            source: asString(obj.source) || asString(obj.publisher) || "",
+            author: asString(obj.author) || asString(obj.byline) || asString(obj.creator) || asString(obj.contributor) || undefined,
+            publishedAt: asString(obj.publishedAt) || asString(obj.pubDate) || asString(obj.published) || "",
           } as Article;
         });
 
@@ -160,58 +144,20 @@ export default function LeagueLatestNews({ leagueName, limit = 20 }: Props) {
           <div className="text-sm text-muted-foreground">No recent headlines available right now.</div>
         ) : (
           <div ref={newsListRef} className="grid gap-4 md:grid-cols-2">
-            {articles.map((article) => {
-              const displayTitle = article.title || "Untitled headline";
-              const relativeTime = formatRelativeTime(article.publishedAt || undefined);
+            {articles.map((article, index) => {
+              const articleKey = article.id || article.url || `league-news-${index}`;
               return (
-                <a
-                  key={article.id}
-                  href={article.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group relative block overflow-hidden rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-background hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                >
-                  <span aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-primary/0 via-primary/5 to-primary/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                  <div className="flex flex-col gap-4 sm:flex-row">
-                    {article.imageUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={article.imageUrl}
-                        alt={displayTitle}
-                        className="h-24 w-full flex-shrink-0 rounded-lg object-cover shadow-sm sm:h-24 sm:w-32"
-                        onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }}
-                      />
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-primary/70">League news</div>
-                      <div className="mt-1 text-base font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">
-                        {displayTitle}
-                      </div>
-                      {article.summary ? (
-                        <p className="mt-2 text-sm text-muted-foreground line-clamp-3">{article.summary}</p>
-                      ) : null}
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {article.source ? (
-                          <span className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary/80">{article.source}</span>
-                        ) : null}
-                        {article.source && article.publishedAt ? (
-                          <span aria-hidden className="h-1 w-1 rounded-full bg-border" />
-                        ) : null}
-                        {article.publishedAt ? (
-                          <time dateTime={article.publishedAt} className="truncate" title={new Date(article.publishedAt).toLocaleString()}>
-                            {relativeTime ?? new Date(article.publishedAt).toLocaleDateString()}
-                          </time>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-primary/80 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                    Read full story
-                    <svg aria-hidden className="h-3.5 w-3.5 translate-x-0 transition-transform duration-300 group-hover:translate-x-1" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M4 12L12 4M12 4H6M12 4V10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
-                </a>
+                <ArticleSummaryCard
+                  key={articleKey}
+                  articleId={articleKey}
+                  title={article.title}
+                  url={article.url}
+                  preview={article.summary}
+                  imageUrl={article.imageUrl}
+                  source={article.source}
+                  publishedAt={article.publishedAt}
+                  ctaLabel="League news"
+                />
               );
             })}
           </div>

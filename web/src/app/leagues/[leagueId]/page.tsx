@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { LeagueInfoHero, LeagueHeroInfo } from "@/components/league/LeagueInfoHero";
+import LeagueSummaryCard from "@/components/league/LeagueSummaryCard";
 import { LeagueStandingsCard, StandingRow, SelectOption } from "@/components/league/LeagueStandingsCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getLeagueTable, listSeasons, postCollect, Json } from "@/lib/collect";
+import { getLeagueInfo, getLeagueTable, listSeasons, postCollect, Json } from "@/lib/collect";
 import LeagueLiveMatches from "@/components/league/LeagueLiveMatches";
 import LeagueSeasonMatches from "@/components/league/LeagueSeasonMatches";
 import LeagueStatistics from "@/components/league/LeagueStatistics";
@@ -470,7 +471,91 @@ export default function LeagueDetailPage() {
   }, [providerLeagueId, initialNameParam, leagueName, slugIdentifier, initialCountryParam, identityKeyParam]);
 
   // ---- Detailed league info (TSDB lookupleague) ----
-  
+  useEffect(() => {
+    if (!leagueName && !providerLeagueId) return;
+    let cancelled = false;
+    const args: { leagueId?: string; leagueName?: string } = {};
+    if (providerLeagueId) args.leagueId = providerLeagueId;
+    if (leagueName) args.leagueName = leagueName;
+
+    getLeagueInfo(args)
+      .then(resp => {
+        if (cancelled) return;
+        const league = resp?.data?.league;
+        if (!league || typeof league !== "object") return;
+        const obj = league as Record<string, unknown>;
+
+        const descriptionRaw = pickFirstString(obj, [
+          "description",
+          "strDescriptionEN",
+          "strDescription",
+          "league_description",
+        ]);
+        let description: string | undefined;
+        if (descriptionRaw) {
+          description = descriptionRaw.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ").trim();
+        }
+
+        const alternateNamesRaw = pickFirstString(obj, [
+          "strLeagueAlternate",
+          "league_alternates",
+          "leagueAlternates",
+          "alternate_names",
+        ]);
+        const alternateNames = alternateNamesRaw
+          ? Array.from(
+              new Set(
+                alternateNamesRaw
+                  .split(/[;,]/)
+                  .map(item => item.trim())
+                  .filter(Boolean)
+              )
+            )
+          : undefined;
+
+        const patch: Partial<LeagueHeroInfo> = {
+          name: pickFirstString(obj, ["strLeague", "league_name", "name"]) ?? undefined,
+          country: pickFirstString(obj, ["strCountry", "country"]) ?? undefined,
+          leagueLogo: pickFirstString(obj, [
+            "strBadge",
+            "strLogo",
+            "strLeagueLogo",
+            "league_logo",
+            "league_badge",
+            "badge",
+          ]) ?? undefined,
+          countryLogo: pickFirstString(obj, [
+            "strCountryBadge",
+            "strFlag",
+            "country_logo",
+            "flag",
+          ]) ?? undefined,
+          founded: pickFirstString(obj, ["intFormedYear", "strFormedYear", "formedYear"]) ?? undefined,
+          currentSeason: pickFirstString(obj, ["strCurrentSeason", "currentSeason"]) ?? undefined,
+          website: pickFirstString(obj, ["strWebsite", "officialWebsite", "website"]) ?? undefined,
+          description,
+          alternateNames,
+        };
+
+        const hasPatch = Object.values(patch).some(value => {
+          if (Array.isArray(value)) return value.length > 0;
+          return value !== undefined && value !== null && value !== "";
+        });
+        if (hasPatch) {
+          setHeroInfo(prev => mergeHeroInfo(prev, patch));
+          setInfoError(prev => prev && prev.startsWith("Failed to load league info") ? null : prev);
+        }
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setInfoError(prev => prev ?? (error instanceof Error ? error.message : "Failed to load league info"));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [leagueName, providerLeagueId]);
+
   // ---- Seasons list for selector ----
   useEffect(() => {
     if (!leagueName && !providerLeagueId) return;
@@ -666,6 +751,16 @@ export default function LeagueDetailPage() {
     return options.length ? options : [{ value: OVERALL_STAGE_KEY, label: "Overall" }];
   }, [currentRows]);
 
+  const selectedSeasonLabel = useMemo(() => {
+    if (!selectedSeason) return undefined;
+    return seasonLabels[selectedSeason] || selectedSeason;
+  }, [seasonLabels, selectedSeason]);
+
+  const selectedStageLabel = useMemo(() => {
+    if (selectedStage === ALL_STAGE_KEY) return "All stages";
+    return stageOptions.find(opt => opt.value === selectedStage)?.label ?? (selectedStage === OVERALL_STAGE_KEY ? "Overall" : undefined);
+  }, [stageOptions, selectedStage]);
+
   useEffect(() => {
     if (!stageOptions.length) {
       setSelectedStage(ALL_STAGE_KEY);
@@ -683,6 +778,8 @@ export default function LeagueDetailPage() {
   }, [currentRows, selectedStage]);
 
   const lastUpdated = useMemo(() => computeLastUpdated(filteredRows), [filteredRows]);
+
+
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6">
@@ -712,6 +809,15 @@ export default function LeagueDetailPage() {
         </Card>
       ) : null}
 
+      <LeagueSummaryCard
+        leagueName={leagueName}
+        info={heroInfo}
+        rows={filteredRows}
+        seasonLabel={selectedSeasonLabel}
+        stageLabel={selectedStageLabel}
+        lastUpdated={lastUpdated}
+      />
+
       {standingsError && filteredRows.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-sm text-destructive">{standingsError}</CardContent>
@@ -735,8 +841,8 @@ export default function LeagueDetailPage() {
       <LeagueStatistics
         rows={filteredRows}
         leagueName={leagueName || heroInfo?.name}
-        seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
-        stageLabel={stageOptions.find(o => o.value === selectedStage)?.label}
+        seasonLabel={selectedSeasonLabel}
+        stageLabel={selectedStageLabel}
       />
 
       {/* Live matches for this league */}
@@ -745,7 +851,7 @@ export default function LeagueDetailPage() {
       {/* Season matches for selected season */}
       <LeagueSeasonMatches
         leagueName={leagueName || heroInfo?.name}
-        seasonLabel={seasonLabels[selectedSeason] || selectedSeason}
+        seasonLabel={selectedSeasonLabel}
       />
       {/* Latest news related to this league */}
       <LeagueLatestNews leagueName={leagueName || heroInfo?.name} />
