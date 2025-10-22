@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MatchCard } from "@/components/MatchCard";
@@ -136,6 +136,7 @@ function LoadingGrid() {
 export function LeagueTabs({ className }: LeagueTabsProps) {
   const defaultLeagueId = MAJOR_LEAGUES[0]?.id ?? "";
   const [selectedLeague, setSelectedLeague] = useState(defaultLeagueId);
+  const [sectionTab, setSectionTab] = useState<"live" | "upcoming">("live");
 
   const activeLeague =
     useMemo(
@@ -146,6 +147,10 @@ export function LeagueTabs({ className }: LeagueTabsProps) {
     ) ?? null;
 
   const leagueName = activeLeague?.queryName;
+
+  useEffect(() => {
+    setSectionTab("live");
+  }, [selectedLeague]);
 
   const {
     data: liveMatches = [],
@@ -167,6 +172,8 @@ export function LeagueTabs({ className }: LeagueTabsProps) {
 
   const liveFixtures = liveMatches.slice(0, MAX_FIXTURES_PER_SECTION);
   const upcomingFixtures = upcomingMatches.slice(0, MAX_FIXTURES_PER_SECTION);
+  const hasLiveMatches =
+    !liveLoading && !liveError && liveFixtures.length > 0;
 
   if (!MAJOR_LEAGUES.length) {
     return (
@@ -214,57 +221,76 @@ export function LeagueTabs({ className }: LeagueTabsProps) {
               ) : null}
             </header>
 
-            <section className="space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-lg font-semibold">Live Now</h4>
-              </div>
-              {liveError ? (
-                <EmptyState
-                  type="error"
-                  title="Unable to load live fixtures"
-                  description="We ran into an issue while fetching live fixtures. Try again in a moment."
-                  onAction={() => {
-                    void refetchLive();
-                  }}
-                />
-              ) : liveLoading ? (
-                <LoadingGrid />
-              ) : liveFixtures.length ? (
-                <FixtureGrid fixtures={liveFixtures} />
-              ) : (
-                <EmptyState
-                  type="no-matches"
-                  title="No live matches right now"
-                  description="Check back later or explore the upcoming fixtures below."
-                />
-              )}
-            </section>
+            <Tabs
+              value={sectionTab}
+              onValueChange={(value) =>
+                setSectionTab(value as "live" | "upcoming")
+              }
+              className="space-y-4"
+            >
+              <TabsList className="grid w-full grid-cols-2 rounded-xl bg-muted p-1">
+                <TabsTrigger value="live" className="text-sm font-semibold">
+                  <span className="flex items-center justify-center gap-2">
+                    {hasLiveMatches ? (
+                      <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+                    ) : null}
+                    Live Now
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger value="upcoming" className="text-sm font-semibold">
+                  Upcoming
+                </TabsTrigger>
+              </TabsList>
 
-            <section className="space-y-4">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-lg font-semibold">Upcoming</h4>
-              </div>
-              {upcomingError ? (
-                <EmptyState
-                  type="error"
-                  title="Unable to load upcoming fixtures"
-                  description="We could not fetch the upcoming schedule for this league."
-                  onAction={() => {
-                    void refetchUpcoming();
-                  }}
-                />
-              ) : upcomingLoading ? (
-                <LoadingGrid />
-              ) : upcomingFixtures.length ? (
-                <FixtureGrid fixtures={upcomingFixtures} animationDelayStep={0.05} />
-              ) : (
-                <EmptyState
-                  type="no-matches"
-                  title="No fixtures scheduled in the next few days"
-                  description="We could not find any upcoming fixtures for this league in the short-term window."
-                />
-              )}
-            </section>
+              <TabsContent value="live" className="space-y-4">
+                {liveError ? (
+                  <EmptyState
+                    type="error"
+                    title="Unable to load live fixtures"
+                    description="We ran into an issue while fetching live fixtures. Try again in a moment."
+                    onAction={() => {
+                      void refetchLive();
+                    }}
+                  />
+                ) : liveLoading ? (
+                  <LoadingGrid />
+                ) : liveFixtures.length ? (
+                  <FixtureGrid fixtures={liveFixtures} />
+                ) : (
+                  <EmptyState
+                    type="no-matches"
+                    title="No live matches right now"
+                    description="Check back later or explore the upcoming fixtures below."
+                  />
+                )}
+              </TabsContent>
+
+              <TabsContent value="upcoming" className="space-y-4">
+                {upcomingError ? (
+                  <EmptyState
+                    type="error"
+                    title="Unable to load upcoming fixtures"
+                    description="We could not fetch the upcoming schedule for this league."
+                    onAction={() => {
+                      void refetchUpcoming();
+                    }}
+                  />
+                ) : upcomingLoading ? (
+                  <LoadingGrid />
+                ) : upcomingFixtures.length ? (
+                  <FixtureGrid
+                    fixtures={upcomingFixtures}
+                    animationDelayStep={0.05}
+                  />
+                ) : (
+                  <EmptyState
+                    type="no-matches"
+                    title="No fixtures scheduled in the next few days"
+                    description="We could not find any upcoming fixtures for this league in the short-term window."
+                  />
+                )}
+              </TabsContent>
+            </Tabs>
           </TabsContent>
         ) : null}
       </Tabs>

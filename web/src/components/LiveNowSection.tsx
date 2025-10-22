@@ -7,9 +7,22 @@ import { MatchCard } from "@/components/MatchCard";
 import { EmptyState } from "@/components/EmptyState";
 import { MatchCardSkeleton } from "@/components/Skeletons";
 import { useLiveMatches } from "@/hooks/useData";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 
+type LiveNowSectionProps = {
+  onPageChangeAction?: () => void;
+  showHeading?: boolean;
+  enablePagination?: boolean;
+  enableAutoScroll?: boolean;
+};
 
-export function LiveNowSection({ onPageChangeAction }: { onPageChangeAction?: () => void }) {
+export function LiveNowSection({
+  onPageChangeAction,
+  showHeading = true,
+  enablePagination = true,
+  enableAutoScroll = true,
+}: LiveNowSectionProps) {
   const {
     data: liveMatches = [],
     isLoading,
@@ -36,8 +49,9 @@ export function LiveNowSection({ onPageChangeAction }: { onPageChangeAction?: ()
 
   // Scroll after page updates to ensure DOM has updated (matches FootballNews behavior)
   useEffect(() => {
+    if (!enableAutoScroll) return;
     scrollToSectionWithOffset();
-  }, [page]);
+  }, [page, enableAutoScroll]);
 
   const matches = useMemo(() => {
     return liveMatches.slice(
@@ -47,20 +61,27 @@ export function LiveNowSection({ onPageChangeAction }: { onPageChangeAction?: ()
   }, [liveMatches, page]);
 
   const handlePageChange = (newPage: number) => {
+    if (!enablePagination || newPage === page) return;
     setPage(newPage);
     // Scroll this section into view on page change so the user is taken to the top
     // of this section (falls back to window top if ref is not available).
     // Immediate attempt to scroll; the effect will run after render as well.
-    scrollToSectionWithOffset();
+    if (enableAutoScroll) {
+      scrollToSectionWithOffset();
+    }
     if (onPageChangeAction) onPageChangeAction();
   };
 
+  const shouldShowPagination = enablePagination && totalPages > 1;
+
   return (
     <section ref={sectionRef} className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
-        <h2 className="text-xl font-semibold">Live Now</h2>
-      </div>
+      {showHeading && (
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse" />
+          <h2 className="text-xl font-semibold">Live Now</h2>
+        </div>
+      )}
 
       {error ? (
         <EmptyState
@@ -101,7 +122,7 @@ export function LiveNowSection({ onPageChangeAction }: { onPageChangeAction?: ()
               </motion.div>
             ))}
           </motion.div>
-          {totalPages > 1 && (
+          {shouldShowPagination && (
             <div className="flex flex-col items-center justify-center gap-2 mt-6">
               <div className="flex items-center gap-2">
                 <button
@@ -151,6 +172,11 @@ export function LiveNowSection({ onPageChangeAction }: { onPageChangeAction?: ()
               </span>
             </div>
           )}
+          <div className="flex justify-center mt-6">
+            <Button variant="default" asChild>
+              <Link href="/live">Explore more</Link>
+            </Button>
+          </div>
         </>
       )}
     </section>
