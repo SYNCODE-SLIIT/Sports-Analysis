@@ -51,6 +51,14 @@ import joblib
 ALLSPORTS_API_KEY = os.environ.get("ALLSPORTS_API_KEY")
 ALLSPORTS_BASE_URL = (os.environ.get("ALLSPORTS_BASE_URL") or "https://apiv2.allsportsapi.com/football/").rstrip("/")
 
+# Cache TTLs (seconds). These provide a good balance between freshness and rate limiting.
+ALLSPORTS_COUNTRIES_TTL = max(int(os.environ.get("ALLSPORTS_COUNTRIES_TTL", "3600")), 0)
+ALLSPORTS_LEAGUES_TTL = max(int(os.environ.get("ALLSPORTS_LEAGUES_TTL", "3600")), 0)
+
+# Simple in-process caches keyed by request scope.
+_COUNTRIES_CACHE: Dict[str, Any] = {"data": None, "exp": 0.0}
+_LEAGUES_CACHE: Dict[str, Dict[str, Any]] = {}
+
 
 # -----------------------
 # Errors
@@ -328,14 +336,77 @@ class AllSportsRawAgent:
         # Return the provider body exactly under "data"
         return {"met": met, "status": res.get("status")}, (res.get("data") if res else None)
 
+    def _countries_cached(self, trace: list[dict]) -> list[dict]:
+        """Return Countries payload, reusing cached data when TTL allows."""
+        ttl = ALLSPORTS_COUNTRIES_TTL
+        now = time.time()
+        if ttl > 0:
+            cached = _COUNTRIES_CACHE
+            if cached.get("data") is not None and cached.get("exp", 0.0) > now:
+                trace.append({"step": "countries_cache_hit", "count": len(cached["data"])})
+                return cached["data"]
+        meta, data = self._call("Countries", {}, trace)
+        result = (data or {}).get("result")
+        if result is None:
+            if ttl > 0 and _COUNTRIES_CACHE.get("data") is not None:
+                trace.append({
+                    "step": "countries_cache_reuse_stale",
+                    "count": len(_COUNTRIES_CACHE["data"]),
+                    "reason": "fetch_failed",
+                })
+                return _COUNTRIES_CACHE["data"]
+            trace.append({"step": "countries_cache_fetch_empty"})
+            return []
+        countries = result or []
+        if ttl > 0:
+            _COUNTRIES_CACHE["data"] = countries
+            _COUNTRIES_CACHE["exp"] = now + ttl
+            trace.append({"step": "countries_cache_store", "count": len(countries), "ttl_s": ttl})
+        else:
+            trace.append({"step": "countries_cache_disabled", "count": len(countries)})
+        return countries
+
+    def _leagues_cached(self, trace: list[dict], *, countryId: str | None = None) -> list[dict]:
+        """Return Leagues payload (optionally scoped by country), with TTL caching."""
+        ttl = ALLSPORTS_LEAGUES_TTL
+        now = time.time()
+        key = str(countryId) if countryId is not None else "__ALL__"
+        if ttl > 0:
+            cached = _LEAGUES_CACHE.get(key)
+            if cached and cached.get("data") is not None and cached.get("exp", 0.0) > now:
+                trace.append({"step": "leagues_cache_hit", "key": key, "count": len(cached["data"])})
+                return cached["data"]
+        args = {"countryId": countryId} if countryId else {}
+        meta, data = self._call("Leagues", args, trace)
+        result = (data or {}).get("result")
+        if result is None:
+            if ttl > 0:
+                cached = _LEAGUES_CACHE.get(key)
+                if cached and cached.get("data") is not None:
+                    trace.append({
+                        "step": "leagues_cache_reuse_stale",
+                        "key": key,
+                        "count": len(cached["data"]),
+                        "reason": "fetch_failed",
+                    })
+                    return cached["data"]
+            trace.append({"step": "leagues_cache_fetch_empty", "key": key})
+            return []
+        leagues = result or []
+        if ttl > 0:
+            _LEAGUES_CACHE[key] = {"data": leagues, "exp": now + ttl}
+            trace.append({"step": "leagues_cache_store", "key": key, "count": len(leagues), "ttl_s": ttl})
+        else:
+            trace.append({"step": "leagues_cache_disabled", "key": key, "count": len(leagues)})
+        return leagues
+
     # -----------------------
     # Name resolvers (zero normalization — just ID lookup)
     # -----------------------
     def _resolve_country_id(self, country_name: str, trace: list[dict]) -> str | None:
         if not country_name:
             return None
-        meta, data = self._call("Countries", {}, trace)
-        countries = (data or {}).get("result") or []
+        countries = self._countries_cached(trace)
         name_l = country_name.strip().lower()
         # prefer exact match, fallback to contains
         exact = [c for c in countries if (c.get("country_name") or "").strip().lower() == name_l]
@@ -345,11 +416,7 @@ class AllSportsRawAgent:
     def _resolve_league_id(self, league_name: str, trace: list[dict], *, countryId: str | None = None) -> str | None:
         if not league_name:
             return None
-        args = {}
-        if countryId:
-            args["countryId"] = countryId
-        meta, data = self._call("Leagues", args, trace)
-        leagues = (data or {}).get("result") or []
+        leagues = self._leagues_cached(trace, countryId=countryId)
         name_l = league_name.strip().lower()
         exact = [l for l in leagues if (l.get("league_name") or "").strip().lower() == name_l]
         cand = exact or [l for l in leagues if name_l in (l.get("league_name") or "").strip().lower()]
