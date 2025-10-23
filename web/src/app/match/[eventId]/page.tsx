@@ -2104,20 +2104,16 @@ export default function MatchPage() {
           
           <TabsContent value="lineups" className="space-y-6">
             {(() => {
-              const hasLineups =
-                !!(
-                  lineupData &&
-                  (
-                    ((lineupData as any)?.home &&
-                      (((lineupData as any).home?.starters?.length ?? 0) +
-                        ((lineupData as any).home?.substitutes?.length ?? 0) >
-                        0)) ||
-                    ((lineupData as any)?.away &&
-                      (((lineupData as any).away?.starters?.length ?? 0) +
-                        ((lineupData as any).away?.substitutes?.length ?? 0) >
-                        0))
-                  )
-                );
+              const hasLineups = !!(
+                lineupData && (
+                  (typeof lineupData.home === "object" &&
+                    ((Array.isArray(lineupData.home.starters) ? lineupData.home.starters.length : 0) +
+                      (Array.isArray(lineupData.home.substitutes) ? lineupData.home.substitutes.length : 0) > 0)) ||
+                  (typeof lineupData.away === "object" &&
+                    ((Array.isArray(lineupData.away.starters) ? lineupData.away.starters.length : 0) +
+                      (Array.isArray(lineupData.away.substitutes) ? lineupData.away.substitutes.length : 0) > 0))
+                )
+              );
 
               return hasLineups ? (
                 <LineupField
