@@ -38,6 +38,7 @@ type LeagueMetadata = {
   aliases?: string[];
   active?: boolean;
   strength_score?: number;
+  league_key?: string;
 };
 
 type DisplayLeague = LeagueLite & {
@@ -74,12 +75,18 @@ const normalizeValue = (value: string | undefined | null) => {
   return value.trim().toLowerCase().replace(/\s*\/\s*/g, "/").replace(/\s+/g, " ");
 };
 
+const normalizeKeyValue = (value: string | number | undefined | null) => {
+  if (value === undefined || value === null) return "";
+  return String(value).trim().toLowerCase();
+};
+
 type AggregatedMetadata = {
   primary: LeagueMetadata;
   categories: Set<string>;
   fameRank: number;
   aliasKeys: Set<string>;
   countryKeys: Set<string>;
+  leagueKeys: Set<string>;
 };
 
 type ResolvedMetadata = {
@@ -140,6 +147,7 @@ const buildMetadataIndex = () => {
         fameRank: item.fame_rank ?? Number.MAX_SAFE_INTEGER,
         aliasKeys: new Set<string>(),
         countryKeys: new Set<string>(),
+        leagueKeys: new Set<string>(),
       };
       aggregated.set(mapKey, entry);
     } else {
@@ -180,6 +188,18 @@ const buildMetadataIndex = () => {
       entry?.countryKeys.add("");
     }
 
+    const addLeagueKey = (keyValue: string | number | undefined | null) => {
+      const normalized = normalizeKeyValue(keyValue);
+      if (!normalized) return;
+      entry?.leagueKeys.add(normalized);
+    };
+    const maybeKeys = (item as unknown as { league_keys?: Array<string | number> }).league_keys;
+    if (Array.isArray(maybeKeys) && maybeKeys.length) {
+      maybeKeys.forEach(addLeagueKey);
+    } else {
+      addLeagueKey(item.league_key);
+    }
+
     return entry;
   };
 
@@ -210,7 +230,17 @@ const buildMetadataIndex = () => {
     }
   });
 
-  return { aliasIndex };
+  const keyIndex = new Map<string, AggregatedMetadata>();
+  aggregated.forEach(entry => {
+    entry.leagueKeys.forEach(key => {
+      const existing = keyIndex.get(key);
+      if (!existing || entry.fameRank < existing.fameRank) {
+        keyIndex.set(key, entry);
+      }
+    });
+  });
+
+  return { aliasIndex, keyIndex };
 };
 
 const useMetadataIndex = () => useMemo(buildMetadataIndex, []);
@@ -377,13 +407,13 @@ function LeagueCardItem({
 type FeaturedCategorySectionProps = {
   section: FeaturedSection;
   onSelect: (league: DisplayLeague) => void;
-  selectedLeague: string;
+  selectedLeagueKey: string;
   favLeagues: string[];
   pendingFavorites: Set<string>;
   onToggleFavorite: (league: DisplayLeague) => void;
 };
 
-function FeaturedCategorySection({ section, onSelect, selectedLeague, favLeagues, pendingFavorites, onToggleFavorite }: FeaturedCategorySectionProps) {
+function FeaturedCategorySection({ section, onSelect, selectedLeagueKey, favLeagues, pendingFavorites, onToggleFavorite }: FeaturedCategorySectionProps) {
   if (!section.leagues.length) return null;
   return (
     <div className="space-y-3">
@@ -396,7 +426,7 @@ function FeaturedCategorySection({ section, onSelect, selectedLeague, favLeagues
           <LeagueCardItem
             key={`${section.id}-${league.identityKey}`}
             league={league}
-            isSelected={selectedLeague === league.rawName}
+            isSelected={getLeagueKey(league) === selectedLeagueKey}
             onSelect={onSelect}
             onToggleFavorite={onToggleFavorite}
             isFavorited={favLeagues.includes(league.rawName)}
@@ -571,11 +601,20 @@ const mapLeagues = (raw: unknown): LeagueLite[] => {
   return normalized;
 };
 
+const getLeagueKey = (league: LeagueLite | DisplayLeague | null | undefined): string => {
+  if (!league) return "";
+  const rawId = typeof league.rawId === "string" ? league.rawId.trim() : "";
+  const fallback = typeof league.id === "string" ? league.id.trim() : "";
+  return rawId || fallback;
+};
+
 export default function LeaguesPage() {
   const { user, supabase } = useAuth();
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
-  const [selectedLeague, setSelectedLeague] = useState<string>("");
+  const [initialProviderParam, setInitialProviderParam] = useState<string | null>(null);
+  const [selectedLeagueKey, setSelectedLeagueKey] = useState<string>("");
+  const [selectedLeagueName, setSelectedLeagueName] = useState<string>("");
   const [news, setNews] = useState<Array<{ id?: string; title?: string; url?: string; summary?: string; imageUrl?: string; source?: string; publishedAt?: string }>>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
@@ -595,6 +634,22 @@ export default function LeaguesPage() {
   const skeletonCount = useMemo(() => (news.length ? Math.min(news.length, 6) : 4), [news.length]);
 
   const metadataIndex = useMetadataIndex();
+
+  const updateSelectionInUrl = useCallback((leagueName?: string, providerId?: string) => {
+    try {
+      if (typeof window === "undefined") return;
+      const params = new URLSearchParams(window.location.search);
+      if (leagueName) params.set("league", leagueName);
+      else params.delete("league");
+      if (providerId) params.set("providerId", providerId);
+      else params.delete("providerId");
+      const query = params.toString();
+      const next = query ? `?${query}` : "";
+      window.history.replaceState(null, "", `${window.location.pathname}${next}`);
+    } catch {
+      // ignore history failures
+    }
+  }, []);
 
   useEffect(() => {
     setRemainingVisibleCount(INITIAL_REMAINING_COUNT);
@@ -636,27 +691,33 @@ export default function LeaguesPage() {
   const findMetadataForLeague = useCallback(
     (league: LeagueLite): ResolvedMetadata | undefined => {
       if (!league) return undefined;
-      const nameKey = normalizeValue(league.league_name);
-      if (!nameKey) return undefined;
-      const countryKey = normalizeValue(league.country_name);
-
-      const keysToTry: string[] = [];
-      if (countryKey) {
-        keysToTry.push(`${countryKey}|${nameKey}`);
-        if (countryKey.includes("/")) {
-          countryKey.split("/").forEach(part => {
-            const variant = normalizeValue(part);
-            if (variant) keysToTry.push(`${variant}|${nameKey}`);
-          });
-        }
-      } else {
-        keysToTry.push(`|${nameKey}`);
-      }
-
+      const leagueKey = normalizeKeyValue(getLeagueKey(league));
       let entry: AggregatedMetadata | undefined;
-      for (const key of keysToTry) {
-        entry = metadataIndex.aliasIndex.get(key);
-        if (entry) break;
+      if (leagueKey) {
+        entry = metadataIndex.keyIndex.get(leagueKey);
+      }
+      if (!entry) {
+        const nameKey = normalizeValue(league.league_name);
+        if (!nameKey) return undefined;
+        const countryKey = normalizeValue(league.country_name);
+
+        const keysToTry: string[] = [];
+        if (countryKey) {
+          keysToTry.push(`${countryKey}|${nameKey}`);
+          if (countryKey.includes("/")) {
+            countryKey.split("/").forEach(part => {
+              const variant = normalizeValue(part);
+              if (variant) keysToTry.push(`${variant}|${nameKey}`);
+            });
+          }
+        } else {
+          keysToTry.push(`|${nameKey}`);
+        }
+
+        for (const key of keysToTry) {
+          entry = metadataIndex.aliasIndex.get(key);
+          if (entry) break;
+        }
       }
       if (!entry) return undefined;
 
@@ -781,12 +842,19 @@ export default function LeaguesPage() {
   const canShowLess = remainingVisibleCount > INITIAL_REMAINING_COUNT;
 
   const selectedDisplayLeague = useMemo(() => {
-    const raw = allLeagues.find(l => l.league_name === selectedLeague);
+    if (!selectedLeagueKey) return undefined;
+    const raw = allLeagues.find(l => getLeagueKey(l) === selectedLeagueKey);
     return raw ? createDisplayLeague(raw) : undefined;
-  }, [allLeagues, selectedLeague, createDisplayLeague]);
+  }, [allLeagues, selectedLeagueKey, createDisplayLeague]);
 
-  const selectedDisplayName = selectedDisplayLeague?.displayName ?? selectedLeague;
+  const selectedDisplayRawName = selectedDisplayLeague?.rawName;
+  const selectedDisplayName = selectedDisplayLeague?.displayName ?? selectedLeagueName;
   const selectedDisplayLabel = selectedDisplayLeague?.displayLabel ?? selectedDisplayName;
+  useEffect(() => {
+    if (selectedDisplayRawName && selectedDisplayRawName !== selectedLeagueName) {
+      setSelectedLeagueName(selectedDisplayRawName);
+    }
+  }, [selectedDisplayRawName, selectedLeagueName]);
 
   useEffect(() => {
     let active = true;
@@ -838,8 +906,10 @@ export default function LeaguesPage() {
     try {
       if (typeof window === 'undefined') return;
       const params = new URLSearchParams(window.location.search);
-      const l = params.get('league');
-      if (l) setInitialLeagueParam(decodeURIComponent(l));
+      const leagueParam = params.get('league');
+      if (leagueParam) setInitialLeagueParam(leagueParam);
+      const providerParam = params.get('providerId') ?? params.get('leagueId');
+      if (providerParam) setInitialProviderParam(providerParam);
     } catch {
       // ignore
     }
@@ -848,11 +918,12 @@ export default function LeaguesPage() {
   // Ensure a league item exists and log interaction
   const ensureLeagueItemAndSend = useCallback(async (
     leagueName: string,
-    evt: "view" | "click" | "like" | "save" | "share" | "dismiss"
+    evt: "view" | "click" | "like" | "save" | "share" | "dismiss",
+    leagueKey?: string
   ) => {
     if (!user || !leagueName) return;
     try {
-      const league = allLeagues.find(l => l.league_name === leagueName);
+      const league = allLeagues.find(l => (leagueKey ? getLeagueKey(l) === leagueKey : l.league_name === leagueName));
       const { data: item_id } = await supabase.rpc("ensure_league_item", {
         p_league_name: leagueName,
         p_logo: league?.logo ?? null,
@@ -863,47 +934,78 @@ export default function LeaguesPage() {
     } catch {}
   }, [user, supabase, allLeagues]);
 
-  // When the leagues list arrives, try to resolve an initial param into a canonical league name.
+  // When the leagues list arrives, reconcile any initial query params with canonical league keys.
   useEffect(() => {
-    if (!initialLeagueParam) return;
-    if (!allLeagues || allLeagues.length === 0) return;
-    if (selectedLeague) return; // already selected by user
+    if (!allLeagues.length) return;
+    if (selectedLeagueKey) return;
 
-    const param = initialLeagueParam.trim();
-    if (!param) return;
+    const providerParam = initialProviderParam?.trim();
+    const nameParam = initialLeagueParam?.trim();
+    let processed = false;
 
-    const paramL = param.toLowerCase();
-    // Try exact match by league_name or id, then substring match
-    let found = allLeagues.find(l => l.league_name.toLowerCase() === paramL || l.id.toLowerCase() === paramL);
-    if (!found) {
-      found = allLeagues.find(l => l.league_name.toLowerCase().includes(paramL) || l.id.toLowerCase().includes(paramL));
+    if (providerParam) {
+      const providerLower = providerParam.toLowerCase();
+      const matchByKey = allLeagues.find(l => getLeagueKey(l).toLowerCase() === providerLower);
+      if (matchByKey) {
+        const key = getLeagueKey(matchByKey);
+        setSelectedLeagueKey(key);
+        setSelectedLeagueName(matchByKey.league_name);
+        void ensureLeagueItemAndSend(matchByKey.league_name, "view", key);
+        updateSelectionInUrl(matchByKey.league_name, key);
+      } else if (nameParam) {
+        setSelectedLeagueName(prev => (prev ? prev : nameParam));
+      }
+      processed = true;
     }
 
-    if (found) {
-      setSelectedLeague(found.league_name);
-      try { ensureLeagueItemAndSend(found.league_name, 'view'); } catch {}
-      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(found.league_name)}`); } catch {}
-    } else {
-      // No canonical match — still set the param value so panels will attempt to load by name
-      setSelectedLeague(param);
-      try { if (typeof window !== 'undefined') window.history.replaceState(null, '', `?league=${encodeURIComponent(param)}`); } catch {}
+    if (!processed && nameParam) {
+      const lower = nameParam.toLowerCase();
+      let match = allLeagues.find(
+        l => l.league_name.toLowerCase() === lower || getLeagueKey(l).toLowerCase() === lower
+      );
+      if (!match) {
+        match = allLeagues.find(
+          l =>
+            l.league_name.toLowerCase().includes(lower) ||
+            getLeagueKey(l).toLowerCase().includes(lower)
+        );
+      }
+      if (match) {
+        const key = getLeagueKey(match);
+        setSelectedLeagueKey(key);
+        setSelectedLeagueName(match.league_name);
+        void ensureLeagueItemAndSend(match.league_name, "view", key);
+        updateSelectionInUrl(match.league_name, key);
+      } else {
+        setSelectedLeagueName(nameParam);
+        updateSelectionInUrl(nameParam, undefined);
+      }
+      processed = true;
     }
-  }, [allLeagues, ensureLeagueItemAndSend, initialLeagueParam, selectedLeague]);
+
+    if (processed) {
+      if (initialProviderParam) setInitialProviderParam(null);
+      if (initialLeagueParam) setInitialLeagueParam(null);
+    }
+  }, [
+    allLeagues,
+    selectedLeagueKey,
+    initialProviderParam,
+    initialLeagueParam,
+    ensureLeagueItemAndSend,
+    updateSelectionInUrl,
+  ]);
 
   const handleLeagueSelect = useCallback(
     (league: DisplayLeague) => {
       if (!league) return;
-      setSelectedLeague(league.rawName);
-      void ensureLeagueItemAndSend(league.rawName, "view");
-      try {
-        if (typeof window !== "undefined") {
-          window.history.replaceState(null, "", `?league=${encodeURIComponent(league.rawName)}`);
-        }
-      } catch {
-        // ignore history replace failures
-      }
+      const key = getLeagueKey(league);
+      setSelectedLeagueKey(key);
+      setSelectedLeagueName(league.rawName);
+      void ensureLeagueItemAndSend(league.rawName, "view", key);
+      updateSelectionInUrl(league.rawName, key);
     },
-    [ensureLeagueItemAndSend]
+    [ensureLeagueItemAndSend, updateSelectionInUrl]
   );
 
   const removeFavoriteLeague = useCallback(async (league: DisplayLeague) => {
@@ -1095,14 +1197,16 @@ export default function LeaguesPage() {
       setNewsLoading(false);
     }
   }, []);
+  const selectedNewsLeague = selectedDisplayLeague?.rawName ?? selectedLeagueName;
+
   useEffect(() => {
-    if (!selectedLeague) {
+    if (!selectedNewsLeague) {
       setNews([]);
       setNewsError(null);
       return;
     }
-    fetchLeagueNews(selectedLeague);
-  }, [selectedLeague, fetchLeagueNews]);
+    fetchLeagueNews(selectedNewsLeague);
+  }, [selectedNewsLeague, fetchLeagueNews]);
 
   return (
     <div className="container py-8 space-y-12">
@@ -1131,7 +1235,7 @@ export default function LeaguesPage() {
             <LeagueCardItem
               key={`search-${league.identityKey}-${index}`}
               league={league}
-              isSelected={selectedLeague === league.rawName}
+              isSelected={getLeagueKey(league) === selectedLeagueKey}
               onSelect={handleLeagueSelect}
               onToggleFavorite={toggleFavoriteLeague}
               isFavorited={favLeagues.includes(league.rawName)}
@@ -1151,7 +1255,7 @@ export default function LeaguesPage() {
                     key={section.id}
                     section={section}
                     onSelect={handleLeagueSelect}
-                    selectedLeague={selectedLeague}
+                    selectedLeagueKey={selectedLeagueKey}
                     favLeagues={favLeagues}
                     pendingFavorites={pendingFavorites}
                     onToggleFavorite={toggleFavoriteLeague}
@@ -1167,7 +1271,7 @@ export default function LeaguesPage() {
                     <LeagueCardItem
                       key={league.identityKey}
                       league={league}
-                      isSelected={selectedLeague === league.rawName}
+                      isSelected={getLeagueKey(league) === selectedLeagueKey}
                       onSelect={handleLeagueSelect}
                       onToggleFavorite={toggleFavoriteLeague}
                       isFavorited={favLeagues.includes(league.rawName)}
@@ -1202,9 +1306,7 @@ export default function LeaguesPage() {
           </div>
         )}
 
-
-
-        {selectedLeague && (
+        {selectedNewsLeague && (
           <div className="space-y-6">
             <div>
               <Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background via-background/80 to-primary/5 shadow-md">

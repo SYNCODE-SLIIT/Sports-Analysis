@@ -55,7 +55,7 @@ export async function postCollect<TData extends Json = DataObject>(
 export function sanitizeInput(s: string) {
   const trimmed = s.trim().replace(/\s+/g, " ");
   const limited = trimmed.slice(0, 64);
-  const safe = limited.replace(/[^a-zA-Z0-9\s.,'\-]/g, "");
+  const safe = limited.replace(/[^a-zA-Z0-9\s.,'_\-:\/]/g, "");
   return safe;
 }
 
@@ -68,17 +68,23 @@ export function pickEventId(e: Record<string, unknown>): string {
 }
 
 /** Live fixtures */
-export async function getLiveEvents(args: { leagueName?: string } = {}) {
+export async function getLiveEvents(args: { leagueId?: string; leagueName?: string } = {}) {
   const cleanArgs: Record<string, Json> = {};
+  if (args.leagueId) cleanArgs.leagueId = sanitizeInput(String(args.leagueId));
   if (args.leagueName) cleanArgs.leagueName = sanitizeInput(args.leagueName);
   return postCollect<{ events?: DataObject[] }>("events.live", cleanArgs);
 }
 
 /** Past/upcoming fixtures */
-export async function listEvents(args: { leagueName?: string; teamName?: string; kind: "past" | "upcoming"; days?: number; fromDate?: string; toDate?: string; }) {
-  const cleanArgs: Record<string, Json> = { ...args };
-  if (typeof cleanArgs.leagueName === "string" && cleanArgs.leagueName) cleanArgs.leagueName = sanitizeInput(cleanArgs.leagueName);
-  if (typeof cleanArgs.teamName === "string" && cleanArgs.teamName) cleanArgs.teamName = sanitizeInput(cleanArgs.teamName);
+export async function listEvents(args: { leagueId?: string; leagueName?: string; teamName?: string; kind: "past" | "upcoming"; days?: number; fromDate?: string; toDate?: string; }) {
+  const cleanArgs: Record<string, Json> = {};
+  if (args.leagueId) cleanArgs.leagueId = sanitizeInput(String(args.leagueId));
+  if (args.leagueName) cleanArgs.leagueName = sanitizeInput(args.leagueName);
+  if (args.teamName) cleanArgs.teamName = sanitizeInput(args.teamName);
+  cleanArgs.kind = args.kind;
+  if (args.days !== undefined) cleanArgs.days = args.days;
+  if (args.fromDate) cleanArgs.fromDate = args.fromDate;
+  if (args.toDate) cleanArgs.toDate = args.toDate;
   return postCollect<{ events?: DataObject[] }>("events.list", cleanArgs);
 }
 

@@ -70,6 +70,7 @@ export function useLeagueFixtures(leagueId?: string, date?: string) {
       const todayOnly = new Date().toISOString().split("T")[0];
       const kind: "past" | "upcoming" = (date ?? todayOnly) >= todayOnly ? "upcoming" : "past";
       const res = await listEvents({
+        leagueId: leagueId,
         leagueName: leagueId,
         kind,
         fromDate: today,

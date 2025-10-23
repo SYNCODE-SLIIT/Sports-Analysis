@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { usePlanContext } from "@/components/PlanProvider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { getStripeJs } from "@/lib/stripe/public";
+import { cn } from "@/lib/utils";
 
 interface UpgradeCtaProps {
   priceId?: string;
@@ -17,6 +18,12 @@ interface UpgradeCtaProps {
   planDescription?: string;
   planFeatures?: string[];
   redirectWhenFreeHref?: string;
+  onManageBilling?: () => void;
+  buttonSize?: "default" | "sm" | "lg" | "icon";
+  buttonClassName?: string;
+  manageButtonSize?: "default" | "sm" | "lg" | "icon";
+  manageButtonClassName?: string;
+  manageLabel?: string;
 }
 
 const DEFAULT_FEATURES = [
@@ -35,6 +42,12 @@ export function UpgradeCta({
   planDescription,
   planFeatures,
   redirectWhenFreeHref,
+  onManageBilling,
+  buttonSize = "lg",
+  buttonClassName,
+  manageButtonSize = "sm",
+  manageButtonClassName,
+  manageLabel = "Manage subscription",
 }: UpgradeCtaProps) {
   const router = useRouter();
   const { plan, refreshPlan } = usePlanContext();
@@ -168,22 +181,31 @@ export function UpgradeCta({
       }
       setOpen(true);
     } else if (manageWhenPro) {
+      if (onManageBilling) {
+        onManageBilling();
+        return;
+      }
       handlePortal();
     } else {
       router.push("/profile");
     }
   };
 
+  const effectiveSize = plan === "pro" && manageWhenPro ? manageButtonSize : buttonSize;
+  const effectiveClassName = cn(
+    "w-full",
+    plan === "pro" && manageWhenPro ? manageButtonClassName : buttonClassName,
+  );
+  const buttonLabel = plan === "pro"
+    ? manageWhenPro
+      ? manageLabel
+      : "You are Pro"
+    : label;
+
   return (
     <>
-      <Button className="w-full" size="lg" onClick={handleClick} disabled={pending}>
-        {pending
-          ? "Redirecting…"
-          : plan === "pro"
-          ? manageWhenPro
-            ? "Manage billing"
-            : "You are Pro"
-          : label}
+      <Button className={effectiveClassName} size={effectiveSize} onClick={handleClick} disabled={pending}>
+        {pending ? "Redirecting…" : buttonLabel}
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
