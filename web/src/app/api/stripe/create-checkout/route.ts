@@ -82,12 +82,15 @@ export async function POST(req: NextRequest) {
 
   const { data: subscriptionRow } = await supabase
     .from("subscriptions")
-    .select("stripe_customer_id, plan, stripe_subscription_id")
+    .select("stripe_customer_id, plan, stripe_subscription_id, trial_consumed")
     .eq("user_id", userId)
     .maybeSingle();
 
   let customerId = subscriptionRow?.stripe_customer_id ?? undefined;
-  const includeTrial = (subscriptionRow?.plan ?? "free") !== "pro" && !subscriptionRow?.stripe_subscription_id;
+  const includeTrial =
+    (subscriptionRow?.plan ?? "free") !== "pro" &&
+    !subscriptionRow?.stripe_subscription_id &&
+    !subscriptionRow?.trial_consumed;
 
   if (!customerId) {
     const { data: profile } = await supabase

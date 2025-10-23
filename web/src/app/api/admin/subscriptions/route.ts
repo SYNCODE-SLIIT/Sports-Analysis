@@ -50,6 +50,8 @@ type SubscriptionRow = {
   stripe_subscription_id: string | null;
   stripe_customer_id: string | null;
   updated_at?: string | null;
+  trial_consumed?: boolean | null;
+  trial_end_at?: string | null;
 } | null;
 
 type AdminSubscriptionRecord = {
@@ -115,7 +117,7 @@ export async function GET() {
     supabase
       .from("subscriptions")
       .select(
-        "user_id, plan, subscription_status, current_period_end, stripe_price_id, stripe_subscription_id, stripe_customer_id, updated_at"
+        "user_id, plan, subscription_status, current_period_end, stripe_price_id, stripe_subscription_id, stripe_customer_id, updated_at, trial_consumed, trial_end_at"
       ),
   ]);
 
@@ -213,9 +215,9 @@ export async function PATCH(req: NextRequest) {
   const supabase = getSupabaseServiceRoleClient();
   const { data: existingRow, error: fetchError } = await supabase
     .from("subscriptions")
-    .select(
-      "user_id, plan, subscription_status, current_period_end, stripe_price_id, stripe_subscription_id, stripe_customer_id"
-    )
+      .select(
+        "user_id, plan, subscription_status, current_period_end, stripe_price_id, stripe_subscription_id, stripe_customer_id, trial_consumed, trial_end_at"
+      )
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -227,7 +229,7 @@ export async function PATCH(req: NextRequest) {
   const updates: Record<string, unknown> = {
     user_id: userId,
     plan: targetPlan,
-    subscription_status: targetPlan,
+  subscription_status: targetPlan === "pro" ? "active" : "free",
     stripe_customer_id: existingRow?.stripe_customer_id ?? null,
   };
 
@@ -236,6 +238,14 @@ export async function PATCH(req: NextRequest) {
     const defaultRenewalMs = Date.now() + ONE_MONTH_MS + (includeTrialBuffer ? TRIAL_PERIOD_MS : 0);
     const nextPeriodEnd = providedPeriodEnd ? new Date(providedPeriodEnd) : new Date(defaultRenewalMs);
     updates.current_period_end = Number.isNaN(nextPeriodEnd.getTime()) ? null : nextPeriodEnd.toISOString();
+
+    if (includeTrialBuffer) {
+      updates.trial_consumed = true;
+      const trialEnd = new Date(Date.now() + TRIAL_PERIOD_MS);
+      updates.trial_end_at = trialEnd.toISOString();
+    } else {
+      updates.trial_end_at = existingRow?.trial_end_at ?? null;
+    }
 
     const chosenPriceId =
       customPriceId && customPriceId.startsWith("price_")
@@ -252,6 +262,8 @@ export async function PATCH(req: NextRequest) {
     updates.current_period_end = null;
     updates.stripe_price_id = null;
     updates.stripe_subscription_id = null;
+    updates.trial_consumed = existingRow?.trial_consumed ?? false;
+    updates.trial_end_at = existingRow?.trial_end_at ?? null;
   }
 
   if (

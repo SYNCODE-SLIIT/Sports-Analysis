@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStripeClient } from "@/lib/stripe/client";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service-role";
+import { getCurrentPeriodEnd, getTrialEnd } from "@/lib/stripe/subscription-period";
 import type Stripe from "stripe";
 
 export async function POST(req: NextRequest) {
@@ -33,23 +34,11 @@ export async function POST(req: NextRequest) {
         const userId = subscription.metadata?.user_id || null;
         const customerId = subscription.customer as string | undefined;
         const priceId = subscription.items?.data?.[0]?.price?.id || null;
-        const status = subscription.status || null;
-        const isPro = status === 'active' || status === 'trialing' || status === 'past_due';
-        const normalizedStatus = isPro ? 'pro' : 'free';
-        const subscriptionResource = subscription as Stripe.Subscription & {
-          current_period_end?: number | null;
-        };
-
-        const periodEndUnix =
-          subscriptionResource.current_period_end ??
-          subscription.trial_end ??
-          subscription.billing_cycle_anchor ??
-          null;
-
-        const currentPeriodEnd =
-          typeof periodEndUnix === 'number'
-            ? new Date(periodEndUnix * 1000).toISOString()
-            : null;
+  const status = subscription.status || null;
+  const isPro = status === 'active' || status === 'trialing' || status === 'past_due';
+  const normalizedStatus = isPro ? 'pro' : 'free';
+  const currentPeriodEnd = getCurrentPeriodEnd(subscription);
+  const trialEndAt = getTrialEnd(subscription);
 
         if (!userId) {
           console.warn('Subscription event missing metadata.user_id; skipping upsert');
@@ -58,17 +47,26 @@ export async function POST(req: NextRequest) {
 
         // Upsert into public.subscriptions using the service role key
         const supabase = getSupabaseServiceRoleClient();
+        const updates: Record<string, unknown> = {
+          user_id: userId,
+          plan: normalizedStatus === 'pro' ? 'pro' : 'free',
+          stripe_customer_id: customerId || null,
+          stripe_subscription_id: subscription.id,
+          stripe_price_id: priceId,
+          subscription_status: status ?? null,
+          current_period_end: currentPeriodEnd,
+        };
+
+        if (trialEndAt) {
+          updates.trial_end_at = trialEndAt;
+          updates.trial_consumed = true;
+        } else if (status !== 'trialing') {
+          updates.trial_end_at = null;
+        }
+
         const { error } = await supabase
           .from('subscriptions')
-          .upsert({
-            user_id: userId,
-            plan: normalizedStatus === 'pro' ? 'pro' : 'free',
-            stripe_customer_id: customerId || null,
-            stripe_subscription_id: subscription.id,
-            stripe_price_id: priceId,
-            subscription_status: normalizedStatus,
-            current_period_end: currentPeriodEnd,
-          }, { onConflict: 'user_id' });
+          .upsert(updates, { onConflict: 'user_id' });
 
         if (error) {
           console.error('Supabase upsert error:', error);

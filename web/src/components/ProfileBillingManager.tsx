@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { ChevronDown, Mail, RefreshCcw, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PlanInfo } from "@/hooks/usePlan";
+import { computePlanPeriods } from "@/lib/subscription-dates";
 import { cn } from "@/lib/utils";
 
 interface ProfileBillingManagerProps {
@@ -41,16 +42,27 @@ export function ProfileBillingManager({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const planLabel = plan === "pro" ? "Sports Analysis Pro" : "Sports Analysis Free";
-  const renewalLabel = useMemo(() => {
-    if (!planInfo.current_period_end) return null;
-    const date = new Date(planInfo.current_period_end);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toLocaleDateString(undefined, {
+  const { trialEndsAt, renewsAt } = useMemo(
+    () => computePlanPeriods(planInfo),
+    [planInfo.plan, planInfo.current_period_end, planInfo.trial_end_at, planInfo.subscription_status]
+  );
+  const trialEndsLabel = useMemo(() => {
+    if (!trialEndsAt) return null;
+    return trialEndsAt.toLocaleDateString(undefined, {
       year: "numeric",
       month: "long",
       day: "numeric",
     });
-  }, [planInfo.current_period_end]);
+  }, [trialEndsAt]);
+
+  const renewalLabel = useMemo(() => {
+    if (!renewsAt) return null;
+    return renewsAt.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }, [renewsAt]);
 
   const features = useMemo(() => {
     if (plan === "pro") {
@@ -82,7 +94,10 @@ export function ProfileBillingManager({
           <div className="rounded-md border border-white/10 bg-background/60 p-3 text-foreground">
             <div className="flex items-center justify-between gap-4">
               <span className="font-semibold">{planLabel}</span>
-              {renewalLabel ? <span className="text-xs text-muted-foreground">Renews {renewalLabel}</span> : null}
+              <div className="flex flex-col items-end gap-1 text-xs text-muted-foreground">
+                {trialEndsLabel ? <span>Trial ends {trialEndsLabel}</span> : null}
+                {renewalLabel ? <span>Renews {renewalLabel}</span> : null}
+              </div>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {plan === "pro"
