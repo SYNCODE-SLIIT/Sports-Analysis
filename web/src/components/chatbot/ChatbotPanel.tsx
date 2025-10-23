@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,11 +54,21 @@ export function ChatbotPanel() {
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
   const [isLoadingPrompts, setIsLoadingPrompts] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const lastUserMessageRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const setLastUserMessageRef = useCallback((node: HTMLDivElement | null) => {
+    lastUserMessageRef.current = node;
+  }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+    if (messages.length === 0) return;
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage.role === "user") {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+    lastUserMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [messages]);
 
   useEffect(() => {
     let isMounted = true;
@@ -217,6 +227,7 @@ export function ChatbotPanel() {
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
+                    ref={msg.role === "user" ? setLastUserMessageRef : undefined}
                     className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
                   >
                     <div
