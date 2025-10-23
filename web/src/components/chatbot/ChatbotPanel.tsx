@@ -197,7 +197,7 @@ export function ChatbotPanel() {
   const promptsToRender = (suggestedPrompts.length > 0 ? suggestedPrompts : FALLBACK_PROMPTS).slice(0, 4);
 
   return (
-    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full">
+    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full min-h-[75vh]">
       <CardHeader className="pb-1.5 pt-2 flex-shrink-0 hidden">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -231,7 +231,7 @@ export function ChatbotPanel() {
                   >
                     <div
                       className={cn(
-                        "rounded-lg border p-3 shadow-sm max-w-[75%]",
+                        "rounded-lg border p-3 shadow-sm max-w-full sm:max-w-[75%] break-words",
                         msg.role === "user"
                           ? "border-primary/40 bg-primary/10 text-primary-foreground/90 dark:text-primary-foreground"
                           : "border-border bg-background"
@@ -241,11 +241,11 @@ export function ChatbotPanel() {
                         {msg.role === "user" ? "You" : "Assistant"}
                       </div>
                       {msg.role === "assistant" ? (
-                        <div className="mt-2">
+                        <div className="mt-2 break-words">
                           <MarkdownMessage content={msg.content} />
                         </div>
                       ) : (
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
                           {msg.content}
                         </p>
                       )}
@@ -286,18 +286,18 @@ export function ChatbotPanel() {
               </div>
             </ScrollArea>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-primary/30 bg-muted/15 p-6 text-center">
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">Ask about the sports world</h3>
-                <p className="text-xs text-muted-foreground">Try one of these prompts to explore matches, players, and trends.</p>
+            <div className="flex h-full flex-col items-center justify-center gap-6 rounded-xl border border-dashed border-primary/30 bg-muted/15 p-8 text-center">
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-foreground">Ask about the sports world</h3>
+                <p className="text-sm text-muted-foreground">Try one of these prompts to explore matches, players, and trends.</p>
               </div>
-              <div className="grid w-full gap-2 sm:grid-cols-2">
+              <div className="grid w-full gap-3 sm:grid-cols-2">
                 {promptsToRender.map((prompt) => (
                   <Button
                     key={prompt}
                     type="button"
                     variant="outline"
-                    className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-xs"
+                    className="h-auto justify-start whitespace-normal px-4 py-3 text-left text-sm"
                     onClick={() => handleSuggestionSelect(prompt)}
                     disabled={isLoading}
                   >
@@ -306,12 +306,12 @@ export function ChatbotPanel() {
                 ))}
               </div>
               {isLoadingPrompts && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Updating suggestions…
                 </div>
               )}
-              <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80">ATHLETE AI can make mistakes</p>
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">ATHLETE AI can make mistakes</p>
             </div>
           )}
         </div>
