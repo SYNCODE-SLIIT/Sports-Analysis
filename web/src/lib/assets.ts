@@ -5,7 +5,8 @@ export const ASSETS = {
   logoLight: '/logo/logo_transparent.svg',
   logoDark: '/logo/logo_transparent_white.svg',
   // Powered-by branding (SYNCODE)
-  poweredBy: '/logo/powered-by-syncode.svg',
+  poweredByLight: '/logo/black.png',
+  poweredByDark: '/logo/white.png',
   hero: '/banner.jpg',
   placeholders: {
     player: '/logo/logo_white.svg',
