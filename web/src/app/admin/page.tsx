@@ -25,6 +25,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -260,6 +261,24 @@ const formatDayLabel = (value: string): string => {
   return new Intl.DateTimeFormat(undefined, { weekday: "short" }).format(date);
 };
 
+const initialsFromName = (value?: string): string =>
+  (value || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("")
+    .slice(0, 2) || "?";
+
+const findAvatarUrl = (entry: unknown): string | null => {
+  if (!entry || typeof entry !== "object") return null;
+  const keys = ["avatar_url", "photo_url", "picture", "avatar", "image", "photo"];
+  for (const k of keys) {
+    const v = (entry as Record<string, unknown>)[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+};
+
 const formatRelativeTime = (iso: string): string => {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "Unknown";
@@ -333,6 +352,7 @@ export default function AdminPage() {
   const [snapshotLoading, setSnapshotLoading] = useState(true);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [userAvatars, setUserAvatars] = useState<Record<string, string | null>>({});
   const [systemFlags, setSystemFlags] = useState<SystemState>(DEFAULT_FLAGS);
   const [updatingFlag, setUpdatingFlag] = useState<SystemFlag | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
@@ -368,6 +388,28 @@ export default function AdminPage() {
       .then((payload) => {
         if (!active) return;
         setSnapshot(payload);
+        // load avatar URLs from profiles table for users returned by the snapshot
+        (async () => {
+          try {
+            const ids = (payload?.users ?? []).map((u: any) => u.id).filter(Boolean);
+            if (ids.length) {
+              const { data: profilesData, error: profilesError } = await supabase
+                .from("profiles")
+                .select("id, avatar_url")
+                .in("id", ids as string[]);
+              if (!profilesError && Array.isArray(profilesData)) {
+                const map: Record<string, string | null> = {};
+                profilesData.forEach((r: any) => {
+                  map[r.id] = r.avatar_url ?? null;
+                });
+                setUserAvatars(map);
+              }
+            }
+          } catch (e) {
+            // non-fatal
+            console.error("Failed to load avatars:", e);
+          }
+        })();
         const nextFlags = resolveSystemState(payload?.flags);
         setSystemFlags(nextFlags);
         const nextMaintenance = extractMaintenanceMetadata(payload?.flags);
@@ -395,6 +437,25 @@ export default function AdminPage() {
     try {
       const payload = await fetchSnapshot();
       setSnapshot(payload);
+      // refresh avatars for the newly fetched users
+      try {
+        const ids = (payload?.users ?? []).map((u: any) => u.id).filter(Boolean);
+        if (ids.length) {
+          const { data: profilesData, error: profilesError } = await supabase
+            .from("profiles")
+            .select("id, avatar_url")
+            .in("id", ids as string[]);
+          if (!profilesError && Array.isArray(profilesData)) {
+            const map: Record<string, string | null> = {};
+            profilesData.forEach((r: any) => {
+              map[r.id] = r.avatar_url ?? null;
+            });
+            setUserAvatars(map);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to refresh avatars:", e);
+      }
       const nextFlags = resolveSystemState(payload?.flags);
       setSystemFlags(nextFlags);
       const nextMaintenance = extractMaintenanceMetadata(payload?.flags);
@@ -781,17 +842,8 @@ export default function AdminPage() {
               <Badge variant="outline" className="neon-chip">Full system control</Badge>
               <div className="space-y-1">
                 <h1 className="text-3xl font-bold tracking-tight text-foreground">Sports Intelligence Admin Hub</h1>
-                <p className="text-sm text-muted-foreground">
-                  Monitor global activity, govern content workflows, and orchestrate automation for the entire platform.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-primary" /> Authenticated as {user.email}
-                </span>
-                <span className="inline-flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">Monitor global activity, govern content workflows, and orchestrate automation for the entire platform.</p>
                   <BarChart3 className="h-4 w-4 text-primary" /> Last activity snapshot {lastActiveDisplay}
-                </span>
                 <span className="inline-flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-primary" /> Primary admin {PRIMARY_ADMIN_EMAIL}
                 </span>
@@ -1073,9 +1125,18 @@ export default function AdminPage() {
                     {managedUsers.map((entry) => (
                       <tr key={entry.id} className="text-sm">
                         <td className="py-3 pr-4 font-medium text-foreground">
-                          <div className="flex flex-col">
-                            <span>{entry.name}</span>
-                            <span className="text-xs text-muted-foreground">{entry.email}</span>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              {((userAvatars[entry.id] ?? findAvatarUrl(entry)) as string) ? (
+                                <AvatarImage src={(userAvatars[entry.id] ?? findAvatarUrl(entry))!} alt={`${entry.name} avatar`} />
+                              ) : (
+                                <AvatarFallback>{initialsFromName(entry.name)}</AvatarFallback>
+                              )}
+                            </Avatar>
+                            <div className="flex flex-col">
+                              <span>{entry.name}</span>
+                              <span className="text-xs text-muted-foreground">{entry.email}</span>
+                            </div>
                           </div>
                         </td>
                         <td className="py-3 pr-4 text-muted-foreground">{new Date(entry.createdAt).toLocaleDateString()}</td>
