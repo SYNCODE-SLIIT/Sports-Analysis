@@ -115,7 +115,6 @@ export function SubscriptionManager() {
                 <tr className="text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <th className="px-3 py-2">User</th>
                   <th className="px-3 py-2">Plan</th>
-                  <th className="px-3 py-2">Stripe status</th>
                   <th className="px-3 py-2">Current period end</th>
                   <th className="px-3 py-2">Stripe IDs</th>
                   <th className="px-3 py-2 text-right">Actions</th>
@@ -123,8 +122,9 @@ export function SubscriptionManager() {
               </thead>
               <tbody className="divide-y divide-border/40">
                 {records.map((record) => {
-                  const planLabel = record.plan === "pro" || record.subscriptionStatus === "pro" ? "Pro" : "Free";
-                  const badgeVariant = planLabel === "Pro" ? "default" : "outline";
+                  const isPro = (record.plan === "pro") || (record.subscriptionStatus === "pro");
+                  const planLabel = isPro ? "Pro" : "Free";
+                  const badgeVariant = isPro ? "default" : "outline";
                   return (
                     <tr key={record.userId} className="align-top">
                       <td className="px-3 py-3">
@@ -136,37 +136,46 @@ export function SubscriptionManager() {
                       <td className="px-3 py-3">
                         <Badge variant={badgeVariant}>{planLabel}</Badge>
                       </td>
-                      <td className="px-3 py-3">
-                        <div className="space-y-1 text-xs text-muted-foreground">
-                          <div>Customer: {record.stripeCustomerId ?? "—"}</div>
-                          <div>Subscription: {record.stripeSubscriptionId ?? "—"}</div>
-                          <div>Price: {record.stripePriceId ?? "—"}</div>
-                        </div>
-                      </td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">{formatIso(record.currentPeriodEnd)}</td>
                       <td className="px-3 py-3 text-xs text-muted-foreground">
                         <div className="space-y-1">
-                          <div>ID: {record.userId}</div>
-                          <div>Updated: {formatIso(record.updatedAt)}</div>
+                          <div>
+                            <span className="font-medium">Customer:</span>{' '}
+                            <span className="font-mono">{record.stripeCustomerId ?? '—'}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium">Subscription:</span>{' '}
+                            <span className="font-mono">{record.stripeSubscriptionId ?? '—'}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium">Price:</span>{' '}
+                            <span className="font-mono">{record.stripePriceId ?? '—'}</span>
+                          </div>
+                          <div className="mt-1 text-[10px] text-muted-foreground">Updated: {formatIso(record.updatedAt)}</div>
                         </div>
                       </td>
                       <td className="px-3 py-3 text-right">
-                        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={actingOn === record.userId}
-                            onClick={() => handlePlanChange(record.userId, "free")}
-                          >
-                            {actingOn === record.userId ? "Updating…" : "Revoke (Free)"}
-                          </Button>
-                          <Button
-                            size="sm"
-                            disabled={actingOn === record.userId}
-                            onClick={() => handlePlanChange(record.userId, "pro")}
-                          >
-                            {actingOn === record.userId ? "Updating…" : "Set to Pro"}
-                          </Button>
+                        <div className="flex justify-end">
+                          {isPro ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={actingOn === record.userId}
+                              onClick={() => handlePlanChange(record.userId, "free")}
+                              aria-label={`Revoke pro access for ${record.email ?? record.userId}`}
+                            >
+                              {actingOn === record.userId ? "Updating…" : "Revoke"}
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              disabled={actingOn === record.userId}
+                              onClick={() => handlePlanChange(record.userId, "pro")}
+                              aria-label={`Set ${record.email ?? record.userId} to Pro`}
+                            >
+                              {actingOn === record.userId ? "Updating…" : "Set to Pro"}
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
