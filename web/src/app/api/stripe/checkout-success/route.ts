@@ -65,7 +65,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'DB error' }, { status: 500 });
     }
 
-    return NextResponse.redirect('/pro/success');
+  const redirectUrl = new URL('/pro/success', req.url);
+  return NextResponse.redirect(redirectUrl.toString());
   } catch (err: unknown) {
     console.error('Error fetching session:', err);
     return NextResponse.json({ error: 'Failed to retrieve session' }, { status: 500 });
