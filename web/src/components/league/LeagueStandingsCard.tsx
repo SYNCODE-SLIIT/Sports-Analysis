@@ -79,9 +79,9 @@ export function LeagueStandingsCard({
   const visibleRows = rows;
 
   // Helper to generate a unique key for each row
-  const getRowKey = (row: StandingRow) => {
-    // Use team, season, stage, and position if available
-    return [row.team, row.seasonKey, row.stageKey, row.position, row.id].filter(Boolean).join("-");
+  const getRowKey = (row: StandingRow, idx: number) => {
+    // Use team, season, stage, position, id, and index for uniqueness
+    return [row.team, row.seasonKey, row.stageKey, row.position, row.id, idx].filter(Boolean).join("-");
   };
   return (
     <Card className="border-border/60 shadow-sm">
@@ -163,12 +163,12 @@ export function LeagueStandingsCard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/40 text-sm">
-                {visibleRows.map(row => {
+                {visibleRows.map((row, idx) => {
                   // Highlight if team matches highlightTeams
                   const norm = (s: unknown) => typeof s === "string" ? s.trim().toLowerCase() : "";
                   const isHighlighted = row.team && highlightTeams.some(t => norm(t) === norm(row.team));
                   return <tr
-                    key={getRowKey(row)}
+                    key={getRowKey(row, idx)}
                     className={`hover:bg-muted/30 ${isHighlighted ? "ring-2 ring-primary/60 bg-primary/5" : ""}`}
                   >
                     <td className="px-4 py-3 text-left font-medium text-muted-foreground">{row.position ?? "—"}</td>
@@ -212,7 +212,7 @@ export function LeagueStandingsCard({
                               const variant =
                                 trimmed === "W" ? "bg-emerald-500/15 text-emerald-600" : trimmed === "L" ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground";
                               return (
-                                <Badge key={`${getRowKey(row)}-form-${idx}`} className={`px-1 text-[10px] font-semibold ${variant}`}>
+                                <Badge key={`${getRowKey(row, idx)}-form-${idx}`} className={`px-1 text-[10px] font-semibold ${variant}`}>
                                   {trimmed || "—"}
                                 </Badge>
                               );
