@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useTransition, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { usePlanContext } from "@/components/PlanProvider";
@@ -11,15 +11,46 @@ interface UpgradeCtaProps {
   priceId?: string;
   label: string;
   manageWhenPro?: boolean;
+  planName?: string;
+  planPrice?: string;
+  planCadence?: string;
+  planDescription?: string;
+  planFeatures?: string[];
+  redirectWhenFreeHref?: string;
 }
 
-export function UpgradeCta({ priceId, label, manageWhenPro = false }: UpgradeCtaProps) {
+const DEFAULT_FEATURES = [
+  "Unlimited AI insights and highlight reels",
+  "Advanced live analytics and predictive models",
+  "Personalised alerts with unlimited saved teams",
+];
+
+export function UpgradeCta({
+  priceId,
+  label,
+  manageWhenPro = false,
+  planName,
+  planPrice,
+  planCadence,
+  planDescription,
+  planFeatures,
+  redirectWhenFreeHref,
+}: UpgradeCtaProps) {
   const router = useRouter();
   const { plan, refreshPlan } = usePlanContext();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [resolvedPriceId, setResolvedPriceId] = useState<string>(priceId ?? "");
+
+  const displayPlanName = planName ?? "Sports Analysis Pro";
+  const displayPlanPrice = planPrice ?? "$2";
+  const displayPlanCadence = planCadence ?? "per month";
+  const displayPlanDescription =
+    planDescription ?? "Unlock the full suite of Sports Analysis features with real-time AI overlays.";
+  const displayFeatures = useMemo(() => (planFeatures && planFeatures.length ? planFeatures : DEFAULT_FEATURES), [
+    planFeatures,
+  ]);
 
   useEffect(() => {
     setResolvedPriceId(priceId ?? "");
@@ -131,6 +162,10 @@ export function UpgradeCta({ priceId, label, manageWhenPro = false }: UpgradeCta
 
   const handleClick = () => {
     if (plan !== "pro") {
+      if (redirectWhenFreeHref) {
+        router.push(redirectWhenFreeHref);
+        return;
+      }
       setOpen(true);
     } else if (manageWhenPro) {
       handlePortal();
@@ -161,9 +196,26 @@ export function UpgradeCta({ priceId, label, manageWhenPro = false }: UpgradeCta
               Confirm your choice below. We’ll open a secure Stripe checkout summarizing the plan, price and trial end
               date. You can cancel any time before the trial ends.
             </p>
-            <div className="rounded-md border bg-muted/50 p-3 text-sm">
-              <p className="font-medium">Plan selected</p>
-              <p className="text-muted-foreground">{label}</p>
+            <div className="rounded-md border bg-muted/50 p-4 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Plan selected</p>
+                  <p className="text-base font-semibold text-foreground">{displayPlanName}</p>
+                  <p className="text-xs text-muted-foreground">{displayPlanDescription}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-semibold text-foreground">{displayPlanPrice}</p>
+                  <p className="text-xs text-muted-foreground">{displayPlanCadence}</p>
+                </div>
+              </div>
+              <ul className="mt-4 space-y-1.5 text-xs text-muted-foreground">
+                {displayFeatures.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2">
+                    <span aria-hidden className="mt-[6px] h-1.5 w-1.5 rounded-full bg-primary" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex flex-col gap-2">

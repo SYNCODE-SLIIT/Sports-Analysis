@@ -1165,6 +1165,16 @@ export default function ProfilePage() {
                       priceId={stripeConfig.monthlyPriceId}
                       label="Start 7-day trial"
                       manageWhenPro
+                      planName="Sports Analysis Pro"
+                      planPrice="$2"
+                      planCadence="per month"
+                      planDescription="Unlock advanced match analytics, AI-driven predictions, and unlimited favourites."
+                      planFeatures={[
+                        "Unlimited live analytics overlays",
+                        "AI-powered highlight reels and insights",
+                        "Personalised alerts with unlimited saved teams",
+                      ]}
+                      redirectWhenFreeHref="/pro"
                     />
                   </div>
                   {stripeConfig.loaded && !stripeConfig.configured && plan !== "pro" && (

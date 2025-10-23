@@ -1,13 +1,19 @@
 import { Metadata } from "next";
-import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ProPlanCompare } from "../../components/pro/ProPlanCompare";
+import { UpgradeCta } from "@/components/pro/UpgradeCta";
 
 export const metadata: Metadata = {
   title: "Upgrade to Pro",
   description: "Unlock premium sports analysis features with a Pro subscription.",
 };
+
+const monthlyPriceId =
+  process.env.NEXT_PUBLIC_STRIPE_PRO_MONTHLY_PRICE ??
+  process.env.STRIPE_PRO_MONTHLY_PRICE_ID ??
+  process.env.STRIPE_PRO_MONTHLY_PRICE ??
+  process.env.STRIPE_PRICE_PRO_MONTHLY ??
+  "";
 
 const plans = [
   {
@@ -18,33 +24,25 @@ const plans = [
     description: "For casual fans getting started.",
     features: [
       "Core stats and live scores",
-  "Limited highlights and win-probability",
+      "Limited highlights and win-probability",
       "Follow up to 3 teams",
       "Community Q&A access",
     ],
-    action: {
-      type: "info" as const,
-      label: "Included by default",
-    },
   },
   {
     id: "pro-monthly",
     name: "Pro",
     badge: "Best value",
-    price: "$19",
+    price: "$2",
     cadence: "per month",
-    description: "Unlock everything with a 7-day free trial, activated from your profile.",
+    description: "Unlock everything with a 7-day free trial, billed at $2/month after the trial ends.",
     features: [
       "Unlimited highlights & AI insights",
       "Advanced live analytics and betting lines",
       "Unlimited favorites & personalized alerts",
       "Export data and custom dashboards",
     ],
-    action: {
-      type: "link" as const,
-      label: "Start trial from profile",
-      href: "/profile",
-    },
+    priceId: monthlyPriceId,
   },
 ];
 
@@ -57,11 +55,9 @@ export default function ProPage() {
         </span>
         <h1 className="text-4xl font-bold tracking-tight">Choose the plan that fits your club</h1>
         <p className="text-muted-foreground text-lg">
-          Compare Free and Pro tiers side-by-side. Upgrade in seconds with a secure checkout powered by Stripe.
+          Compare the Free and Pro tiers. Upgrade in seconds with a secure $2/month checkout powered by Stripe.
         </p>
       </header>
-
-      <ProPlanCompare plans={plans} />
 
       <section className="grid gap-6 md:grid-cols-2">
         {plans.map((plan) => (
@@ -90,13 +86,19 @@ export default function ProPage() {
                   </li>
                 ))}
               </ul>
-              {plan.action?.type === "link" ? (
-                <Button asChild size="lg">
-                  <Link href={plan.action.href}>{plan.action.label}</Link>
-                </Button>
+              {plan.id === "pro-monthly" ? (
+                <UpgradeCta
+                  priceId={plan.priceId}
+                  label="Start 7-day trial"
+                  planName="Sports Analysis Pro"
+                  planPrice={plan.price}
+                  planCadence={plan.cadence}
+                  planDescription={plan.description}
+                  planFeatures={plan.features}
+                />
               ) : (
                 <Button variant="outline" size="lg" disabled>
-                  {plan.action?.label ?? "Included"}
+                  Included in your account
                 </Button>
               )}
             </CardContent>
@@ -108,7 +110,7 @@ export default function ProPage() {
         <div className="space-y-3">
           <h2 className="text-2xl font-semibold">What's included in the Pro trial?</h2>
           <p className="text-muted-foreground">
-            Take the full Sports Analysis suite for a spin. Start the 7-day trial from your profile to unlock premium
+            Take the full Sports Analysis suite for a spin. Launch the 7-day trial from this page to unlock premium
             analytics with no upfront charge. Cancel online anytime before your trial ends to avoid billing.
           </p>
           <ul className="space-y-2 text-sm text-muted-foreground">
@@ -116,9 +118,6 @@ export default function ProPage() {
             <li>• Personalized alerts and team tracking with no limits.</li>
             <li>• Manage billing or cancel anytime from the profile portal.</li>
           </ul>
-          <Button asChild className="mt-4">
-            <Link href="/profile">Open profile to start trial</Link>
-          </Button>
         </div>
       </section>
     </div>
