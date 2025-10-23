@@ -42,10 +42,7 @@ export function ProfileBillingManager({
   const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   const planLabel = plan === "pro" ? "Sports Analysis Pro" : "Sports Analysis Free";
-  const { trialEndsAt, renewsAt } = useMemo(
-    () => computePlanPeriods(planInfo),
-    [planInfo.plan, planInfo.current_period_end, planInfo.trial_end_at, planInfo.subscription_status]
-  );
+  const { trialEndsAt, renewsAt } = useMemo(() => computePlanPeriods(planInfo), [planInfo]);
   const trialEndsLabel = useMemo(() => {
     if (!trialEndsAt) return null;
     return trialEndsAt.toLocaleDateString(undefined, {

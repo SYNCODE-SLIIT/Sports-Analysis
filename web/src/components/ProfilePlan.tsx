@@ -7,10 +7,7 @@ import { computePlanPeriods } from "@/lib/subscription-dates";
 
 export function ProfilePlanSummary() {
   const { plan, planInfo } = usePlanContext();
-  const { trialEndsAt, renewsAt } = useMemo(
-    () => computePlanPeriods(planInfo),
-    [planInfo.plan, planInfo.current_period_end, planInfo.trial_end_at, planInfo.subscription_status]
-  );
+  const { trialEndsAt, renewsAt } = useMemo(() => computePlanPeriods(planInfo), [planInfo]);
   const trialEndsLabel = trialEndsAt
     ? trialEndsAt.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
     : null;
