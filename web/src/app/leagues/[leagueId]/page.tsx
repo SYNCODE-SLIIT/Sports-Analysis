@@ -18,6 +18,7 @@ import LeagueLatestNews from "@/components/league/LeagueLatestNews";
 
 type LeagueListEntry = {
   id?: string;
+  rawId?: string;
   name: string;
   country?: string;
   leagueLogo?: string;
@@ -59,13 +60,58 @@ const isStandingRow = (candidate: Record<string, unknown>): boolean => {
 };
 
 const extractStandingsRows = (raw: unknown): Record<string, unknown>[] => {
+  const asObject = (value: unknown): Record<string, unknown> | null => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  };
+  const asRowArray = (value: unknown): Record<string, unknown>[] | null => {
+    if (!Array.isArray(value)) return null;
+    return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object");
+  };
+  const getCaseInsensitive = (obj: Record<string, unknown>, key: string) => {
+    const match = Object.keys(obj).find(k => k.toLowerCase() === key.toLowerCase());
+    return match ? obj[match] : undefined;
+  };
+  const getByPath = (value: unknown, path: string[]): Record<string, unknown>[] | null => {
+    let current: unknown = value;
+    for (const segment of path) {
+      const obj = asObject(current);
+      if (!obj) return null;
+      current = getCaseInsensitive(obj, segment);
+      if (current === undefined) return null;
+    }
+    return asRowArray(current);
+  };
+
+  // Prefer explicit "total" (overall standings) before falling back.
+  const preferredPaths: string[][] = [
+    ["result", "total"],
+    ["data", "total"],
+    ["total"],
+    ["result", "overall"],
+    ["result", "table"],
+    ["result", "standings"],
+    ["data", "standings"],
+    ["standings"],
+    ["table"],
+    ["rows"],
+  ];
+
+  for (const path of preferredPaths) {
+    const candidate = getByPath(raw, path);
+    if (candidate && candidate.length) return candidate;
+  }
+
   const rows: Record<string, unknown>[] = [];
   const seen = new WeakSet<object>();
-
+  const shouldSkipKey = (key: string) => {
+    const lower = key.toLowerCase();
+    return lower.includes("home") || lower.includes("away");
+  };
   const walk = (value: unknown) => {
     if (!value) return;
     if (Array.isArray(value)) {
-      value.forEach(walk);
+      value.forEach(item => walk(item));
       return;
     }
     if (typeof value !== "object") return;
@@ -76,9 +122,11 @@ const extractStandingsRows = (raw: unknown): Record<string, unknown>[] => {
       rows.push(obj);
       return;
     }
-    Object.values(obj).forEach(walk);
+    Object.entries(obj).forEach(([key, item]) => {
+      if (shouldSkipKey(key)) return;
+      walk(item);
+    });
   };
-
   walk(raw);
   return rows;
 };
@@ -167,8 +215,10 @@ const extractLeagueEntries = (raw: unknown): LeagueListEntry[] => {
     const obj = value as Record<string, unknown>;
     const name = pickFirstString(obj, ["league_name", "name", "league", "strLeague"]);
     if (!name) return null;
+    const trimmedName = name.trim();
     const idCandidate = pickFirstString(obj, ["league_id", "league_key", "idLeague", "id", "key"]);
-    const id = idCandidate ? idCandidate.trim().toLowerCase() : name.toLowerCase();
+    const trimmedId = idCandidate ? idCandidate.trim() : undefined;
+    const id = trimmedId ?? trimmedName;
     const countryRaw = pickFirstString(obj, ["country_name", "country", "nation", "strCountry"]);
     const country = countryRaw ? countryRaw.trim() : undefined;
     const leagueLogo = pickFirstString(obj, [
@@ -183,7 +233,15 @@ const extractLeagueEntries = (raw: unknown): LeagueListEntry[] => {
     const countryLogo = pickFirstString(obj, ["country_logo", "flag", "country_flag"]);
     const aliasesRaw = pickFirstString(obj, ["league_alternates", "strLeagueAlternate"]);
     const aliases = aliasesRaw ? aliasesRaw.split(";", 6).map(item => item.trim()).filter(Boolean) : [];
-    return { id, name, country, leagueLogo: leagueLogo ?? undefined, countryLogo: countryLogo ?? undefined, aliases };
+    return {
+      id,
+      rawId: trimmedId,
+      name: trimmedName,
+      country,
+      leagueLogo: leagueLogo ?? undefined,
+      countryLogo: countryLogo ?? undefined,
+      aliases,
+    };
   };
 
   const walk = (value: unknown) => {
@@ -417,6 +475,7 @@ export default function LeagueDetailPage() {
       : undefined;
   const slugIdentifier = providerLeagueId ? undefined : decodedLeagueId || undefined;
 
+  const [resolvedLeagueId, setResolvedLeagueId] = useState<string | undefined>(providerLeagueId);
   const [leagueName, setLeagueName] = useState<string>(initialNameParam);
   const [heroInfo, setHeroInfo] = useState<LeagueHeroInfo | null>(
     initialNameParam ? { name: initialNameParam, country: initialCountryParam || undefined } : null
@@ -460,6 +519,10 @@ export default function LeagueDetailPage() {
         });
         if (!match || cancelled) return;
         if (!leagueName && match.name) setLeagueName(match.name);
+        const providerCandidate = match.rawId ?? match.id;
+        if (providerCandidate) {
+          setResolvedLeagueId(prev => (prev === providerCandidate ? prev : providerCandidate));
+        }
         setHeroInfo(prev => mergeHeroInfo(prev, { name: match.name, country: match.country, leagueLogo: match.leagueLogo, countryLogo: match.countryLogo, alternateNames: match.aliases }));
       } catch (error) {
         if (!cancelled) setInfoError(error instanceof Error ? error.message : "Failed to load league info");
@@ -472,11 +535,11 @@ export default function LeagueDetailPage() {
 
   // ---- Detailed league info (TSDB lookupleague) ----
   useEffect(() => {
-    if (!leagueName && !providerLeagueId) return;
+    if (!leagueName && !resolvedLeagueId) return;
     let cancelled = false;
     const args: { leagueId?: string; leagueName?: string } = {};
-    if (providerLeagueId) args.leagueId = providerLeagueId;
-    if (leagueName) args.leagueName = leagueName;
+    if (resolvedLeagueId) args.leagueId = resolvedLeagueId;
+    if (!resolvedLeagueId && leagueName) args.leagueName = leagueName;
 
     getLeagueInfo(args)
       .then(resp => {
@@ -554,19 +617,19 @@ export default function LeagueDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [leagueName, providerLeagueId]);
+  }, [leagueName, resolvedLeagueId]);
 
   // ---- Seasons list for selector ----
   useEffect(() => {
-    if (!leagueName && !providerLeagueId) return;
+    if (!leagueName && !resolvedLeagueId) return;
     let cancelled = false;
     const args: { leagueId?: string; leagueName?: string } = {};
-    if (providerLeagueId) args.leagueId = providerLeagueId;
-    if (leagueName) args.leagueName = leagueName;
+    if (resolvedLeagueId) args.leagueId = resolvedLeagueId;
+    if (!resolvedLeagueId && leagueName) args.leagueName = leagueName;
     listSeasons(args)
       .then(resp => {
         if (cancelled) return;
-        const seasons = parseSeasons(resp?.data, { leagueId: providerLeagueId, leagueName });
+        const seasons = parseSeasons(resp?.data, { leagueId: resolvedLeagueId, leagueName });
         if (!seasons.length) return;
         setSeasonLabels(prev => {
           const next = { ...prev };
@@ -582,11 +645,11 @@ export default function LeagueDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [leagueName, providerLeagueId]);
+  }, [leagueName, resolvedLeagueId]);
 
   const fetchStandings = useCallback(
     async (requestedSeasonKey?: string, seasonParam?: string | null) => {
-      if (!leagueName && !providerLeagueId) return;
+      if (!leagueName && !resolvedLeagueId) return;
       const fallbackKey = requestedSeasonKey ?? (seasonParam ?? CURRENT_SEASON_KEY);
       setStandingsLoading(true);
       setStandingsError(null);
@@ -595,12 +658,14 @@ export default function LeagueDetailPage() {
         if (seasonParam && seasonParam !== CURRENT_SEASON_KEY) {
           options.season = seasonParam;
         }
-        if (providerLeagueId) options.leagueId = providerLeagueId;
+        if (resolvedLeagueId) options.leagueId = resolvedLeagueId;
         const params: { leagueId?: string; leagueName?: string; season?: string } = {};
         if (options.leagueId) {
           params.leagueId = options.leagueId;
-        } else {
+        } else if (leagueName) {
           params.leagueName = leagueName || undefined;
+        } else {
+          params.leagueName = undefined;
         }
         if (options.season) params.season = options.season;
         const resp = await getLeagueTable(params);
@@ -689,15 +754,15 @@ export default function LeagueDetailPage() {
         setStandingsLoading(false);
       }
     },
-    [leagueName, providerLeagueId]
+    [leagueName, resolvedLeagueId]
   );
 
   // ---- Initial standings load ----
   useEffect(() => {
-    if (!leagueName && !providerLeagueId) return;
+    if (!leagueName && !resolvedLeagueId) return;
     if (Object.keys(seasonCache).length > 0) return;
     fetchStandings(undefined, null);
-  }, [leagueName, providerLeagueId, seasonCache, fetchStandings]);
+  }, [leagueName, resolvedLeagueId, seasonCache, fetchStandings]);
 
   // ---- Load standings when season changes ----
   useEffect(() => {
@@ -846,10 +911,11 @@ export default function LeagueDetailPage() {
       />
 
       {/* Live matches for this league */}
-      <LeagueLiveMatches leagueName={leagueName || heroInfo?.name} />
+      <LeagueLiveMatches leagueId={resolvedLeagueId} leagueName={leagueName || heroInfo?.name} />
 
       {/* Season matches for selected season */}
       <LeagueSeasonMatches
+        leagueId={resolvedLeagueId}
         leagueName={leagueName || heroInfo?.name}
         seasonLabel={selectedSeasonLabel}
       />
