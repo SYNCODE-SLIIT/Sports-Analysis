@@ -38,11 +38,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
     init();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((
-      _event: unknown,
-      session: Session | null
-    ) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
+
+      const shouldSyncSession =
+        (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") && !!session;
+      const shouldSignOut = event === "SIGNED_OUT";
+
+      if (shouldSyncSession || shouldSignOut) {
+        try {
+          await fetch("/api/auth/callback", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ event, session }),
+          });
+        } catch (error) {
+          console.warn("Failed to sync auth session", error);
+        }
+      }
     });
     return () => {
       mounted = false;

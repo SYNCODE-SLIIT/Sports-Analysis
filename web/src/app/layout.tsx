@@ -6,6 +6,8 @@ import { Navbar } from "@/components/Navbar";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { Footer } from "@/components/Footer";
 import { FloatingChatbot } from "@/components/chatbot/FloatingChatbot";
+import { PlanProvider } from "@/components/PlanProvider";
+import { PlanAwareLayout } from "@/components/PlanAwareLayout";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -54,11 +56,15 @@ export default function RootLayout({
       >
         <Providers>
           <AuthProvider>
-            <Navbar />
-            <MaintenanceBanner />
-            <main className="flex-1">{children}</main>
-            <Footer />
-            <FloatingChatbot />
+            <PlanProvider>
+              <PlanAwareLayout>
+                <Navbar />
+                <MaintenanceBanner />
+                <main className="flex-1">{children}</main>
+                <Footer />
+                <FloatingChatbot />
+              </PlanAwareLayout>
+            </PlanProvider>
           </AuthProvider>
         </Providers>
       </body>
