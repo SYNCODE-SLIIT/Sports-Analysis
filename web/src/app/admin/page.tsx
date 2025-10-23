@@ -843,10 +843,6 @@ export default function AdminPage() {
               <div className="space-y-1">
                 <h1 className="text-3xl font-bold tracking-tight text-foreground">Sports Intelligence Admin Hub</h1>
                 <p className="text-sm text-muted-foreground">Monitor global activity, govern content workflows, and orchestrate automation for the entire platform.</p>
-                  <BarChart3 className="h-4 w-4 text-primary" /> Last activity snapshot {lastActiveDisplay}
-                <span className="inline-flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-primary" /> Primary admin {PRIMARY_ADMIN_EMAIL}
-                </span>
               </div>
             </div>
             <div className="flex flex-wrap gap-3">
