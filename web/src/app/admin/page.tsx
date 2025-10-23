@@ -1064,8 +1064,7 @@ export default function AdminPage() {
                   <thead className="text-xs uppercase tracking-wide text-muted-foreground">
                     <tr>
                       <th className="py-3 pr-4">User</th>
-                      <th className="py-3 pr-4">Role</th>
-                      <th className="py-3 pr-4">Status</th>
+                      <th className="py-3 pr-4">Joined</th>
                       <th className="py-3 pr-4">Last seen</th>
                       <th className="py-3 pl-4 text-right">Interactions</th>
                     </tr>
@@ -1079,28 +1078,14 @@ export default function AdminPage() {
                             <span className="text-xs text-muted-foreground">{entry.email}</span>
                           </div>
                         </td>
-                        <td className="py-3 pr-4 text-muted-foreground">{entry.role}</td>
-                        <td className="py-3 pr-4">
-                          <Badge
-                            variant="outline"
-                            className={
-                              entry.status === "Active"
-                                ? "border-green-400/40 text-green-400"
-                                : entry.status === "Warning"
-                                  ? "border-amber-400/40 text-amber-400"
-                                  : "border-red-400/50 text-red-400"
-                            }
-                          >
-                            {entry.status}
-                          </Badge>
-                        </td>
+                        <td className="py-3 pr-4 text-muted-foreground">{new Date(entry.createdAt).toLocaleDateString()}</td>
                         <td className="py-3 pr-4 text-muted-foreground">{entry.lastSeenLabel}</td>
                         <td className="py-3 pl-4 text-right text-muted-foreground">{formatNumber(entry.interactions)}</td>
                       </tr>
                     ))}
                     {!managedUsers.length && (
                       <tr>
-                        <td colSpan={5} className="py-6 text-center text-xs text-muted-foreground">
+                        <td colSpan={4} className="py-6 text-center text-xs text-muted-foreground">
                           User activity will appear once members interact with the platform.
                         </td>
                       </tr>
