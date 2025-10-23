@@ -1,3 +1,6 @@
+-- Required extensions
+create extension if not exists pg_cron with schema extensions;
+
 -- Profiles table linked to auth.users
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -113,6 +116,52 @@ create index if not exists idx_items_leagues_gin on public.items using gin(leagu
 create index if not exists idx_interactions_user on public.user_interactions(user_id);
 create index if not exists idx_interactions_item on public.user_interactions(item_id);
 create index if not exists idx_interactions_created on public.user_interactions(created_at desc);
+
+-- Aggregate internal interaction signals into a global popularity score
+create or replace function public.refresh_item_popularity(
+  p_window interval default interval '30 days',
+  p_decay_days numeric default 14.0
+)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+  with aggregated as (
+    select
+      i.id as item_id,
+      coalesce(sum(
+        case ui.event
+          when 'like' then 2.0
+          when 'save' then 1.5
+          when 'share' then 2.0
+          when 'click' then 1.0
+          when 'view' then 0.2
+          when 'dismiss' then -2.0
+          else 0
+        end * (1.0 / (1 + greatest(extract(epoch from (now() - ui.created_at)) / 86400.0 / p_decay_days, 0)))
+      ), 0) as popularity
+    from public.items i
+    left join public.user_interactions ui
+      on ui.item_id = i.id
+     and ui.created_at >= now() - p_window
+    group by i.id
+  )
+  update public.items i
+  set popularity = aggregated.popularity
+  from aggregated
+  where i.id = aggregated.item_id;
+end;
+$$;
+
+do $cron$
+begin
+  if not exists (select 1 from cron.job where jobname = 'refresh-item-popularity') then
+    perform cron.schedule('refresh-item-popularity', '0 */6 * * *', $$select public.refresh_item_popularity();$$);
+  end if;
+end;
+$cron$;
 
 -- RPC: Compute personalized recommendations server-side
 create or replace function public.get_personalized_recommendations(uid uuid, limit_count int default 20)

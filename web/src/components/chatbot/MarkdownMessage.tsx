@@ -12,7 +12,7 @@ export function MarkdownMessage({ content }: MarkdownMessageProps) {
   const blocks = useMemo(() => parseMarkdown(content), [content]);
 
   return (
-    <div className="space-y-3 text-sm leading-relaxed text-foreground">
+    <div className="space-y-3 text-sm leading-relaxed text-foreground break-words w-full">
       {blocks.map((block, index) => (
         <Fragment key={`block-${index}`}>{block}</Fragment>
       ))}
@@ -89,7 +89,7 @@ function parseCodeBlock(lines: string[], startIndex: number) {
 
   return {
     node: (
-      <pre className="whitespace-pre-wrap rounded-md bg-muted/30 p-3 text-[13px]">
+      <pre className="whitespace-pre-wrap rounded-md bg-muted/30 p-3 text-[13px] overflow-auto">
         <code className={language ? `language-${language}` : undefined}>{code}</code>
       </pre>
     ),
@@ -108,7 +108,7 @@ function parseHeading(lines: string[], startIndex: number) {
 
   return {
     node: (
-      <p className={headingClass}>
+      <p className={`${headingClass} break-words`}>
         {content.map((child, index) => (
           <Fragment key={`heading-${startIndex}-${index}`}>{child}</Fragment>
         ))}
@@ -143,7 +143,7 @@ function parseBlockQuote(lines: string[], startIndex: number) {
 
   return {
     node: (
-      <blockquote className="border-l-2 border-primary/40 pl-3 text-sm text-muted-foreground italic">
+      <blockquote className="border-l-2 border-primary/40 pl-3 text-sm text-muted-foreground italic break-words">
         {inner.map((child, index) => (
           <Fragment key={`quote-${startIndex}-${index}`}>{child}</Fragment>
         ))}
@@ -175,13 +175,13 @@ function parseList(lines: string[], startIndex: number) {
   }
 
   const ListTag = (isOrdered ? "ol" : "ul") as "ol" | "ul";
-  const listClass = `${isOrdered ? "list-decimal" : "list-disc"} ml-4 list-outside space-y-1 text-sm`;
+  const listClass = `${isOrdered ? "list-decimal" : "list-disc"} ml-4 list-outside space-y-1 text-sm break-words`;
 
   return {
     node: (
       <ListTag className={listClass}>
         {items.map((item, itemIndex) => (
-          <li key={`list-${startIndex}-${itemIndex}`} className="marker:text-muted-foreground">
+          <li key={`list-${startIndex}-${itemIndex}`} className="marker:text-muted-foreground break-words">
             {renderInline(item, { keyPrefix: `list-${startIndex}-${itemIndex}` }).map((child, innerIndex) => (
               <Fragment key={`list-${startIndex}-${itemIndex}-${innerIndex}`}>{child}</Fragment>
             ))}
@@ -210,7 +210,7 @@ function parseParagraph(lines: string[], startIndex: number) {
 
   return {
     node: (
-      <p>
+      <p className="whitespace-pre-wrap break-words">
         {renderInline(text, { keyPrefix: `paragraph-${startIndex}` }).map((child, innerIndex) => (
           <Fragment key={`paragraph-${startIndex}-${innerIndex}`}>{child}</Fragment>
         ))}
