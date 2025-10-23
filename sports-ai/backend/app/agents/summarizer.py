@@ -376,8 +376,11 @@ async def _summarize_news_article(title: Optional[str], text: str, max_words: in
         }
 
     system_prompt = (
-        "You are a precise sports news editor. Summarize the provided article factually. "
-        "Return concise copy with a neutral tone."
+        "You are a precise sports news editor. Summarize the provided article factually and responsibly. "
+        "Return concise copy with a neutral, non-speculative tone. Do NOT add facts not present in the text. "
+        "Avoid copyrighted verbatim reproduction: do not copy any phrase longer than 12 consecutive words (except names, titles). "
+        "Do not include personal contact details (emails, phone numbers); omit or redact sensitive information. "
+        "If the article contains offensive language, report neutrally without repeating slurs; use [redacted] if necessary."
     )
     headline = title or ""
     user_prompt = (
