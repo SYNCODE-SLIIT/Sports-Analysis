@@ -1,5 +1,13 @@
 export async function POST(req: Request) {
-  const body = await req.json();
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(
+      JSON.stringify({ error: 'Invalid or empty JSON body' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
   // Default to local backend on :8030 for development if API_BASE_INTERNAL is not set
   const base = process.env.API_BASE_INTERNAL || process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8030";
   const r = await fetch(`${base.replace(/\/$/, '')}/collect`, {

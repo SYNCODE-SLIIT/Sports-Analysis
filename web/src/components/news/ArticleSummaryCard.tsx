@@ -181,12 +181,12 @@ export function ArticleSummaryCard({
             <DialogTitle>{title || "Article Summary"}</DialogTitle>
             {(source || relativeTime) ? (
               <DialogDescription>
-                <div className="flex flex-wrap items-center gap-2 text-xs uppercase text-muted-foreground">
+                <span className="flex flex-wrap items-center gap-2 text-xs uppercase text-muted-foreground">
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary/80">AI-generated</span>
                   {source ? <span>{source}</span> : null}
                   {source && relativeTime ? <span aria-hidden>•</span> : null}
                   {relativeTime ? <span>{relativeTime}</span> : null}
-                </div>
+                </span>
               </DialogDescription>
             ) : null}
           </DialogHeader>
@@ -204,7 +204,7 @@ export function ArticleSummaryCard({
             ) : null}
             {state.status === "ready" ? (
               <>
-                <p className="text-sm leading-relaxed text-muted-foreground">{state.summary}</p>
+                <span className="text-sm leading-relaxed text-muted-foreground" style={{ display: 'block' }}>{state.summary}</span>
                 {bullets.length > 0 ? (
                   <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
                     {bullets.map((bullet, idx) => (

@@ -8,21 +8,25 @@ import { getLiveEvents } from "@/lib/collect";
 import { parseFixtures, type Fixture } from "@/lib/schemas";
 
 type Props = {
+  leagueId?: string;
   leagueName?: string;
   title?: string;
 };
 
-export default function LeagueLiveMatches({ leagueName, title = "Live Matches" }: Props) {
+export default function LeagueLiveMatches({ leagueId, leagueName, title = "Live Matches" }: Props) {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!leagueName) return;
+    if (!leagueId && !leagueName) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getLiveEvents({ leagueName })
+    const params: { leagueId?: string; leagueName?: string } = {};
+    if (leagueId) params.leagueId = leagueId;
+    if (!leagueId && leagueName) params.leagueName = leagueName;
+    getLiveEvents(params)
       .then(resp => {
         if (cancelled) return;
         const d = resp?.data as Record<string, unknown> | undefined;
@@ -48,7 +52,7 @@ export default function LeagueLiveMatches({ leagueName, title = "Live Matches" }
     return () => {
       cancelled = true;
     };
-  }, [leagueName]);
+  }, [leagueId, leagueName]);
 
   return (
     <Card className="border-border/60 shadow-sm">

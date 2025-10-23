@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
@@ -607,19 +607,27 @@ export function Hero() {
   };
 
   const { resolvedTheme } = useTheme();
-  const bannerSrc = resolvedTheme === "light" ? "/banner_light.png" : "/banner.jpg";
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  // Only render theme-dependent banner and overlays after mount
+  let bannerSrc = "/banner.jpg";
+  if (mounted) {
+    bannerSrc = resolvedTheme === "light" ? "/banner_light.png" : "/banner.jpg";
+  }
   return (
-  <section className="relative flex min-h-[90vh] items-center overflow-hidden">
+    <section className="relative flex min-h-[90vh] items-center overflow-hidden">
       <div className="absolute inset-0 z-0">
         <Image src={bannerSrc} alt="Football stadium background" fill className="object-cover" priority />
-        {/* Overlay: Only show overlays in dark mode for text contrast, and a left-side overlay in light mode */}
-        {resolvedTheme === "dark" ? (
-          <>
-            <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/60 to-background/20" />
-            <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
-          </>
-        ) : (
-          <div className="absolute left-0 top-0 bottom-0 w-1/2 bg-white/70" style={{pointerEvents:'none'}} />
+        {/* Overlay: Only show overlays after mount to avoid hydration mismatch */}
+        {mounted && (
+          resolvedTheme === "dark" ? (
+            <>
+              <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/60 to-background/20" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent" />
+            </>
+          ) : (
+            <div className="absolute left-0 top-0 bottom-0 w-1/2 bg-white/70" style={{ pointerEvents: "none" }} />
+          )
         )}
       </div>
 

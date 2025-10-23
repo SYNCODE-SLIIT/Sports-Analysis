@@ -9,7 +9,21 @@ import { useTodayScheduledMatches } from "@/hooks/useData";
 
 const SKELETON_ITEMS = 6;
 
-export function ScheduledTodaySection({ onPageChangeAction }: { onPageChangeAction?: () => void }) {
+type ScheduledTodaySectionProps = {
+  onPageChangeAction?: () => void;
+  showHeading?: boolean;
+  headingLabel?: string;
+  enablePagination?: boolean;
+  enableAutoScroll?: boolean;
+};
+
+export function ScheduledTodaySection({
+  onPageChangeAction,
+  showHeading = true,
+  headingLabel = "Upcoming Fixtures",
+  enablePagination = true,
+  enableAutoScroll = true,
+}: ScheduledTodaySectionProps) {
   const sectionRef = useRef<HTMLElement>(null);
   const {
     data: scheduled = [],
@@ -37,8 +51,9 @@ export function ScheduledTodaySection({ onPageChangeAction }: { onPageChangeActi
 
   // Scroll after page updates to ensure DOM has updated (consistent with LiveNow and News)
   React.useEffect(() => {
+    if (!enableAutoScroll) return;
     scrollToSectionWithOffset();
-  }, [page]);
+  }, [page, enableAutoScroll]);
 
   const matches = useMemo(() => {
     return scheduled.slice(
@@ -49,8 +64,8 @@ export function ScheduledTodaySection({ onPageChangeAction }: { onPageChangeActi
 
   if (error) {
     return (
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Upcoming Fixtures</h2>
+      <section ref={sectionRef} className="space-y-4">
+        {showHeading && <h2 className="text-xl font-semibold">{headingLabel}</h2>}
         <EmptyState
           type="error"
           title="Unable to load the upcoming schedule"
@@ -64,21 +79,26 @@ export function ScheduledTodaySection({ onPageChangeAction }: { onPageChangeActi
   }
 
   const handlePageChange = (newPage: number) => {
+    if (!enablePagination || newPage === page) return;
     setPage(newPage);
     // Scroll the section into view on page change so the user is taken to the top
     // of this section (falls back to window top if ref is not available).
     if (sectionRef.current && typeof sectionRef.current.scrollIntoView === "function") {
-      sectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (typeof window !== "undefined") {
+      if (enableAutoScroll) {
+        sectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    } else if (typeof window !== "undefined" && enableAutoScroll) {
       const top = sectionRef.current?.offsetTop ?? 0;
       window.scrollTo({ top, behavior: "smooth" });
     }
     if (onPageChangeAction) onPageChangeAction();
   };
 
+  const shouldShowPagination = enablePagination && totalPages > 1;
+
   return (
     <section ref={sectionRef} className="space-y-4">
-      <h2 className="text-xl font-semibold">Upcoming Fixtures</h2>
+      {showHeading && <h2 className="text-xl font-semibold">{headingLabel}</h2>}
 
       {isLoading ? (
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -110,7 +130,7 @@ export function ScheduledTodaySection({ onPageChangeAction }: { onPageChangeActi
               </motion.div>
             ))}
           </motion.div>
-          {totalPages > 1 && (
+          {shouldShowPagination && (
             <div className="flex flex-col items-center justify-center gap-2 mt-6">
               <div className="flex items-center gap-2">
                 <button

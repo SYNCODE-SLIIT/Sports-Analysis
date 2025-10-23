@@ -1,7 +1,7 @@
 "use client";
 
 import { Hero } from "@/components/Hero";
-import { LiveNowSection } from "@/components/LiveNowSection";
+import { LiveUpcomingTabs } from "@/components/LiveUpcomingTabs";
 import { LeagueTabs } from "@/components/LeagueTabs";
 import FootballNews from "@/components/FootballNews";
 import { InfoSpotlight } from "@/components/InfoSpotlight";
@@ -14,7 +14,7 @@ export default function Home() {
 
       {/* Live Matches */}
       <section className="container">
-        <LiveNowSection />
+        <LiveUpcomingTabs />
       </section>
 
       {/* League Fixtures */}
@@ -36,7 +36,12 @@ export default function Home() {
             Stay in the loop with breaking stories and match-day insights.
           </p>
         </div>
-        <FootballNews />
+        <FootballNews
+          limit={4}
+          moreHref="/news"
+          moreLabel="Explore more"
+          variant="preview"
+        />
       </section>
 
       {/* Analysis Spotlight */}

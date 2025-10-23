@@ -8,8 +8,11 @@
     "type": "international",
     "category": "global_tournament",
     "fame_rank": 1,
-    "aliases": ["World Cup"],
-    "active": true
+    "aliases": [
+      "World Cup"
+    ],
+    "active": true,
+    "league_key": "28"
   },
   {
     "id": 2,
@@ -20,8 +23,11 @@
     "type": "continental",
     "category": "european_competition",
     "fame_rank": 2,
-    "aliases": ["UCL"],
-    "active": true
+    "aliases": [
+      "UCL"
+    ],
+    "active": true,
+    "league_key": "3"
   },
   {
     "id": 3,
@@ -32,8 +38,11 @@
     "type": "international",
     "category": "global_tournament",
     "fame_rank": 3,
-    "aliases": ["EURO"],
-    "active": true
+    "aliases": [
+      "EURO"
+    ],
+    "active": true,
+    "league_key": "1"
   },
   {
     "id": 4,
@@ -44,8 +53,11 @@
     "type": "continental",
     "category": "european_competition",
     "fame_rank": 4,
-    "aliases": ["UEL"],
-    "active": true
+    "aliases": [
+      "UEL"
+    ],
+    "active": true,
+    "league_key": "4"
   },
   {
     "id": 5,
@@ -57,7 +69,8 @@
     "category": "european_competition",
     "fame_rank": 5,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "633"
   },
   {
     "id": 6,
@@ -68,8 +81,11 @@
     "type": "continental",
     "category": "european_competition",
     "fame_rank": 6,
-    "aliases": ["UECL"],
-    "active": true
+    "aliases": [
+      "UECL"
+    ],
+    "active": true,
+    "league_key": "683"
   },
   {
     "id": 7,
@@ -80,9 +96,12 @@
     "type": "domestic",
     "category": "top_europe",
     "fame_rank": 7,
-    "aliases": ["EPL"],
+    "aliases": [
+      "EPL"
+    ],
     "active": true,
-    "strength_score": 92.6
+    "strength_score": 92.6,
+    "league_key": "152"
   },
   {
     "id": 8,
@@ -93,8 +112,12 @@
     "type": "domestic",
     "category": "top_europe",
     "fame_rank": 8,
-    "aliases": ["Primera División", "La Liga"],
-    "active": true
+    "aliases": [
+      "Primera División",
+      "La Liga"
+    ],
+    "active": true,
+    "league_key": "302"
   },
   {
     "id": 9,
@@ -105,8 +128,11 @@
     "type": "domestic",
     "category": "top_europe",
     "fame_rank": 9,
-    "aliases": ["Serie A"],
-    "active": true
+    "aliases": [
+      "Serie A"
+    ],
+    "active": true,
+    "league_key": "207"
   },
   {
     "id": 10,
@@ -118,7 +144,8 @@
     "category": "top_europe",
     "fame_rank": 10,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "175"
   },
   {
     "id": 11,
@@ -129,8 +156,11 @@
     "type": "domestic",
     "category": "top_europe",
     "fame_rank": 11,
-    "aliases": ["Ligue 1"],
-    "active": true
+    "aliases": [
+      "Ligue 1"
+    ],
+    "active": true,
+    "league_key": "168"
   },
   {
     "id": 12,
@@ -141,8 +171,11 @@
     "type": "domestic",
     "category": "south_america",
     "fame_rank": 12,
-    "aliases": ["Brasileirão"],
-    "active": true
+    "aliases": [
+      "Brasileirão"
+    ],
+    "active": true,
+    "league_key": "99"
   },
   {
     "id": 13,
@@ -153,8 +186,11 @@
     "type": "domestic",
     "category": "south_america",
     "fame_rank": 13,
-    "aliases": ["Primera División Argentina"],
-    "active": true
+    "aliases": [
+      "Primera División Argentina"
+    ],
+    "active": true,
+    "league_key": "44"
   },
   {
     "id": 14,
@@ -165,8 +201,11 @@
     "type": "domestic",
     "category": "other_europe",
     "fame_rank": 14,
-    "aliases": ["Liga Portugal"],
-    "active": true
+    "aliases": [
+      "Liga Portugal"
+    ],
+    "active": true,
+    "league_key": "266"
   },
   {
     "id": 15,
@@ -178,7 +217,8 @@
     "category": "other_europe",
     "fame_rank": 15,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "244"
   },
   {
     "id": 16,
@@ -189,8 +229,11 @@
     "type": "domestic",
     "category": "other_europe",
     "fame_rank": 16,
-    "aliases": ["Belgian Pro League"],
-    "active": true
+    "aliases": [
+      "Belgian Pro League"
+    ],
+    "active": true,
+    "league_key": "63"
   },
   {
     "id": 17,
@@ -201,8 +244,11 @@
     "type": "domestic",
     "category": "other_europe",
     "fame_rank": 17,
-    "aliases": ["Turkish Super Lig"],
-    "active": true
+    "aliases": [
+      "Turkish Super Lig"
+    ],
+    "active": true,
+    "league_key": "322"
   },
   {
     "id": 18,
@@ -214,7 +260,8 @@
     "category": "other_europe",
     "fame_rank": 18,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "279"
   },
   {
     "id": 19,
@@ -226,7 +273,8 @@
     "category": "other_europe",
     "fame_rank": 19,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "135"
   },
   {
     "id": 20,
@@ -238,7 +286,8 @@
     "category": "other_europe",
     "fame_rank": 20,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "308"
   },
   {
     "id": 21,
@@ -249,8 +298,11 @@
     "type": "domestic",
     "category": "north_america",
     "fame_rank": 21,
-    "aliases": ["Liga MX"],
-    "active": true
+    "aliases": [
+      "Liga MX"
+    ],
+    "active": true,
+    "league_key": "235"
   },
   {
     "id": 22,
@@ -261,8 +313,11 @@
     "type": "domestic",
     "category": "north_america",
     "fame_rank": 22,
-    "aliases": ["MLS"],
-    "active": true
+    "aliases": [
+      "MLS"
+    ],
+    "active": true,
+    "league_key": "332"
   },
   {
     "id": 23,
@@ -274,7 +329,8 @@
     "category": "asia",
     "fame_rank": 23,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "278"
   },
   {
     "id": 24,
@@ -286,7 +342,8 @@
     "category": "asia",
     "fame_rank": 24,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "118"
   },
   {
     "id": 25,
@@ -297,8 +354,11 @@
     "type": "domestic",
     "category": "asia",
     "fame_rank": 25,
-    "aliases": ["A League"],
-    "active": true
+    "aliases": [
+      "A League"
+    ],
+    "active": true,
+    "league_key": "49"
   },
   {
     "id": 26,
@@ -310,7 +370,8 @@
     "category": "asia",
     "fame_rank": 26,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "209"
   },
   {
     "id": 27,
@@ -322,7 +383,8 @@
     "category": "asia",
     "fame_rank": 27,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "219"
   },
   {
     "id": 28,
@@ -333,8 +395,11 @@
     "type": "continental",
     "category": "africa_competition",
     "fame_rank": 28,
-    "aliases": ["CAF Champions"],
-    "active": true
+    "aliases": [
+      "CAF Champions"
+    ],
+    "active": true,
+    "league_key": "346"
   },
   {
     "id": 29,
@@ -345,8 +410,11 @@
     "type": "continental",
     "category": "asia_competition",
     "fame_rank": 29,
-    "aliases": ["ACL"],
-    "active": true
+    "aliases": [
+      "ACL"
+    ],
+    "active": true,
+    "league_key": "727"
   },
   {
     "id": 30,
@@ -358,7 +426,8 @@
     "category": "north_america_competition",
     "fame_rank": 30,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "5"
   },
   {
     "id": 31,
@@ -369,10 +438,13 @@
     "type": "domestic",
     "category": "asia",
     "fame_rank": 31,
-    "aliases": ["ISL"],
-    "active": true
+    "aliases": [
+      "ISL"
+    ],
+    "active": true,
+    "league_key": "566"
   },
-    {
+  {
     "id": 32,
     "slug": "english_premier_league",
     "name": "Premier League",
@@ -381,8 +453,12 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 1,
-    "aliases": ["EPL", "Barclays Premier League"],
-    "active": true
+    "aliases": [
+      "EPL",
+      "Barclays Premier League"
+    ],
+    "active": true,
+    "league_key": "152"
   },
   {
     "id": 33,
@@ -393,8 +469,12 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 2,
-    "aliases": ["Primera División", "LaLiga EA Sports"],
-    "active": true
+    "aliases": [
+      "Primera División",
+      "LaLiga EA Sports"
+    ],
+    "active": true,
+    "league_key": "302"
   },
   {
     "id": 34,
@@ -406,7 +486,8 @@
     "category": "popular",
     "fame_rank": 3,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "175"
   },
   {
     "id": 35,
@@ -417,8 +498,11 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 4,
-    "aliases": ["Serie A TIM"],
-    "active": true
+    "aliases": [
+      "Serie A TIM"
+    ],
+    "active": true,
+    "league_key": "207"
   },
   {
     "id": 36,
@@ -429,8 +513,11 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 5,
-    "aliases": ["Ligue 1 Uber Eats"],
-    "active": true
+    "aliases": [
+      "Ligue 1 Uber Eats"
+    ],
+    "active": true,
+    "league_key": "168"
   },
   {
     "id": 37,
@@ -441,8 +528,11 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 6,
-    "aliases": ["Brasileirão"],
-    "active": true
+    "aliases": [
+      "Brasileirão"
+    ],
+    "active": true,
+    "league_key": "99"
   },
   {
     "id": 38,
@@ -453,8 +543,11 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 7,
-    "aliases": ["MLS"],
-    "active": true
+    "aliases": [
+      "MLS"
+    ],
+    "active": true,
+    "league_key": "332"
   },
   {
     "id": 39,
@@ -465,8 +558,11 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 8,
-    "aliases": ["Liga MX BBVA Bancomer"],
-    "active": true
+    "aliases": [
+      "Liga MX BBVA Bancomer"
+    ],
+    "active": true,
+    "league_key": "235"
   },
   {
     "id": 40,
@@ -477,8 +573,12 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 9,
-    "aliases": ["Liga Portugal", "Liga NOS"],
-    "active": true
+    "aliases": [
+      "Liga Portugal",
+      "Liga NOS"
+    ],
+    "active": true,
+    "league_key": "266"
   },
   {
     "id": 41,
@@ -490,7 +590,8 @@
     "category": "popular",
     "fame_rank": 10,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "244"
   },
   {
     "id": 42,
@@ -501,8 +602,11 @@
     "type": "domestic",
     "category": "popular",
     "fame_rank": 11,
-    "aliases": ["Primera División Argentina"],
-    "active": true
+    "aliases": [
+      "Primera División Argentina"
+    ],
+    "active": true,
+    "league_key": "44"
   },
   {
     "id": 43,
@@ -514,6 +618,7 @@
     "category": "popular",
     "fame_rank": 12,
     "aliases": [],
-    "active": true
+    "active": true,
+    "league_key": "278"
   }
 ]
