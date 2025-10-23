@@ -109,7 +109,7 @@ const PlayerBadge = ({ player }: { player: LineupPlayer }) => (
         {player.image ? (
           <AvatarImage src={player.image} alt={player.name} />
         ) : (
-          <AvatarFallback className="text-[0.7rem] font-semibold uppercase">
+          <AvatarFallback className="text-[0.7rem] font-semibold uppercase text-primary dark:text-white">
             {getInitials(player.name)}
           </AvatarFallback>
         )}
