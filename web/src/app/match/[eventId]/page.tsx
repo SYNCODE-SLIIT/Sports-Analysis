@@ -2101,32 +2101,49 @@ export default function MatchPage() {
               </Card>
             )}
           </TabsContent>
-
+          
           <TabsContent value="lineups" className="space-y-6">
-            {lineupData ? (
-              <LineupField
-                home={{
-                  teamName: match.homeTeam,
-                  formation: lineupData.home.formation,
-                  logo: match.homeTeamLogo,
-                  starters: lineupData.home.starters,
-                  substitutes: lineupData.home.substitutes,
-                }}
-                away={{
-                  teamName: match.awayTeam,
-                  formation: lineupData.away.formation,
-                  logo: match.awayTeamLogo,
-                  starters: lineupData.away.starters,
-                  substitutes: lineupData.away.substitutes,
-                }}
-              />
-            ) : (
-              <Card>
-                <CardContent className="p-6 text-sm text-muted-foreground">
-                  Lineup data not available for this fixture.
-                </CardContent>
-              </Card>
-            )}
+            {(() => {
+              const hasLineups =
+                !!(
+                  lineupData &&
+                  (
+                    ((lineupData as any)?.home &&
+                      (((lineupData as any).home?.starters?.length ?? 0) +
+                        ((lineupData as any).home?.substitutes?.length ?? 0) >
+                        0)) ||
+                    ((lineupData as any)?.away &&
+                      (((lineupData as any).away?.starters?.length ?? 0) +
+                        ((lineupData as any).away?.substitutes?.length ?? 0) >
+                        0))
+                  )
+                );
+
+              return hasLineups ? (
+                <LineupField
+                  home={{
+                    teamName: match.homeTeam,
+                    formation: lineupData?.home?.formation,
+                    logo: match.homeTeamLogo,
+                    starters: lineupData?.home?.starters ?? [],
+                    substitutes: lineupData?.home?.substitutes ?? [],
+                  }}
+                  away={{
+                    teamName: match.awayTeam,
+                    formation: lineupData?.away?.formation,
+                    logo: match.awayTeamLogo,
+                    starters: lineupData?.away?.starters ?? [],
+                    substitutes: lineupData?.away?.substitutes ?? [],
+                  }}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="p-6 text-sm text-muted-foreground">
+                    Lineup data not available for this fixture.
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </TabsContent>
 
           <TabsContent value="events" className="space-y-6">
