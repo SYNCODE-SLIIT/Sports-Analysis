@@ -14,18 +14,18 @@ export function Footer() {
               <Image
                 src={ASSETS.logoLight}
                 alt="ATHLETE Logo"
-                width={96}
-                height={96}
-                className="w-20 h-20 sm:w-24 sm:h-24 block dark:hidden"
+                width={116}
+                height={110}
+                className="w-30 h-30 sm:w-34 sm:h-34 block dark:hidden"
                 priority
               />
               {/* Dark mode logo */}
               <Image
                 src={ASSETS.logoDark}
                 alt="ATHLETE Logo"
-                width={96}
-                height={96}
-                className="w-20 h-20 sm:w-24 sm:h-24 hidden dark:block"
+                width={116}
+                height={110}
+                className="w-30 h-30 sm:w-34 sm:h-34 hidden dark:block"
                 priority
               />
               <span className="font-bold text-gradient">ATHLETE</span>
@@ -34,7 +34,7 @@ export function Footer() {
               Advanced football analytics and live match insights.
             </p>
             <ul className="text-xs text-muted-foreground space-y-1 mt-2">
-              <li>• Live win-probability models</li>
+              <li>• Live win-probability</li>
               <li>• Player performance breakdowns</li>
               <li>• Compact match highlights</li>
             </ul>
@@ -61,7 +61,7 @@ export function Footer() {
 
           {/* Media */}
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Media</h4>
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Follow us on</h4>
             <div className="space-y-3">
               <a
                 href="https://facebook.com/"
@@ -75,7 +75,7 @@ export function Footer() {
                     <path d="M13.5 9H15V6h-1.5C11.57 6 11 7.79 11 9.23V11H9v3h2v6h3v-6h2.14l.36-3H14v-1.4c0-.41.32-.6.76-.6z" />
                   </svg>
                 </span>
-                Facebook Highlights Hub
+                Facebook 
               </a>
               <a
                 href="https://www.tiktok.com/"
@@ -89,7 +89,7 @@ export function Footer() {
                     <path d="M21 8.25a5.86 5.86 0 01-3.2-1V14a5 5 0 11-5-5c.17 0 .34 0 .5.02V7.1a8.17 8.17 0 01-1.5-.1V4h2.69A4.3 4.3 0 0016.5 7a3.3 3.3 0 001.94.28V8.25zM10.5 18a2 2 0 002-2v-2.76c-.16-.02-.33-.04-.5-.04a2.25 2.25 0 000 4.5z" />
                   </svg>
                 </span>
-                TikTok Short Plays
+                TikTok 
               </a>
               <a
                 href="https://www.youtube.com/"
@@ -103,7 +103,7 @@ export function Footer() {
                     <path d="M21.8 8s-.2-1.4-.8-2c-.7-.8-1.5-.8-1.8-.9C16.8 5 12 5 12 5h0s-4.8 0-7.2.1c-.3 0-1.1.1-1.8.9-.6.6-.8 2-.8 2S2 9.6 2 11.2v1.6C2 14.4 2.2 16 2.2 16s.2 1.4.8 2c.7.8 1.6.8 2 .9 1.4.1 7 .1 7 .1s4.8 0 7.2-.1c.3 0 1.1-.1 1.8-.9.6-.6.8-2 .8-2s.2-1.6.2-3.2v-1.6C22 9.6 21.8 8 21.8 8zM10 14.65V9.35L15.2 12l-5.2 2.65z" />
                   </svg>
                 </span>
-                YouTube Match Replays
+                YouTube 
               </a>
             </div>
           </div>
