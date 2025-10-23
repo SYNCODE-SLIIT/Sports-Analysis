@@ -43,8 +43,8 @@ export function ProfileBillingManager({
 
   const planLabel = plan === "pro" ? "Sports Analysis Pro" : "Sports Analysis Free";
   const { trialEndsAt, renewsAt } = useMemo(
-    () => computePlanPeriods(planInfo),
-    [planInfo.plan, planInfo.current_period_end, planInfo.trial_end_at, planInfo.subscription_status]
+      () => computePlanPeriods(planInfo),
+      [planInfo]
   );
   const trialEndsLabel = useMemo(() => {
     if (!trialEndsAt) return null;
