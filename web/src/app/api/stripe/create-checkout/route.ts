@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service-role";
 import { getStripeClient } from "@/lib/stripe/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type Stripe from "stripe";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -81,11 +82,12 @@ export async function POST(req: NextRequest) {
 
   const { data: subscriptionRow } = await supabase
     .from("subscriptions")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, plan, stripe_subscription_id")
     .eq("user_id", userId)
     .maybeSingle();
 
   let customerId = subscriptionRow?.stripe_customer_id ?? undefined;
+  const includeTrial = (subscriptionRow?.plan ?? "free") !== "pro" && !subscriptionRow?.stripe_subscription_id;
 
   if (!customerId) {
     const { data: profile } = await supabase
@@ -109,6 +111,13 @@ export async function POST(req: NextRequest) {
   }
 
   const stripePriceId = priceId;
+  const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = {
+    metadata: { user_id: userId },
+  };
+
+  if (includeTrial) {
+    subscriptionData.trial_period_days = 7;
+  }
 
   let checkoutSession;
   try {
@@ -120,10 +129,7 @@ export async function POST(req: NextRequest) {
       // server-side without relying on webhooks.
       success_url: `${SITE_URL}/api/stripe/checkout-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/pro`,
-      subscription_data: {
-        // Attach Supabase metadata so webhook updates the correct user row.
-        metadata: { user_id: userId },
-      },
+      subscription_data: subscriptionData,
       metadata: { user_id: userId },
     });
   } catch (err) {

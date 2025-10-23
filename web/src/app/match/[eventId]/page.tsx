@@ -17,6 +17,7 @@ import BestPlayerCard from "@/components/match/BestPlayerCard";
 import LeadersCard from "@/components/match/LeadersCard";
 import MatchSummaryCard from "@/components/match/MatchSummaryCard";
 import WinProbabilityCard from "@/components/match/WinProbabilityCard";
+import { LineupField } from "@/components/match/LineupField";
 
 import { buildTimeline, computeLeaders, computeBestPlayer } from "@/lib/match-mappers";
 import { LeagueStandingsCard } from "@/components/league/LeagueStandingsCard";
@@ -48,6 +49,21 @@ type MatchStatEntry = {
   away: string;
   homeNumeric?: number;
   awayNumeric?: number;
+};
+
+type LineupPlayer = {
+  id?: string;
+  name: string;
+  number?: string;
+  position?: number;
+  image?: string;
+  role?: string;
+};
+
+type TeamLineup = {
+  formation?: string;
+  starters: LineupPlayer[];
+  substitutes: LineupPlayer[];
 };
 type StandardStatField =
   | "possession"
@@ -124,6 +140,10 @@ type RenderEvent = {
   awayTeamLogo?: string;
   winProbabilities?: { home?: number; draw?: number; away?: number };
   stats?: MatchStats;
+  lineups?: {
+    home: TeamLineup;
+    away: TeamLineup;
+  };
   events?: Array<{ time?: number; type?: string; team?: string; player?: string }>;
 };
 
@@ -667,6 +687,119 @@ const extractFoulEvents = (source: DataObject): FoulEvent[] => {
   });
 };
 
+const normalizeLineupPlayer = (record: DataObject | null | undefined): LineupPlayer | null => {
+  if (!record || typeof record !== "object") return null;
+  const name =
+    cleanString(
+      getString(record, [
+        "player",
+        "player_name",
+        "name",
+        "strPlayer",
+        "player_full_name",
+      ]),
+    ) ?? undefined;
+  if (!name) return null;
+  return {
+    id: cleanString(getString(record, ["player_key", "player_id", "id"])),
+    name,
+    number: cleanString(
+      getString(record, [
+        "player_number",
+        "number",
+        "shirt_number",
+        "num",
+        "jersey",
+      ]),
+    ),
+    position: getNumber(record, ["player_position", "position"], undefined),
+    image: cleanString(
+      getString(record, [
+        "player_image",
+        "image",
+        "photo",
+        "thumbnail",
+        "strCutout",
+      ]),
+    ),
+    role: cleanString(getString(record, ["info_time", "role", "detail"])),
+  };
+};
+
+const extractLineups = (source: DataObject): { home: TeamLineup; away: TeamLineup } | undefined => {
+  const lineupsRaw = getPathVal(source, "lineups");
+  if (!lineupsRaw || typeof lineupsRaw !== "object") return undefined;
+  const container = lineupsRaw as Record<string, unknown>;
+  const homeRaw =
+    (container["home_team"] as DataObject | undefined) ??
+    (container["home"] as DataObject | undefined) ??
+    (container["Home"] as DataObject | undefined);
+  const awayRaw =
+    (container["away_team"] as DataObject | undefined) ??
+    (container["away"] as DataObject | undefined) ??
+    (container["Away"] as DataObject | undefined);
+
+  if (!homeRaw && !awayRaw) return undefined;
+
+  const parseTeam = (teamRaw: DataObject | undefined, formationFallback?: string): TeamLineup => {
+    const formation =
+      cleanString(
+        getString(teamRaw ?? {}, ["formation", "team_formation"]),
+      ) ?? formationFallback;
+    const startersRaw = Array.isArray(teamRaw?.starting_lineups)
+      ? (teamRaw?.starting_lineups as DataObject[])
+      : Array.isArray(teamRaw?.starting)
+      ? (teamRaw?.starting as DataObject[])
+      : Array.isArray(teamRaw?.startings)
+      ? (teamRaw?.startings as DataObject[])
+      : [];
+    const subsRaw = Array.isArray(teamRaw?.substitutes)
+      ? (teamRaw?.substitutes as DataObject[])
+      : Array.isArray(teamRaw?.bench)
+      ? (teamRaw?.bench as DataObject[])
+      : [];
+
+    const starters = startersRaw
+      .map((entry) => normalizeLineupPlayer(entry))
+      .filter((entry): entry is LineupPlayer => entry !== null);
+    const substitutes = subsRaw
+      .map((entry) => normalizeLineupPlayer(entry))
+      .filter((entry): entry is LineupPlayer => entry !== null);
+    return {
+      formation,
+      starters,
+      substitutes,
+    };
+  };
+
+  const homeFormation =
+    cleanString(
+      getString(source, [
+        "event_home_formation",
+        "home_formation",
+        "formation_home",
+      ]),
+    ) ??
+    cleanString(getString(source, ["formation", "homeFormation"]));
+  const awayFormation =
+    cleanString(
+      getString(source, [
+        "event_away_formation",
+        "away_formation",
+        "formation_away",
+      ]),
+    ) ?? cleanString(getString(source, ["awayFormation"]));
+
+  const home = parseTeam(homeRaw, homeFormation);
+  const away = parseTeam(awayRaw, awayFormation);
+
+  if (!home.starters.length && !away.starters.length && !home.substitutes.length && !away.substitutes.length) {
+    return undefined;
+  }
+
+  return { home, away };
+};
+
 export default function MatchPage() {
   const { user, supabase, bumpInteractions } = useAuth();
   const { plan } = usePlanContext();
@@ -1098,6 +1231,7 @@ export default function MatchPage() {
             awayTeamLogo: getLogo(raw, 'away'),
             winProbabilities: (raw['winProbabilities'] || raw['winprob']) as RenderEvent['winProbabilities'],
             stats: extractMatchStats(raw) ?? ((raw['stats'] as MatchStats) || undefined),
+            lineups: extractLineups(raw) ?? ((raw['lineups'] as { home: TeamLineup; away: TeamLineup }) || undefined),
             events: Array.isArray(raw['events']) ? (raw['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
           };
           setEvent(e);
@@ -1160,6 +1294,7 @@ export default function MatchPage() {
           awayTeamLogo: getLogo(coreObj, 'away'),
           winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
           stats: extractMatchStats(coreObj) ?? ((coreObj['stats'] as MatchStats) || undefined),
+          lineups: extractLineups(coreObj) ?? ((coreObj['lineups'] as { home: TeamLineup; away: TeamLineup }) || undefined),
           events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
         };
         setEventRaw(coreObj);
@@ -1196,6 +1331,7 @@ export default function MatchPage() {
             awayTeamLogo: getLogo(coreObj, 'away'),
             winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
             stats: extractMatchStats(coreObj) ?? ((coreObj['stats'] as MatchStats) || undefined),
+            lineups: extractLineups(coreObj) ?? ((coreObj['lineups'] as { home: TeamLineup; away: TeamLineup }) || undefined),
             events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
           };
           setEventRaw(coreObj);
@@ -1642,6 +1778,7 @@ export default function MatchPage() {
   }
 
   const { goals, cards, substitutions, fouls } = eventDetails;
+  const lineupData = match.lineups;
 
   const matchDate = new Date(match.date);
   const st = (match.status || '').toLowerCase();
@@ -1853,9 +1990,10 @@ export default function MatchPage() {
       {/* Match Details Tabs */}
       <div>
         <Tabs defaultValue="stats" className="space-y-6">
-          <TabsList className="grid grid-cols-5 w-full max-w-3xl mx-auto">
+          <TabsList className="grid grid-cols-6 w-full max-w-4xl mx-auto">
             <TabsTrigger value="stats">Statistics</TabsTrigger>
             <TabsTrigger value="events">Events</TabsTrigger>
+            <TabsTrigger value="lineups">Lineups</TabsTrigger>
             <TabsTrigger value="league">League Table</TabsTrigger>
             <TabsTrigger value="teams">Teams</TabsTrigger>
             <TabsTrigger value="analysis">Analysis</TabsTrigger>
@@ -1959,6 +2097,33 @@ export default function MatchPage() {
                   <div className="text-sm text-muted-foreground">
                     No statistics available for this match yet.
                   </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="lineups" className="space-y-6">
+            {lineupData ? (
+              <LineupField
+                home={{
+                  teamName: match.homeTeam,
+                  formation: lineupData.home.formation,
+                  logo: match.homeTeamLogo,
+                  starters: lineupData.home.starters,
+                  substitutes: lineupData.home.substitutes,
+                }}
+                away={{
+                  teamName: match.awayTeam,
+                  formation: lineupData.away.formation,
+                  logo: match.awayTeamLogo,
+                  starters: lineupData.away.starters,
+                  substitutes: lineupData.away.substitutes,
+                }}
+              />
+            ) : (
+              <Card>
+                <CardContent className="p-6 text-sm text-muted-foreground">
+                  Lineup data not available for this fixture.
                 </CardContent>
               </Card>
             )}
