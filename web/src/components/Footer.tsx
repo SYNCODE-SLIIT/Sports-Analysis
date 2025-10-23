@@ -138,17 +138,24 @@ export function Footer() {
                 href="https://syncode.lk"
                 target="_blank"
                 rel="noreferrer noopener"
-                className="flex items-center gap-2 rounded-full border border-border/60 bg-background px-4 py-1.5 shadow-sm"
+                className="flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-4 py-1.5 shadow-sm backdrop-blur"
               >
                 <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
                   Powered by
                 </span>
                 <Image
-                  src={ASSETS.poweredBy}
+                  src={ASSETS.poweredByLight}
                   alt="Powered by SYNCODE"
-                  width={120}
+                  width={132}
                   height={32}
-                  className="h-7 w-auto"
+                  className="h-7 w-auto block dark:hidden"
+                />
+                <Image
+                  src={ASSETS.poweredByDark}
+                  alt="Powered by SYNCODE"
+                  width={132}
+                  height={32}
+                  className="h-7 w-auto hidden dark:block"
                 />
               </Link>
             </div>
