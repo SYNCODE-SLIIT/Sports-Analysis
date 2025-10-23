@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
+import Image from "next/image";
+import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Calendar, MapPin, Users, Trophy, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
 import { toast } from "sonner";
@@ -35,6 +37,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { parseHighlights, type Highlight } from "@/lib/schemas";
+import { usePlanContext } from "@/components/PlanProvider";
 
 type TeamSideValue = { home?: number; away?: number };
 type MatchStats = {
@@ -123,6 +126,7 @@ const getLogo = (o: DataObject, homeOrAway: 'home' | 'away'): string | undefined
 
 export default function MatchPage() {
   const { user, supabase, bumpInteractions } = useAuth();
+  const { plan } = usePlanContext();
   const { eventId } = useParams<{ eventId: string }>();
   const searchParams = useSearchParams();
   const sid = searchParams?.get("sid") ?? "card";
@@ -1545,8 +1549,30 @@ export default function MatchPage() {
           </TabsContent>
 
           <TabsContent value="analysis" className="space-y-6">
-            {/* Highlights section removed as requested */}
-            {extrasLoading ? (
+            {plan !== "pro" ? (
+              <Card>
+                <CardContent className="py-16">
+                  <div className="flex flex-col items-center text-center space-y-4 max-w-sm mx-auto">
+                    <div className="mx-auto h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Image
+                        src="/logo/chatbot.svg"
+                        alt="Analytics Locked"
+                        width={32}
+                        height={32}
+                        className="h-8 w-8"
+                      />
+                    </div>
+                    <h3 className="text-xl font-bold">Upgrade to view analytics</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Start a 7-day free trial of Sports Analysis Pro to unlock our AI assistant for game plans, stats, and predictions.
+                    </p>
+                    <Button asChild className="mt-2">
+                      <Link href="/pro">Upgrade to Pro</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : extrasLoading ? (
               <Card>
                 <CardContent className="p-6">
                   <div className="text-sm text-muted-foreground">Loading analysis data...</div>
