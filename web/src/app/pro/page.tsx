@@ -108,7 +108,7 @@ export default function ProPage() {
 
       <section className="rounded-2xl bg-muted/40 p-8">
         <div className="space-y-3">
-          <h2 className="text-2xl font-semibold">What's included in the Pro trial?</h2>
+          <h2 className="text-2xl font-semibold">What&rsquo;s included in the Pro trial?</h2>
           <p className="text-muted-foreground">
             Take the full Sports Analysis suite for a spin. Launch the 7-day trial from this page to unlock premium
             analytics with no upfront charge. Cancel online anytime before your trial ends to avoid billing.

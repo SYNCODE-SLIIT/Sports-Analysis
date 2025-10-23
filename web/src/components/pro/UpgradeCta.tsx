@@ -193,7 +193,7 @@ export function UpgradeCta({
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Confirm your choice below. We’ll open a secure Stripe checkout summarizing the plan, price and trial end
+              Confirm your choice below. We&rsquo;ll open a secure Stripe checkout summarizing the plan, price and trial end
               date. You can cancel any time before the trial ends.
             </p>
             <div className="rounded-md border bg-muted/50 p-4 text-sm">
@@ -227,7 +227,7 @@ export function UpgradeCta({
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              After confirming, we’ll refresh your plan automatically. If checkout succeeds but you still see Free, reload
+              After confirming, we&rsquo;ll refresh your plan automatically. If checkout succeeds but you still see Free, reload
               this page or visit your
               <button className="text-primary underline" onClick={() => refreshPlan?.()}>
                 &nbsp;profile
