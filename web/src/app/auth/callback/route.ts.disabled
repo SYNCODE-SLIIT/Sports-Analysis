@@ -1,2 +1,0 @@
-// Disabled route - moved to route.ts.disabled
-// The real callback is handled by page.tsx or /auth/oauth-callback

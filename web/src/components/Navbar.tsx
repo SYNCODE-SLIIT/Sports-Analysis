@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "./AuthProvider";
 import { isAdminEmail } from "@/lib/admin";
 import { NlSearchBar } from "@/components/search/NlSearchBar";
+import { usePlanContext } from "@/components/PlanProvider";
+import { PlanBadge } from "@/components/UpgradeBadge";
 
 const navItems = [
   { name: "Home", href: "/" },
@@ -29,6 +31,7 @@ export function Navbar() {
   const [isOpen, setIsOpen] = React.useState(false);
   const { user } = useAuth();
   const isAdminUser = isAdminEmail(user?.email ?? undefined);
+  const { plan } = usePlanContext();
 
   // sign-out moved to profile page
 
@@ -93,6 +96,7 @@ export function Navbar() {
           
           {user ? (
             <>
+              <PlanBadge plan={plan} />
               <Button variant="ghost" size="sm" asChild className="hidden md:flex">
                 <Link href={isAdminUser ? "/admin" : "/profile"}>
                   <User className="h-4 w-4 mr-2" />
@@ -139,6 +143,10 @@ export function Navbar() {
                 <div className="border-t pt-6 space-y-4">
                   {user ? (
                     <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Current plan</span>
+                        <PlanBadge plan={plan} />
+                      </div>
                       <Button variant="outline" size="sm" asChild className="w-full justify-start">
                         <Link href={isAdminUser ? "/admin" : "/profile"} onClick={() => setIsOpen(false)}>
                           <User className="h-4 w-4 mr-2" />

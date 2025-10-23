@@ -28,6 +28,9 @@ import { useRecommendations } from "@/hooks/useRecommendations";
 import { toast } from "sonner";
 import { searchLeagues, searchTeams } from "@/lib/collect";
 import { isAdminEmail } from "@/lib/admin";
+import { usePlanContext } from "@/components/PlanProvider";
+import { ProfilePlanSummary } from "@/components/ProfilePlan";
+import { UpgradeCta } from "@/components/pro/UpgradeCta";
 
 type ProfileState = {
   full_name: string;
@@ -298,6 +301,7 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 
 export default function ProfilePage() {
   const { user, supabase, loading, prefsVersion, interactionsVersion } = useAuth();
+  const { plan } = usePlanContext();
   const recs = useRecommendations();
   const refetchRecommendations = recs.refetch;
   const router = useRouter();
@@ -320,6 +324,41 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasPrefs = preferences.favorite_teams.length > 0 || preferences.favorite_leagues.length > 0;
+  const [stripeConfig, setStripeConfig] = useState({
+    loaded: false,
+    monthlyPriceId: "",
+    configured: false,
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    const loadStripeConfig = async () => {
+      try {
+        const res = await fetch("/api/config/stripe", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("Failed to load Stripe info");
+        }
+        const data = await res.json();
+        if (!active) return;
+        setStripeConfig({
+          loaded: true,
+          monthlyPriceId: data?.monthlyPriceId ?? "",
+          configured: Boolean((data?.configured ?? false) && data?.monthlyPriceId),
+        });
+      } catch (error) {
+        console.error("Unable to load Stripe configuration", error);
+        if (!active) return;
+        setStripeConfig((prev) => ({ ...prev, loaded: true }));
+      }
+    };
+
+    loadStripeConfig();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading && user && isAdmin) {
@@ -1118,53 +1157,71 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                {editing ? (
-                  <>
+              <div className="flex flex-col items-end gap-3">
+                <ProfilePlanSummary />
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="w-full min-w-[180px]">
+                    <UpgradeCta
+                      priceId={stripeConfig.monthlyPriceId}
+                      label="Start 7-day trial"
+                      manageWhenPro
+                    />
+                  </div>
+                  {stripeConfig.loaded && !stripeConfig.configured && plan !== "pro" && (
+                    <p className="text-xs text-muted-foreground max-w-xs text-right">
+                      Stripe billing is not configured. Set `STRIPE_SECRET_KEY` and a monthly price environment
+                      variable (e.g. `NEXT_PUBLIC_STRIPE_PRO_MONTHLY_PRICE` or `STRIPE_PRO_MONTHLY_PRICE_ID`) before
+                      enabling upgrades.
+                    </p>
+                  )}
+
+                  {editing ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setEditing(false)}
+                        disabled={saving}
+                        className="px-4"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="neon-button px-5"
+                      >
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
+                      </Button>
+                    </>
+                  ) : (
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="sm"
-                      onClick={() => setEditing(false)}
-                      disabled={saving}
-                      className="px-4"
+                      className="neon-button px-5"
+                      onClick={() => setEditing(true)}
                     >
-                      Cancel
+                      <Settings className="h-4 w-4 mr-2" />
+                      Edit profile
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="neon-button bg-primary/80 text-primary-foreground px-5"
-                    >
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
-                    </Button>
-                  </>
-                ) : (
+                  )}
                   <Button
-                    variant="secondary"
                     size="sm"
+                    variant="secondary"
                     className="neon-button px-5"
-                    onClick={() => setEditing(true)}
+                    onClick={async () => {
+                      try {
+                        await supabase.auth.signOut();
+                      } finally {
+                        try { router.replace('/'); } catch {}
+                      }
+                    }}
                   >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Edit profile
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign out
                   </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="neon-button px-5"
-                  onClick={async () => {
-                    try {
-                      await supabase.auth.signOut();
-                    } finally {
-                      try { router.replace('/'); } catch {}
-                    }
-                  }}
-                >
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Sign out
-                </Button>
+                </div>
               </div>
             </div>
 
