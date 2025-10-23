@@ -2,7 +2,7 @@ export async function POST(req: Request) {
   let body: unknown;
   try {
     body = await req.json();
-  } catch (err) {
+  } catch {
     return new Response(
       JSON.stringify({ error: 'Invalid or empty JSON body' }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }

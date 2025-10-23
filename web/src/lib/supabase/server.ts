@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 
 export async function getSupabaseServerClient() {
   const cookieStore = await cookies();
@@ -12,10 +12,10 @@ export async function getSupabaseServerClient() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(_name: string, _value: string, _options: CookieOptions) {
+        set() {
           // No-op; we only need read access in route handlers.
         },
-        remove(_name: string, _options: CookieOptions) {
+        remove() {
           // No-op; we only need read access in route handlers.
         },
       },
