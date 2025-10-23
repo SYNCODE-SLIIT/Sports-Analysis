@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import Image from "next/image";
 import Link from "next/link";
@@ -800,7 +800,7 @@ const extractLineups = (source: DataObject): { home: TeamLineup; away: TeamLineu
   return { home, away };
 };
 
-export default function MatchPage() {
+function MatchPageInner() {
   const { user, supabase, bumpInteractions } = useAuth();
   const { plan } = usePlanContext();
   const isPro = (plan ?? "free").toLowerCase() === "pro";
@@ -2924,4 +2924,18 @@ function pickString(record: Record<string, unknown>, keys: string[]): string {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+export default function MatchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">Loading match details…</div>
+        </div>
+      }
+    >
+      <MatchPageInner />
+    </Suspense>
+  );
 }

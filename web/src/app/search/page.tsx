@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { NlSearchBar } from "@/components/search/NlSearchBar";
 import { NlSearchResults } from "@/components/search/NlSearchResults";
@@ -13,7 +13,7 @@ function parseLimit(value: string | null): number | undefined {
   return num;
 }
 
-export default function SearchPage() {
+function SearchPageInner() {
   const params = useSearchParams();
   const queryParam = params?.get("q") ?? "";
   const limitParam = params?.get("limit") ?? null;
@@ -41,3 +41,19 @@ export default function SearchPage() {
   );
 }
 
+export default function SearchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container space-y-8 py-10">
+          <header className="space-y-3">
+            <h1 className="text-3xl font-bold tracking-tight">Search</h1>
+          </header>
+          <div className="text-sm text-muted-foreground">Loading search…</div>
+        </div>
+      }
+    >
+      <SearchPageInner />
+    </Suspense>
+  );
+}
