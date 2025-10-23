@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,11 +54,21 @@ export function ChatbotPanel() {
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
   const [isLoadingPrompts, setIsLoadingPrompts] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const lastUserMessageRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const setLastUserMessageRef = useCallback((node: HTMLDivElement | null) => {
+    lastUserMessageRef.current = node;
+  }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+    if (messages.length === 0) return;
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage.role === "user") {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+    lastUserMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [messages]);
 
   useEffect(() => {
     let isMounted = true;
@@ -217,6 +227,7 @@ export function ChatbotPanel() {
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
+                    ref={msg.role === "user" ? setLastUserMessageRef : undefined}
                     className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
                   >
                     <div
@@ -277,14 +288,9 @@ export function ChatbotPanel() {
             </ScrollArea>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-primary/30 bg-muted/15 p-6 text-center">
-              <div className="flex flex-col items-center gap-2">
-                <Bot className="h-8 w-8 text-primary" />
-                <div className="space-y-1">
-                  <h3 className="text-sm font-semibold text-foreground">Ask about the sports world</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Try one of these prompts to explore matches, players, and trends.
-                  </p>
-                </div>
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">Ask about the sports world</h3>
+                <p className="text-xs text-muted-foreground">Try one of these prompts to explore matches, players, and trends.</p>
               </div>
               <div className="grid w-full gap-2 sm:grid-cols-2">
                 {promptsToRender.map((prompt) => (
@@ -306,6 +312,7 @@ export function ChatbotPanel() {
                   Updating suggestions…
                 </div>
               )}
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80">ATHLETE AI can make mistakes</p>
             </div>
           )}
         </div>
@@ -317,23 +324,21 @@ export function ChatbotPanel() {
             </div>
           )}
 
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80 text-center sm:text-left">
+            ATHLETE AI can make mistakes
+          </p>
           <form onSubmit={handleSubmit} className="space-y-1.5">
-            <div className="space-y-0.5">
-              <Label htmlFor="question" className="text-xs font-semibold">
-                Your question
-              </Label>
-              <textarea
-                id="question"
-                name="question"
-                ref={inputRef}
-                value={inputValue}
-                onChange={(event) => setInputValue(event.currentTarget.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask a question... (Enter to send, Shift+Enter for new line)"
-                rows={2}
-                className="w-full resize-none rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              />
-            </div>
+            <textarea
+              id="question"
+              name="question"
+              ref={inputRef}
+              value={inputValue}
+              onChange={(event) => setInputValue(event.currentTarget.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question... (Enter to send, Shift+Enter for new line)"
+              rows={2}
+              className="w-full resize-none rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 Depth

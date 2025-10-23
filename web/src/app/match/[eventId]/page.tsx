@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { parseHighlights, type Highlight } from "@/lib/schemas";
 import { usePlanContext } from "@/components/PlanProvider";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type TeamSideValue = { home?: number; away?: number };
 type MatchStatEntry = {
@@ -802,6 +803,7 @@ const extractLineups = (source: DataObject): { home: TeamLineup; away: TeamLineu
 export default function MatchPage() {
   const { user, supabase, bumpInteractions } = useAuth();
   const { plan } = usePlanContext();
+  const isPro = (plan ?? "free").toLowerCase() === "pro";
   const { eventId } = useParams<{ eventId: string }>();
   const searchParams = useSearchParams();
   const sid = searchParams?.get("sid") ?? "card";
@@ -831,6 +833,7 @@ export default function MatchPage() {
   const [teamsExtra, setTeamsExtra] = useState<{ home: DataObject | null; away: DataObject | null }>({ home: null, away: null });
   const [playersExtra, setPlayersExtra] = useState<{ home: DataObject[]; away: DataObject[] }>({ home: [], away: [] });
   const [oddsExtra, setOddsExtra] = useState<{ listed: DataObject[]; live: DataObject[] }>({ listed: [], live: [] });
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
   // const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] });
   // const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] }); // Only for legacy fallback, not used in UI
   interface TeamForm {
@@ -1044,6 +1047,10 @@ export default function MatchPage() {
     if (!user || !teamName) return;
     if (favoriteTeamPending.has(teamName)) return;
     if (favoriteTeams.includes(teamName)) return;
+    if (!isPro && favoriteTeams.length >= 3) {
+      setUpgradeDialogOpen(true);
+      return;
+    }
 
     updateFavoriteTeamPending(teamName, true);
     setFavoriteTeams(prev => [...prev, teamName]);
@@ -1152,7 +1159,7 @@ export default function MatchPage() {
     } finally {
       updateFavoriteTeamPending(teamName, false);
     }
-  }, [user, supabase, favoriteTeams, favoriteTeamPending, teamsExtra.home, teamsExtra.away, updateFavoriteTeamPending, removeFavoriteTeam]);
+  }, [user, supabase, favoriteTeams, favoriteTeamPending, teamsExtra.home, teamsExtra.away, updateFavoriteTeamPending, removeFavoriteTeam, isPro]);
 
   const toggleFavoriteTeam = useCallback((teamName: string) => {
     if (!teamName) return;
@@ -2793,6 +2800,25 @@ export default function MatchPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>
+        <DialogContent className="border border-primary/40">
+          <DialogHeader>
+            <DialogTitle>Upgrade to save more favourites</DialogTitle>
+            <DialogDescription>
+              Start a 7-day free trial of Sports Analysis Pro to pin unlimited teams and leagues, plus unlock deeper analytics.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row sm:justify-end gap-2">
+            <Button variant="outline" onClick={() => setUpgradeDialogOpen(false)}>
+              Maybe later
+            </Button>
+            <Button asChild>
+              <Link href="/pro">Upgrade to Pro</Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

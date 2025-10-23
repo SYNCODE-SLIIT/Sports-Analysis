@@ -38,6 +38,7 @@ PLANNER_TEMPERATURE = float(os.getenv("GROQ_PLANNER_TEMPERATURE", "0.1"))
 WRITER_TEMPERATURE = float(os.getenv("GROQ_WRITER_TEMPERATURE", "0.2"))
 SUGGESTION_TEMPERATURE = float(os.getenv("GROQ_SUGGESTION_TEMPERATURE", "0.35"))
 MAX_HISTORY_MESSAGES = int(os.getenv("CHATBOT_HISTORY_LIMIT", "12"))
+NO_CITATIONS_SENTINEL = "<!--NO_CITATIONS-->"
 
 DEFAULT_SUGGESTED_PROMPTS: List[str] = [
     "What storylines should I watch in this weekend's Premier League matches?",
@@ -586,8 +587,11 @@ def _ask_writer(
     notes = plan.get("notes", "")
     system_msg = (
         "You are a concise sports analyst. Use ONLY the supplied web context to answer factual questions. "
-        "You only answer for soccer/football related questions, Do not provide any answers for content not related to sports. If unrelated questions were asked, reply I’m sorry, but I only handle questions related to sports. "
-        "If information is missing, say so. Do not make up fauls information"
+        "You only answer for soccer/football related questions. Do not provide any answers for content not related to sports. "
+        "If an unrelated question is asked, respond exactly with: I’m sorry, but I only handle questions related to sports. "
+        "When you provide that refusal, append a new line containing <!--NO_CITATIONS--> so the caller knows to suppress sources. "
+        "Do not cite sources or reference research context when you decline. "
+        "If information is missing, say so. Do not make up false information."
     )
     citations_text = "\n".join(f"- {c.get('url')}" for c in citations if c.get("url"))
     conversation_section = ""
@@ -641,15 +645,26 @@ def ask_with_web_search(
         history_text=history_text,
     )
 
+    suppress_citations = False
+    if NO_CITATIONS_SENTINEL in answer:
+        answer = answer.replace(NO_CITATIONS_SENTINEL, "").strip()
+        suppress_citations = True
+
     limited_citations = citations[:top_k_clamped]
+    if suppress_citations:
+        limited_citations = []
+
+    returned_citation_count = len(limited_citations)
+    total_unique_citations = 0 if suppress_citations else len(citations)
     return {
         "answer": answer,
         "citations": limited_citations,
         "plan": plan,
         "meta": {
-            "unique_citations": len(citations),
+            "unique_citations": total_unique_citations,
             "groups": len(groups),
             "history_messages_used": len(history_clean),
             "history_truncated": bool(history) and len(history or []) > len(history_clean),
+            "returned_citations": returned_citation_count,
         },
     }
