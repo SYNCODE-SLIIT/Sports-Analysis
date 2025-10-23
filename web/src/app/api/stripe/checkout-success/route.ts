@@ -1,15 +1,8 @@
-// Minimal local type for Stripe subscription to avoid 'any'
-type StripeSubscription = {
-  metadata?: { user_id?: string };
-  customer?: string;
-  items?: { data?: { price?: { id?: string } }[] };
-  status?: string;
-  current_period_end?: number;
-  id?: string;
-};
 import { NextRequest, NextResponse } from "next/server";
 import { getStripeClient } from "@/lib/stripe/client";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service-role";
+import { getCurrentPeriodEnd, getTrialEnd } from "@/lib/stripe/subscription-period";
+import type Stripe from "stripe";
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -30,8 +23,7 @@ export async function GET(req: NextRequest) {
       expand: ["subscription", "customer", "line_items"],
     });
 
-  // Use a minimal local type for Stripe subscription
-  const subscription = session.subscription as StripeSubscription;
+    const subscription = session.subscription as Stripe.Subscription;
     if (!subscription) {
       return NextResponse.json({ error: "No subscription found on session" }, { status: 400 });
     }
@@ -43,30 +35,40 @@ export async function GET(req: NextRequest) {
   const status = subscription.status || null;
   const isPro = status === 'active' || status === 'trialing' || status === 'past_due';
   const normalizedStatus = isPro ? 'pro' : 'free';
-    const currentPeriodEnd = subscription.current_period_end ? new Date(subscription.current_period_end * 1000).toISOString() : null;
+  const currentPeriodEnd = getCurrentPeriodEnd(subscription);
+  const trialEndAt = getTrialEnd(subscription);
 
     if (!userId) {
       return NextResponse.json({ error: 'Subscription missing user metadata' }, { status: 400 });
     }
 
     const supabase = getSupabaseServiceRoleClient();
-    const { error } = await supabase.from('subscriptions').upsert({
+    const updates: Record<string, unknown> = {
       user_id: userId,
       plan: normalizedStatus === 'pro' ? 'pro' : 'free',
       stripe_customer_id: customerId || null,
       stripe_subscription_id: subscription.id,
       stripe_price_id: priceId,
-      subscription_status: normalizedStatus,
+      subscription_status: status || null,
       current_period_end: currentPeriodEnd,
-    }, { onConflict: 'user_id' });
+    };
+
+    if (trialEndAt) {
+      updates.trial_end_at = trialEndAt;
+      updates.trial_consumed = true;
+    } else if (status !== 'trialing') {
+      updates.trial_end_at = null;
+    }
+
+    const { error } = await supabase.from('subscriptions').upsert(updates, { onConflict: 'user_id' });
 
     if (error) {
       console.error('Supabase upsert error:', error);
       return NextResponse.json({ error: 'DB error' }, { status: 500 });
     }
 
-  const redirectUrl = new URL('/pro/success', req.url);
-  return NextResponse.redirect(redirectUrl.toString());
+    const redirectUrl = new URL('/pro/success', req.url);
+    return NextResponse.redirect(redirectUrl.toString());
   } catch (err: unknown) {
     console.error('Error fetching session:', err);
     return NextResponse.json({ error: 'Failed to retrieve session' }, { status: 500 });

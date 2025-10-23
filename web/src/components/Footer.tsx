@@ -34,7 +34,7 @@ export function Footer() {
               Advanced football analytics and live match insights.
             </p>
             <ul className="text-xs text-muted-foreground space-y-1 mt-2">
-              <li>• Live win-probability models</li>
+              <li>• Live win-probability</li>
               <li>• Player performance breakdowns</li>
               <li>• Compact match highlights</li>
             </ul>
@@ -170,44 +170,35 @@ export function Footer() {
               </p>
             </div>
 
-            <Link
-              href="https://syncode.lk"
-              target="_blank"
-              rel="noreferrer noopener"
-              className="group relative flex w-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-background/70 px-6 py-4 text-left shadow-sm backdrop-blur transition-transform hover:-translate-y-0.5 hover:shadow-xl sm:w-auto sm:flex-row sm:items-center sm:gap-5"
-            >
-              <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-primary/5 to-primary/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-              <div className="relative flex items-center gap-4">
-                <div className="relative flex h-10 w-10 items-center justify-center">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-primary/60 opacity-60 animate-ping" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
-                </div>
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.34em] text-muted-foreground">
-                    Powered by
-                  </span>
-                  <span className="text-xs font-medium text-muted-foreground/90">
-                    SYNCODE
-                  </span>
-                </div>
-                <div className="flex items-center sm:pl-4">
-                  <Image
-                    src={ASSETS.poweredByLight}
-                    alt="SYNCODE"
-                    width={104}
-                    height={32}
-                    className="h-8 w-auto drop-shadow-sm dark:hidden"
-                  />
-                  <Image
-                    src={ASSETS.poweredByDark}
-                    alt="SYNCODE"
-                    width={104}
-                    height={32}
-                    className="hidden h-8 w-auto drop-shadow-sm dark:block"
-                  />
-                </div>
-              </div>
-            </Link>
+            <div className="flex flex-col md:flex-row items-center gap-3">
+              <p className="text-xs text-muted-foreground text-center md:text-right max-w-md">
+                Use for informational purposes only.
+              </p>
+              <Link
+                href="https://syncode.lk"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="flex items-center gap-2 rounded-full border border-border/60 bg-background/90 px-4 py-1.5 shadow-sm backdrop-blur"
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+                  Powered by
+                </span>
+                <Image
+                  src={ASSETS.poweredByLight}
+                  alt="Powered by SYNCODE"
+                  width={132}
+                  height={32}
+                  className="h-7 w-auto block dark:hidden"
+                />
+                <Image
+                  src={ASSETS.poweredByDark}
+                  alt="Powered by SYNCODE"
+                  width={132}
+                  height={32}
+                  className="h-7 w-auto hidden dark:block"
+                />
+              </Link>
+            </div>
           </div>
         </div>
       </div>

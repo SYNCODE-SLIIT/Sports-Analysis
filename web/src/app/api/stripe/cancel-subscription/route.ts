@@ -37,7 +37,7 @@ export async function POST() {
   const { data: subscription, error: subscriptionError } = await supabaseService
     .from("subscriptions")
     .select(
-      "user_id, plan, subscription_status, current_period_end, stripe_price_id, stripe_subscription_id, stripe_customer_id",
+      "user_id, plan, subscription_status, current_period_end, stripe_price_id, stripe_subscription_id, stripe_customer_id, trial_consumed, trial_end_at",
     )
     .eq("user_id", user.id)
     .maybeSingle();
@@ -51,7 +51,9 @@ export async function POST() {
     return NextResponse.json({ success: true, plan: "free" });
   }
 
-  const alreadyFree = subscription.plan !== "pro" && subscription.subscription_status !== "pro";
+  const activeStatuses = new Set(["pro", "trialing", "active", "past_due"]);
+  const alreadyFree =
+    subscription.plan !== "pro" && (!subscription.subscription_status || !activeStatuses.has(subscription.subscription_status));
 
   if (!alreadyFree && subscription.stripe_subscription_id && process.env.STRIPE_SECRET_KEY) {
     try {
@@ -78,6 +80,8 @@ export async function POST() {
     stripe_price_id: null,
     stripe_subscription_id: null,
     stripe_customer_id: subscription.stripe_customer_id ?? null,
+    trial_consumed: Boolean(subscription.trial_consumed),
+    trial_end_at: subscription.trial_end_at ?? null,
   };
 
   const { error: updateError } = await supabaseService.from("subscriptions").upsert(updates, { onConflict: "user_id" });
