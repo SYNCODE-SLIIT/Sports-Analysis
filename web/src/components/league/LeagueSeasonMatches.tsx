@@ -9,6 +9,7 @@ import { listSeasons, postCollect, sanitizeInput, type DataObject, type Json } f
 import { parseFixtures, type Fixture } from "@/lib/schemas";
 
 type Props = {
+  leagueId?: string;
   leagueName?: string;
   seasonLabel?: string; // e.g., "Current Season", "2023/2024", or "2023"
   title?: string;
@@ -257,7 +258,7 @@ const derivePreferredValue = (options: SeasonOption[], preferredLabel?: string):
   return options[0].value;
 };
 
-export function LeagueSeasonMatches({ leagueName, seasonLabel, title = "Season Matches" }: Props) {
+export function LeagueSeasonMatches({ leagueId, leagueName, seasonLabel, title = "Season Matches" }: Props) {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -275,12 +276,15 @@ export function LeagueSeasonMatches({ leagueName, seasonLabel, title = "Season M
   const prevSeasonLabelRef = useRef<string | undefined>(seasonLabel);
 
   useEffect(() => {
-    if (!leagueName) {
+    if (!leagueId && !leagueName) {
       setRawSeasonLabels([]);
       return;
     }
     let cancelled = false;
-    listSeasons({ leagueName })
+    const params: { leagueId?: string; leagueName?: string } = {};
+    if (leagueId) params.leagueId = leagueId;
+    if (!leagueId && leagueName) params.leagueName = leagueName;
+    listSeasons(params)
       .then(resp => {
         if (cancelled) return;
         const payload = (resp?.data as { seasons?: unknown })?.seasons ?? resp?.data;
@@ -294,7 +298,7 @@ export function LeagueSeasonMatches({ leagueName, seasonLabel, title = "Season M
     return () => {
       cancelled = true;
     };
-  }, [leagueName]);
+  }, [leagueId, leagueName]);
 
   useEffect(() => {
     const nextOptions = buildSeasonOptions(rawSeasonLabels, seasonLabel);
@@ -319,7 +323,7 @@ export function LeagueSeasonMatches({ leagueName, seasonLabel, title = "Season M
   }, [rawSeasonLabels, seasonLabel, userOverride]);
 
   useEffect(() => {
-    if (!leagueName) return;
+    if (!leagueId && !leagueName) return;
     const fallbackValue = seasonLabel ? labelToValue(seasonLabel) : "";
     const activeValue = selectedSeason || fallbackValue;
     const activeLabel = valueToLabel(activeValue, seasonOptions) ?? seasonLabel ?? "";
@@ -344,10 +348,11 @@ export function LeagueSeasonMatches({ leagueName, seasonLabel, title = "Season M
     setVisible(24);
 
     const args: Record<string, Json> = {
-      leagueName: sanitizeInput(leagueName),
       from: range.from,
       to: range.to,
     };
+    if (leagueId) args.leagueId = sanitizeInput(leagueId);
+    else if (leagueName) args.leagueName = sanitizeInput(leagueName);
 
     postCollect<{ events?: DataObject[]; result?: DataObject[]; results?: DataObject[] }>("events.list", args)
       .then(resp => {
@@ -399,7 +404,7 @@ export function LeagueSeasonMatches({ leagueName, seasonLabel, title = "Season M
     return () => {
       cancelled = true;
     };
-  }, [leagueName, selectedSeason, seasonOptions, seasonLabel]);
+  }, [leagueId, leagueName, selectedSeason, seasonOptions, seasonLabel]);
 
   const handleSeasonChange = (value: string) => {
     setUserOverride(true);

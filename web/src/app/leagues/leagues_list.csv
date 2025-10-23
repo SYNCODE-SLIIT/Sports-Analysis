@@ -1,0 +1,977 @@
+league_key,league_name,country_name
+4,UEFA Europa League,eurocups
+1,UEFA European Championship,eurocups
+683,UEFA Conference League,eurocups
+3,UEFA Champions League,eurocups
+633,UEFA Nations League,eurocups
+28,World Cup,Worldcup
+152,Premier League,England
+302,La Liga,Spain
+207,Serie A,Italy
+175,Bundesliga,Germany
+168,Ligue 1,France
+344,Premier League,Russia
+266,Primeira Liga,Portugal
+63,First Division A,Belgium
+244,Eredivisie,Netherlands
+332,MLS,USA
+322,Süper Lig,Turkey
+99,Serie A,Brazil
+235,Liga MX,Mexico
+279,Premiership,Scotland
+56,Bundesliga,Austria
+325,Premier League,Ukraine
+135,Superliga,Denmark
+308,Super League,Switzerland
+127,First NL,Croatia
+148,EFL Trophy,England
+178,Super League 1,Greece
+307,Allsvenskan,Sweden
+134,Czech Liga,Czech Republic
+130,1. Division,Cyprus
+288,Super Liga,Serbia
+278,Saudi League,Saudi Arabia
+259,Ekstraklasa,Poland
+118,Chinese Super League,China
+120,Primera A,Colombia
+202,Ligat Ha'al,Israel
+209,J1 League,Japan
+253,Eliteserien,Norway
+111,First League,Bulgaria
+272,Liga I,Romania
+269,Stars League,Qatar
+171,2. Bundesliga,Germany
+293,1. liga,Slovakia
+255,Division Profesional,Paraguay
+164,Ligue 2,France
+301,Segunda División,Spain
+191,NB I,Hungary
+57,Premyer Liqa,Azerbaijan
+214,Premier League,Kazakhstan
+206,Serie B,Italy
+219,K League 1,Korea Republic
+195,Persian Gulf Pro League,Iran
+328,Pro League,United Arab Emirates
+121,Primera División,Costa Rica
+406,LPF,Panama
+2,UEFA Women's Champions League,intl
+10,AFC Champions League Elite,intl
+14,Damallsvenskan,Sweden
+15,Concacaf Gold Cup,intl
+17,CONMEBOL Copa America,intl
+18,CONMEBOL Libertadores,intl
+24,UEFA World Cup Qualifiers,Worldcup
+27,CONMEBOL World Cup Qualifiers,Worldcup
+29,CAF Africa Cup of Nations,intl
+44,Liga Profesional Argentina,Argentina
+49,A-League Men,Australia
+75,Serie B,Brazil
+115,Primera División,Chile
+145,League Two,England
+146,FA Cup,England
+147,League Cup,England
+153,Championship,England
+154,League One,England
+165,Coupe de France,France
+172,DFB Pokal,Germany
+205,Coppa Italia,Italy
+243,KNVB Beker,Netherlands
+257,Liga 1,Peru
+265,Taça de Portugal,Portugal
+300,Copa del Rey,Spain
+346,CAF Champions League,intl
+354,UEFA European Championship Qualifiers,eurocups
+372,UEFA Super Cup,eurocups
+377,Community Shield,England
+383,Super Cup,Spain
+385,CONMEBOL Sudamericana,intl
+390,CAF Confederation Cup,intl
+566,Indian Super League,India
+727,AFC Champions League,intl
+1194,KNVB Beker,Netherlands
+16,FIFA Confederations Cup,intl
+19,FIFA Intercontinental Cup,Worldcup
+53,2. Liga,Austria
+61,Premier League,Belarus
+83,Carioca Série A,Brazil
+91,Pernambucano 1,Brazil
+124,HNL,Croatia
+140,Liga Pro,Ecuador
+141,Premier League,Egypt
+166,Coupe de la Ligue,France
+193,I-League,India
+194,Liga 1,Indonesia
+239,Botola Pro,Morocco
+245,Eerste Divisie,Netherlands
+260,Cup,Poland
+267,Segunda Liga,Portugal
+275,Cup,Russia
+280,Scottish Cup,Scotland
+296,1. SNL,Slovenia
+297,PSL,South Africa
+314,Thai League 1,Thailand
+349,Copa do Brasil,Brazil
+476,Taça da Liga,Portugal
+515,Copa Argentina,Argentina
+5,Concacaf Champions Cup,intl
+6,Première Ligue,France
+7,Frauen Bundesliga,Germany
+8,Serie A Women,Italy
+9,AFC Challenge Cup,intl
+11,AFC Champions League Two,intl
+12,ASEAN Championship,intl
+13,Primera División Femenina,Spain
+20,FIFA Women's World Cup,World cup
+21,CAF World Cup Qualifiers,Worldcup
+22,AFC World Cup Qualifiers,Worldcup
+23,Concacaf World Cup Qualifiers,Worldcup
+25,WC Qualification Intercontinental Play-offs,Worldcup
+26,OFC World Cup Qualifiers,Worldcup
+30,CAF Super Cup,intl
+31,Superliga,Albania
+32,1st Division,Albania
+33,2nd Division,Albania
+34,Ligue 1,Algeria
+35,Ligue 2,Algeria
+36,2a Divisió,Andorra
+37,1a Divisió,Andorra
+38,Girabola,Angola
+39,Torneo Federal A,Argentina
+40,Prim B Metro,Argentina
+41,Primera Nacional,Argentina
+42,Primera C,Argentina
+43,Primera D,Argentina
+45,Premier League,Armenia
+46,First League,Armenia
+47,Division di Honor,Aruba
+48,South Australia NPL,Australia
+50,New South Wales NPL,Australia
+51,Western Australia NPL,Australia
+52,Landesliga,Austria
+54,Cup,Austria
+55,Regionalliga,Austria
+58,Birinci Dasta,Azerbaijan
+59,Premier League,Bahrain
+60,Premier League,Bangladesh
+62,1. Division,Belarus
+64,Cup,Belgium
+65,Challenger Pro League,Belgium
+66,Third Amateur Division,Belgium
+67,Second Amateur Division,Belgium
+68,Premier League,Bermuda
+69,Primera División,Bolivia
+70,Premijer Liga,Bosnia and Herzegovina
+71,1st League,Bosnia and Herzegovina
+72,Gaúcho 2,Brazil
+73,Piauiense,Brazil
+74,Sul-Matogrossense,Brazil
+76,Potiguar 1,Brazil
+77,Acreano,Brazil
+78,Paranaense 2,Brazil
+79,Serie C,Brazil
+80,Serie D,Brazil
+81,Amazonense 1,Brazil
+82,Mineiro 1,Brazil
+84,Carioca B1,Brazil
+85,Sergipano 1,Brazil
+86,Paulista A2,Brazil
+87,Paraense A,Brazil
+88,Goiano 1,Brazil
+89,Matogrossense 1,Brazil
+90,Tocantinense,Brazil
+92,Rondoniense,Brazil
+93,Alagoano 1,Brazil
+94,Baiano 2,Brazil
+95,Baiano 1,Brazil
+96,Paulista A3,Brazil
+97,Paraibano 1,Brazil
+98,Catarinense 1,Brazil
+100,Paranaense 1,Brazil
+101,Roraimense,Brazil
+102,Gaúcho 1,Brazil
+103,Maranhense 1,Brazil
+104,Cearense 1,Brazil
+105,Brasiliense A,Brazil
+106,Paulista A1,Brazil
+107,Amapaense,Brazil
+108,Capixaba A,Brazil
+109,Second League,Bulgaria
+110,Third League,Bulgaria
+112,Elite One,Cameroon
+113,Canadian Soccer League,Canada
+114,PCSL,Canada
+116,Primera B,Chile
+117,Chinese Football League 1,China
+119,Taiwan Football Premier League,Chinese Taipei
+122,Liga de Ascenso,Costa Rica
+123,Ligue 1,Ivory Coast
+125,Cup,Croatia
+126,Third NL,Croatia
+128,3. Division,Cyprus
+129,2. Division,Cyprus
+131,3. liga,Czech Republic
+132,4. liga,Czech Republic
+133,FNL,Czech Republic
+136,2. Division,Denmark
+137,Denmark Series,Denmark
+138,1. Division,Denmark
+139,Liga Pro Serie B,Ecuador
+142,Primera Division,El Salvador
+143,Non League Div One,England
+144,FA Trophy,England
+149,Non League Premier,England
+150,National League N / S,England
+151,National League,England
+155,Esiliiga A,Estonia
+156,Premium liiga,Estonia
+157,Meistaradeildin,Faroe Islands
+158,1. Deild,Faroe Islands
+159,National Football League,Fiji
+160,Kakkonen,Finland
+161,Suomen Cup,Finland
+162,National 3,France
+163,National 2,France
+167,National 1,France
+169,Erovnuli Liga 2,Georgia
+170,Erovnuli Liga,Georgia
+173,Regionalliga,Germany
+174,Oberliga,Germany
+176,3. Liga,Germany
+177,Premier League,Ghana
+179,Cup,Greece
+180,Gamma Ethniki,Greece
+181,Football League,Greece
+182,Liga Nacional,Guatemala
+183,Primera Division,Guatemala
+184,Ligue Haïtienne,Haiti
+185,Liga Nacional,Honduras
+186,Premier League,Hong Kong
+187,HKFA 1st Division,Hong Kong
+188,NB II,Hungary
+189,Magyar Kupa,Hungary
+190,NB III,Hungary
+192,Besta deild,Iceland
+196,Azadegan League,Iran
+197,FAI Cup,Ireland
+198,First Division,Ireland
+199,League Cup,Ireland
+200,Premier Division,Ireland
+201,Liga Leumit,Israel
+203,Toto Cup Ligat Al,Israel
+204,Serie D,Italy
+208,Premier League,Jamaica
+210,J-League Cup,Japan
+211,Japan Football League,Japan
+212,J2 League,Japan
+213,League,Jordan
+215,1. Division,Kazakhstan
+216,FKF Premier League,Kenya
+217,K3 League,Korea Republic
+218,K League 2,Korea Republic
+220,Premier League,Kuwait
+221,Division 1,Kuwait
+222,1. Liga,Latvia
+223,Virsliga,Latvia
+224,Premier League,Lebanon
+225,Premier League,Libya
+226,1 Lyga,Lithuania
+227,A Lyga,Lithuania
+228,National Division,Luxembourg
+229,Second League,North Macedonia
+230,First League,North Macedonia
+231,Premier League,Malaysia
+232,Super League,Malaysia
+233,Challenge League,Malta
+234,Premier League,Malta
+236,Liga de Expansión MX,Mexico
+237,Super Liga,Moldova
+238,Liga 1,Moldova
+240,Second League,Montenegro
+241,Botola 2,Morocco
+242,Derde Divisie,Netherlands
+246,Premiership,New Zealand
+247,Primera Division,Nicaragua
+248,NPFL,Nigeria
+249,Irish Cup,Northern Ireland
+250,Championship,Northern Ireland
+251,Premiership,Northern Ireland
+252,NM Cupen,Norway
+254,Professional League,Oman
+256,Division Intermedia,Paraguay
+258,Liga 2,Peru
+261,II Liga,Poland
+262,III Liga,Poland
+263,I Liga,Poland
+264,Campeonato de Portugal Prio,Portugal
+268,Super Cup,Portugal
+270,Liga III,Romania
+271,Liga II,Romania
+273,Second League B,Russia
+274,First League,Russia
+276,Campionato,San Marino
+277,Division 1,Saudi Arabia
+281,League Cup,Scotland
+282,Championship,Scotland
+283,Challenge Cup,Scotland
+284,League Two,Scotland
+285,League One,Scotland
+286,Highland / Lowland,Scotland
+287,Prva Liga,Serbia
+289,Premier League,Singapore
+290,League Cup,Singapore
+291,3. liga,Slovakia
+292,Cup,Slovakia
+294,2. SNL,Slovenia
+295,Cup,Slovenia
+298,Tercera División RFEF,Spain
+299,Primera División RFEF,Spain
+303,Sudani Premier League,Sudan
+304,Suriname Major League,Surinam
+305,Superettan,Sweden
+306,Svenska Cupen,Sweden
+309,Schweizer Pokal,Switzerland
+310,2. Liga Interregional,Switzerland
+311,1. Liga Classic,Switzerland
+312,Challenge League,Switzerland
+313,Premier League,Syria
+315,TT Premier League,Trinidad and Tobago
+316,Ligue 2,Tunisia
+317,Ligue 1,Tunisia
+318,2. Lig,Turkey
+319,1. Lig,Turkey
+320,Cup,Turkey
+321,3. Lig,Turkey
+323,Super Cup,Turkey
+324,Persha Liga,Ukraine
+326,Cup,Ukraine
+327,Druha Liga,Ukraine
+329,USL League Two,USA
+330,USL Championship,USA
+331,USL 2,USA
+333,Liga AUF,Uruguay
+334,Segunda División,Uruguay
+335,Super League,Uzbekistan
+336,Segunda División,Venezuela
+337,Primera División,Venezuela
+338,V.League 2,Vietnam
+339,V.League 1,Vietnam
+340,FAW Championship,Wales
+341,Premier League,Wales
+342,Super League,Zambia
+343,Premier Soccer League,Zimbabwe
+345,Premier Division,Gibraltar
+347,AFC Asian Cup,intl
+348,Super Cup,Belarus
+350,Cup,Czech Republic
+351,DBU Pokalen,Denmark
+352,Veikkausliiga,Finland
+353,Ykkönen,Finland
+355,Club Friendlies,intl
+356,Friendlies,intl
+357,League Cup,Iceland
+358,State Cup,Israel
+359,Serie C,Italy
+360,Emperor Cup,Japan
+361,Super Cup,Japan
+362,1. Division,Norway
+363,2. Division,Norway
+364,Super Cup,Russia
+365,League Cup,South Africa
+366,Ettan,Sweden
+367,Division 2,Sweden
+368,US Open Cup,USA
+369,Welsh Cup,Wales
+370,League Cup,Wales
+371,K League Cup,Korea Republic
+373,Northern Territory Premier League,Australia
+374,FQPL 3 Metro,Australia
+375,Northern NSW NPL,Australia
+376,2. Division,Belarus
+378,Super Cup,Ukraine
+379,Super Cup,Germany
+380,Super Cup,Czech Republic
+381,Super Cup,Belgium
+382,Supercupa,Romania
+384,Super Cup,Italy
+386,CONMEBOL Recopa,intl
+387,Super Cup,Bulgaria
+388,Division d'Honneur,Guadeloupe
+389,Trophée des Champions,France
+391,Super Cup,Netherlands
+392,8 Cup,South Africa
+393,Emir Cup,Kuwait
+394,Emir Cup,Qatar
+395,1. Deild,Iceland
+396,Crown Prince Cup,Kuwait
+397,Second Division,Qatar
+398,First League,Montenegro
+399,Srpska Liga,Serbia
+400,Liga Mayor,Dominican Republic
+401,Cup,Vietnam
+402,CECAFA Senior Challenge Cup,intl
+403,Premier League,Barbados
+404,OFC Champions League,intl
+405,Caribbean Cup,intl
+407,Canadian Championship,Canada
+408,FA Trophy,Malta
+409,David Kipiani Cup,Georgia
+410,Liga 2,Indonesia
+411,Cup,Morocco
+412,Super Cup,Norway
+413,Cup,Iceland
+414,Copa Chile,Chile
+415,FIFA U17 World Cup,Worldcup
+416,Cup,Belarus
+417,Ligue 1,Congo DR
+418,Asian Cup Qualification,intl
+419,Korea Cup,Korea Republic
+420,2. liga,Slovakia
+421,Capital Territory NPL,Australia
+422,Cup,Latvia
+423,Cup,Lithuania
+424,Cup,Bulgaria
+425,FIFA U20 World Cup,Worldcup
+426,Cup,Estonia
+427,Cup,Cyprus
+428,Cup,Serbia
+429,Cupa României,Romania
+430,Copa Bicentenario,Peru
+431,Leagues Cup,intl
+432,Besta deild Women,Iceland
+433,Brasileiro U20 A,Brazil
+434,WAFF Championship,Waff Championship
+435,Copa Paraguay,Paraguay
+436,Reserve League,Algeria
+437,Liga Premier Serie A,Mexico
+438,Reserve Pro League,Belgium
+439,Super League 2,Greece
+440,Friendlies Women,intl
+441,COSAFA U20 Championship,intl
+442,Trofeo de Campeones,Argentina
+443,Federation Cup,Bangladesh
+444,Elite Two,Cameroon
+445,Supercopa,Peru
+446,Premier League,Mongolia
+447,Kakkosen Cup,Finland
+448,Supercopa do Brasil,Brazil
+449,NISA,USA
+450,Liga Primera U20,Nicaragua
+451,Reserve League,Belarus
+452,Youth League,Turkmenistan
+453,Kansallinen Liiga,Finland
+454,NWSL Challenge Cup,USA
+455,Copa por México,Mexico
+456,Lao League,Laos
+457,Curaçao Promé Divishon,Curacao
+458,Women’s FA Community Shield,England
+459,U21 Divisie 1,Netherlands
+460,1. Liga Women,Czech Republic
+461,NWSL Fall Series,USA
+462,I Liga Women,Slovakia
+463,U18 Divisie 1,Netherlands
+464,I-League 2,India
+465,Brasileiro de Aspirantes,Brazil
+466,Liga Femenina,Colombia
+467,Nacional B,Bolivia
+468,Copa Paulista,Brazil
+469,Diski Challenge,South Africa
+470,Super Cup,Vietnam
+471,Nasjonal U19 Champions League,Norway
+472,Qatar Cup,Qatar
+473,Olympic Qualifying Concacaf,World
+474,Cup,Bosnia and Herzegovina
+475,Copa Colombia,Colombia
+477,Asian Games,intl
+478,Gulf Cup of Nations,intl
+479,AFF Championship,intl
+480,CAF African Nations Championship,intl
+481,Eredivisie Women,Netherlands
+482,Kvindeliga,Denmark
+483,Division 1,United Arab Emirates
+484,CONMEBOL U20,intl
+485,U19 Bundesliga,Germany
+486,Queensland NPL,Australia
+487,Provincial,Belgium
+488,Premier League,Belize
+489,Super League,Bhutan
+490,Premier League,Botswana
+491,Mineiro 2,Brazil
+492,Cearense 2,Brazil
+493,Premier League,Cambodia
+494,2. Deild,Iceland
+495,Iraqi League,Iraq
+496,A Division,Nepal
+497,Ligue 1,Senegal
+498,Toppserien,Norway
+499,UEFA Women's Championship,intl
+500,Olympics Men,intl
+501,A-League Women,Australia
+502,Svenska Cupen Women,Sweden
+503,Shield Cup,Jordan
+504,Copa do Nordeste,Brazil
+505,Super Cup,Kuwait
+506,Cup,Azerbaijan
+507,League Cup,Northern Ireland
+508,Cup,Egypt
+509,Cup,Albania
+510,Cup,Montenegro
+511,UEFA U21 Championship,intl
+512,Cupa,Moldova
+513,Sultan Cup,Oman
+514,Cup,Kazakhstan
+516,Presidents Cup,United Arab Emirates
+517,Primera B,Colombia
+518,Cup,Armenia
+519,Cup,Tunisia
+520,FA Cup,China
+521,Copa MX,Mexico
+522,Olympics Women,intl
+523,1. Liga Promotion,Switzerland
+524,Super Cup,Egypt
+525,Super Copa,Argentina
+526,EAFF E-1 Football Championship,intl
+527,Superliga,Colombia
+528,Concacaf U20,intl
+529,Coupe Nationale,Algeria
+530,1st Division,South Africa
+531,Cup,South Africa
+532,3. Lig,Turkey
+533,Super Cup,Chile
+534,Youth Championship,Russia
+535,Premier League Asia Trophy,intl
+536,Super Cup,Saudi Arabia
+537,Super Cup,Albania
+538,UEFA Youth League,eurocups
+539,Federation Cup,Bahrain
+541,Cup,Luxembourg
+542,Cup,Liechtenstein
+543,Coppa Titano,San Marino
+544,Superliga,Kosovo
+545,Ligue A,Burundi
+546,LFA First Division,Liberia
+547,Reykjavik Cup,Iceland
+548,Copa Constitució,Andorra
+549,Championnat National,Benin
+550,Premier League,Rwanda
+551,Ligi kuu Bara,Tanzania
+552,GFA League,Gambia
+553,Ligue 1,Guinea
+554,Ligue 1,Burkina Faso
+555,Premier League,Uganda
+556,Premier League,Ethiopia
+557,Mauritian League,Mauritius
+558,Première Division,Mali
+559,Premier League,Mauritania
+560,Ligue 1,Congo
+561,FAI President's Cup,Ireland
+562,Super Cup,Kazakhstan
+563,Copa Inca,Peru
+564,Super League,Malawi
+565,Super Cup,Andorra
+567,Somali Premier League,Somalia
+568,Copa Verde,Brazil
+569,Vysshaya Liga,Tajikistan
+570,AFC U23 Asian Cup,intl
+571,Pacific Games,intl
+572,International Champions Cup,intl
+573,Super Cup,Israel
+574,Super League,Belgium
+575,Premier League (Crimea),Europe
+576,Hazfi Cup,Iran
+578,Super Cup,Algeria
+579,Primeira Liga,Brazil
+580,Fotbolti.net Cup A,Iceland
+581,Victoria NPL,Australia
+582,Ýokary Liga,Turkmenistan
+583,Premier League,Kyrgyzstan
+584,Tweede Divisie,Netherlands
+585,Super Cup,Iceland
+586,First Amateur Division,Belgium
+587,Super Cup,Poland
+588,1. Liga U19,Czech Republic
+589,National League,Myanmar
+590,Super Cup,Armenia
+591,Malaysia Cup,Malaysia
+592,U21 League,Ukraine
+593,Premier League 2,England
+594,Super Cup,Kosovo
+595,League Cup,United Arab Emirates
+597,Copa Centroamericana,intl
+598,Santosh Trophy,India
+599,Segunda División,Chile
+600,SAFF Championship,intl
+601,J3 League,Japan
+602,Thai League 2,Thailand
+603,Cup,Uzbekistan
+604,King's Cup,Saudi Arabia
+605,Crown Prince Cup,Saudi Arabia
+606,Premier Intermediate League,Northern Ireland
+607,Elitettan,Sweden
+608,Tasmania NPL,Australia
+609,3. SNL,Slovenia
+610,Liga Alef,Israel
+611,UEFA U19 Championship,eurocups
+612,Coppa Italia Primavera,Italy
+613,Super Cup Primavera,Italy
+614,Professional Development League,England
+615,Copa Federacion,Spain
+616,Cup,Kosovo
+617,West Bank Premier League,Palestine
+618,Super Cup,Georgia
+619,Africa U20 Cup of Nations,intl
+620,Dhivehi Premier League,Maldives
+621,Løgmanssteypid,Faroe Islands
+622,U18 Premier League,England
+623,PFL,Philippines
+624,Concacaf League,intl
+625,Frauenliga,Austria
+626,Super League Women,Switzerland
+627,Central Youth League,Poland
+628,Campionato Primavera 1,Italy
+629,DFB Junioren Pokal,Germany
+630,Campionato Primavera 2,Italy
+631,FA Cup,Thailand
+632,São Paulo Youth Cup,Brazil
+634,CONMEBOL Libertadores U20,intl
+635,Concacaf Nations League Qualification,intl
+636,Copa do Brasil U20,Brazil
+637,AIFF Super Cup,India
+638,China Cup,intl
+639,WK-League,Korea Republic
+640,FA Cup,Hong Kong
+641,3. Division,Norway
+642,FA Cup,Thailand
+643,Liga MX Femenil,Mexico
+644,Liga Revelação U23,Portugal
+645,Liga 1 Feminin,Romania
+646,Arab Club Champions Cup,intl
+647,QSL Cup,Qatar
+648,Senior Shield,Hong Kong
+649,King's Cup,Bahrain
+650,Women's FA Cup,England
+651,Women's Super League,England
+652,WSL 2,England
+653,USL League One,USA
+655,FA Women's League Cup,England
+656,Piala Indonesia,Indonesia
+657,Super Cup,Uzbekistan
+658,Cup,North Macedonia
+659,Canadian Premier League,Canada
+660,Brasileiro Feminino A1,Brazil
+661,Concacaf Caribbean Club Shield,intl
+662,Copa de la Superliga,Argentina
+663,Superliga Women,Russia
+664,Concacaf Nations League,intl
+665,OFC Nations Cup,intl
+666,UEFA U21 Championship Qualification,intl
+668,Premier League,Eswatini
+669,Taça Revelação U23,Portugal
+670,QFA Cup,Qatar
+671,Coupe de la Ligue,Algeria
+672,Super Cup,Jordan
+673,Super Cup,Lithuania
+674,NWSL,USA
+675,Rock Cup,Gibraltar
+676,Women's Olympic Qualifying Asia,intl
+677,Super Copa,Uruguay
+678,Queensland Premier League,Australia
+679,Victoria PL 1,Australia
+680,South Australia State League 1,Australia
+681,NSW League One,Australia
+682,Carioca A2,Brazil
+684,Arab Cup,intl
+685,Supercopa de Ecuador,Ecuador
+686,WE League,Japan
+687,Baltic Cup,intl
+688,COSAFA Cup,intl
+689,Concacaf Gold Cup Qualification,intl
+690,Concacaf Caribbean Cup,intl
+691,Super Cup,Cyprus
+692,Supercopa MX,Mexico
+693,Premier League,Pakistan
+694,Liga Premier Serie B,Mexico
+695,Coppa Italia Serie D,Italy
+696,Copa Paulino Alcantara,Philippines
+697,U20 League,Mexico
+698,3. Division,Denmark
+699,Liga 3,Portugal
+700,Segunda División RFEF,Spain
+701,Second Division A,Egypt
+703,AFC U23 Asian Cup Qualification,intl
+704,Women's WC Qualification Europe,Worldcup
+705,Supercopa,Costa Rica
+706,UEFA U17 Championship Qualification,intl
+707,UEFA U19 Championship Qualification,eurocups
+708,Cup,Jordan
+710,Copa Perú,Peru
+711,Premier League,Pakistan
+712,Copa Perú,Peru
+713,Australia Cup,Australia
+714,CECAFA Club Cup,intl
+715,Super Cup,San Marino
+716,Premier League Cup,England
+717,Women's Asian Cup Qualification,Worldcup
+718,Thai Champions Cup,Thailand
+719,U20 Elite League,eurocups
+720,Coppa Italia Serie C,Italy
+721,Reserve League,Netherlands
+722,MLS All-Star,USA
+723,Campeones Cup,intl
+725,Santosh Trophy,India
+728,Ligue Haïtienne,Haiti
+740,Amapaense,Brazil
+752,National League N / S,England
+1185,Torneo Federal A,Argentina
+1188,Prim B Metro,Argentina
+1189,Primera Nacional,Argentina
+5494,Brasileiro Women,Brazil
+7089,League Cup,Finland
+7090,The Atlantic Cup,intl
+7091,League Cup,Thailand
+7092,League Cup,Egypt
+7093,Tipsport Malta Cup,intl
+7094,Ykköscup,Finland
+7095,Primera Division,Cuba
+7096,Torneo Proyección,Argentina
+7097,MLS Next Pro,USA
+7098,Africa Cup of Nations Qualification,intl
+7099,UEFA U17 Championship,intl
+7100,FA Cup,Malaysia
+7101,Youth Viareggio Cup,intl
+7102,Algarve Cup,intl
+7103,Super Cup,United Arab Emirates
+7104,Concacaf Women's U17,intl
+7105,AFC Women's Asian Cup,intl
+7106,Southeast Asian Games,intl
+7107,NASL,USA
+7108,Super Cup,Iran
+7109,SheBelieves Cup,intl
+7110,ASEAN U23 Championship,intl
+7534,Emirates Cup,intl
+7535,Tournoi Maurice Revello,intl
+7536,Kirin Cup,intl
+7537,Copa Ecuador,Ecuador
+7538,EAFF E-1 Football Championship,intl
+7539,1. Division Women,Norway
+7540,CONMEBOL/UEFA Finalissima,intl
+7541,League 1 Ontario,Canada
+7542,Copa Uruguay,Uruguay
+7543,Super League,Kenya
+7544,Catarinense 2,Brazil
+7545,U20 Arab Championship,intl
+7546,Chinese Football League 2,China
+7547,CAF Women's Africa Cup of Nations,intl
+7548,FIFA U20 Women's World Cup,intl
+7549,Mediterranean Games,intl
+7550,ASEAN U19 Championship,intl
+7551,UEFA U19 Championship Women,intl
+7552,Piala Presiden,Indonesia
+7553,CONMEBOL Copa America Femenina,intl
+7554,Diski Shield,South Africa
+7555,Concacaf Women's World Cup Qualifiers,intl
+8201,Africa U23 Cup of Nations Qualification,intl
+8202,Cup,Singapore
+8203,Leagues Cup,intl
+8204,Second NL,Croatia
+8205,South American Youth Games,intl
+8206,CONMEBOL Libertadores Femenina,intl
+8207,DFB Pokal Women,Germany
+8208,Super Cup,Oman
+8209,FIFA U17 Women's World Cup,intl
+8210,Premier League,Lesotho
+8211,COTIF Tournament,intl
+8212,Islamic Solidarity Games,intl
+8213,Women's International Champions Cup,intl
+8214,1a Divisão Women,Portugal
+8215,National League,New Zealand
+10208,Super Cup,Croatia
+10209,2. Bundesliga Women,Germany
+10210,Supercopa,Paraguay
+10211,I-League 2,India
+10212,Copa Bolivia,Bolivia
+10213,Cup,Ghana
+10214,AFC U20 Asian Cup,intl
+10215,Cup,Lebanon
+10216,U21 Divisie 1,Netherlands
+10217,Shield Cup,Kenya
+10218,Tournoi Maurice Revello,intl
+10219,CAFA Nations Cup,intl
+10220,AFC U17 Asian Cup,intl
+10221,All-Island Cup,intl
+10222,U23 League,Mexico
+10223,Federation Cup,Lebanon
+10224,Premier League Summer Series,England
+10225,UEFA/CONMEBOL Club Challenge,intl
+10226,Second League A,Russia
+10227,Concacaf Central American Cup,intl
+10228,Concacaf Caribbean Club Shield,intl
+10229,Goiano 2,Brazil
+10230,Premier League,Bhutan
+10231,UEFA Women's Nations League,intl
+10232,Copa Rio,Brazil
+10233,Copa Santa Catarina,Brazil
+10234,Paraibano 2,Brazil
+10235,Premier League International Cup,intl
+10236,Super Cup,Gibraltar
+10237,Júniores U19,Portugal
+10238,Women's WC Qualification Intercontinental Play-offs,intl
+10239,Championnat D1,Gabon
+10240,King's Cup,intl
+10241,Club Friendlies Women,intl
+10242,Super Cup,China
+10243,CONMEBOL U17,intl
+10244,Concacaf Women's U20,intl
+10245,Copa Costa Rica,Costa Rica
+10246,Concacaf U17,intl
+10247,Charity Shield,Northern Ireland
+10248,CAF U23 Cup of Nations,intl
+10249,Calcutta Premier Division,India
+10250,Ekstraliga Women,Poland
+10251,CAC Games,intl
+10252,Primeira Divisão,Macao
+10253,CAF U17 Cup of Nations,intl
+10575,African Football League,intl
+10576,Erste Liga Cup,Switzerland
+10577,Concacaf W Gold Cup Qualification,intl
+10578,Premier Division,Antigua And Barbuda
+10579,HKPL Cup,Honkg Kong
+10580,AIFF Super Cup,India
+10581,Concacaf W Gold Cup,intl
+10582,Recopa Catarinense,Brazil
+10583,Supercopa Femenina,Spain
+10584,Super Cup,Malta
+10585,Pan American Games,intl
+10586,Women's Olympic Qualifying Asia,intl
+10587,Women's Olympic Qualifying CAF,intl
+10608,CONMEBOL Pre-Olympic Tournament,intl
+10609,Paulista A4,Brazil
+10610,Premier League,Barbados
+10611,Copa Alagoas,Brazil
+10612,Ykköscup,Finland
+10613,Paulista Série B,Brazil
+10793,Yemeni League,Yemen
+10794,FA Youth Cup,England
+10795,SWPL Cup,Scotland
+10796,U19 League,Ukraine
+10797,Concacaf U20 Qualification,intl
+10798,Torneo Promocional Amateur,Argentina
+10799,Women's Olympic Qualifying Asia,intl
+10800,Goiano U20,Brazil
+10801,Paranaense U20,Brazil
+10802,U18 Divisie 1,Netherlands
+10803,AFC U20 Women's Asian Cup,intl
+10804,African Games,intl
+10805,Baiano U20,Brazil
+10806,SWF Scottish Cup,Scotland
+10807,CONMEBOL U17 Femenino,intl
+11485,Nacional B,Bolivia
+11486,Pro League,Uzbekistan
+11487,Premier Division,Grenada
+11488,Catarinense U20,Brazil
+11489,WAFF Championship U23,intl
+11490,Copa Rio U20,Brazil
+11491,UEFA Women's Championship Qualification,intl
+11492,Qatar-UAE Super Cup,intl
+11493,Paulista U20,Brazil
+11494,Capital Territory NPL 2,Australia
+11495,Western Australia State League 1,Australia
+11496,UAE-Qatar Super Shield,intl
+11497,NNSW League 1,Australia
+11498,Tasmania Southern Championship,Australia
+11499,Pernambucano U20,Brazil
+11500,Tasmania Northern Championship,Australia
+11501,Ykkösliiga,Finland
+11502,USL Cup,USA
+11503,Matogrossense 2,Brazil
+11504,Copa Espírito Santo,Brazil
+11505,Brasiliense U20,Brazil
+11506,AFC U17 Women's Asian Cup,intl
+11507,Premiership Women,Northern Ireland
+11508,Olympics Intercontinental Play-offs,intl
+11509,Liga 3,Georgia
+11510,Carioca C,Brazil
+11511,Mineiro U20,Brazil
+11512,Sergipano U20,Brazil
+11513,Super Cup,Bahrain
+11514,Alagoano U20,Brazil
+11515,Catarinense 2,Brazil
+11516,Cearense U20,Brazil
+11517,WPSL,USA
+11518,NPSL,USA
+11519,NWSL x Liga MXF Summer Cup,USA
+11520,USL W League,USA
+11521,Paraense B2,Brazil
+11522,Carioca U20,Brazil
+11523,Paraibano U20,Brazil
+11524,Cearense 3,Brazil
+11525,Pernambucano 2,Brazil
+11526,Chatham Cup,New Zealand
+11527,Esiliiga B,Estonia
+11528,Brasileiro U17,Brazil
+11529,Recopa,Costa Rica
+11530,USL Super League,USA
+11531,Copa Venezuela,Venezuela
+11532,OFC U19 Championship,intl
+11533,Championnat National,Togo
+11534,UEFA U17 Championship Women,intl
+11535,CONMEBOL U20 Femenino,intl
+11536,Carioca A2,Brazil
+11697,ASEAN Club Championship,intl
+11698,Super Cup,Mongolia
+11699,AFC Challenge League,intl
+11700,Goiano 3,Brazil
+11701,Amazonense 2,Brazil
+11702,Paraibano 2,Brazil
+11703,Concacaf W Champions Cup,intl
+11704,Sergipano 2,Brazil
+11705,Paranaense 3,Brazil
+11706,Potiguar U20,Brazil
+11707,Supercup der Frauen,Germany
+11708,AFC Women's Champions League,intl
+11709,Brasiliense B,Brazil
+11710,Mineiro 3,Brazil
+11711,Estadual Junior U20,Brazil
+11712,Super Cup,Ghana
+11713,Alagoano 2,Brazil
+11714,Capixaba B,Brazil
+11715,Paraense B1,Brazil
+11716,Maranhense 2,Brazil
+11717,AFC U20 Asian Cup Qualification,intl
+11718,Pernambucano 3,Brazil
+11719,Potiguar 2,Brazil
+11720,Gaúcho 3,Brazil
+11721,U19 Divisie 1,Netherlands
+11722,Catarinense 3,Brazil
+12586,Super Copa International,Argentina
+12587,Carioca B2,Brazil
+12588,National League Cup,England
+12589,Paraense U20,Brazil
+12590,Copa Gaúcha,Brazil
+12591,CECAFA U20 Championship,intl
+12592,Sapling Cup,Hong Kong
+12593,AFC U17 Asian Cup Qualification,intl
+12594,AGCFF Gulf Champions League,intl
+12595,Copa Fares Lopes,Brazil
+12596,CAF Women's Champions League,intl
+12597,Super Cup,Cameroon
+12598,MFL Cup,Malaysia
+12599,EAFF Football Championship Qualification,intl
+12600,Coppa Italia Women,Italy
+12601,Torneo Amistoso de Verano,Bolivia
+12602,Concacaf Women's U20 Qualification,intl
+12603,Copa LDF,Dominican Republic
+12604,Challenge Cup,Malta
+12605,Hun Sen Cup,Cambodia
+12606,Northern Super League,Canada
+12607,Women's President's Cup,Ireland
+12608,Copa do Brasil U17,Brazil
+12609,Supercopa,Venezuela
+12610,Brasileiro U20 B,Brazil
+12611,Copa Grão Pará,Brazil
+12612,AFC U17 Asian Cup,intl
+12613,AIFF Super Cup,India
+12614,FIFA Club World Cup,Worldcup
+12615,Super Cup,Latvia
+12616,South Australia NPL,Australia
+12617,Super Cup,Faroe Islands
+12618,African Nations Championship Qualification,intl
