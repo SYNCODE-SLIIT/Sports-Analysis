@@ -1,18 +1,18 @@
 "use client";
 
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { LogIn, User, Lock, Eye, EyeOff } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
-import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
-export default function LoginPage() {
+function LoginInner() {
   const { supabase } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -226,5 +226,19 @@ export default function LoginPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[80vh] flex items-center justify-center py-12">
+          <div className="text-sm text-muted-foreground">Loading sign-in…</div>
+        </div>
+      }
+    >
+      <LoginInner />
+    </Suspense>
   );
 }
