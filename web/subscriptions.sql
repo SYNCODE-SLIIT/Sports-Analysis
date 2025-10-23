@@ -74,6 +74,12 @@ $$;
 
 ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.subscriptions
+ADD COLUMN IF NOT EXISTS trial_consumed boolean NOT NULL DEFAULT false;
+
+ALTER TABLE public.subscriptions
+ADD COLUMN IF NOT EXISTS trial_end_at timestamptz;
+
 DROP POLICY IF EXISTS "Users can view own subscription" ON public.subscriptions;
 CREATE POLICY "Users can view own subscription" ON public.subscriptions
 FOR SELECT
@@ -92,7 +98,9 @@ SELECT
     s.subscription_status,
     s.current_period_end,
     s.stripe_price_id,
-    s.updated_at
+    s.updated_at,
+    s.trial_consumed,
+    s.trial_end_at
 FROM public.subscriptions s;
 
 COMMENT ON VIEW public.user_subscription_plan IS 'Lightweight plan snapshot keyed by user_id for client consumption.';
