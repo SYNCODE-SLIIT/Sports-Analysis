@@ -1,3 +1,12 @@
+// Minimal local type for Stripe subscription to avoid 'any'
+type StripeSubscription = {
+  metadata?: { user_id?: string };
+  customer?: string;
+  items?: { data?: { price?: { id?: string } }[] };
+  status?: string;
+  current_period_end?: number;
+  id?: string;
+};
 import { NextRequest, NextResponse } from "next/server";
 import { getStripeClient } from "@/lib/stripe/client";
 import { getSupabaseServiceRoleClient } from "@/lib/supabase/service-role";
@@ -21,7 +30,8 @@ export async function GET(req: NextRequest) {
       expand: ["subscription", "customer", "line_items"],
     });
 
-    const subscription = session.subscription as any;
+  // Use a minimal local type for Stripe subscription
+  const subscription = session.subscription as StripeSubscription;
     if (!subscription) {
       return NextResponse.json({ error: "No subscription found on session" }, { status: 400 });
     }
@@ -56,7 +66,7 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.redirect('/pro/success');
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error fetching session:', err);
     return NextResponse.json({ error: 'Failed to retrieve session' }, { status: 500 });
   }

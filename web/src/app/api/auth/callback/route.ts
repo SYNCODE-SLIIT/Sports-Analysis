@@ -35,7 +35,8 @@ export async function POST(request: Request) {
   const event = body.event;
 
   if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
-    await supabase.auth.setSession(body.session as any);
+  // Use the correct Supabase session type if available, otherwise fallback to unknown
+  await supabase.auth.setSession(body.session as { access_token: string; refresh_token: string });
   }
 
   if (event === "SIGNED_OUT") {

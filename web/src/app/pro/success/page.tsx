@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 export default function ProSuccessPage() {
   return (
     <div className="container mx-auto max-w-2xl py-12 text-center space-y-6">
-      <h1 className="text-3xl font-semibold">You're all set!</h1>
+      <h1 className="text-3xl font-semibold">You&apos;re all set!</h1>
       <p className="text-muted-foreground">
         Thanks for upgrading to Sports Analysis Pro. Your premium features are now unlocked. Explore live analytics and
         new insights right away.
