@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import Image from "next/image";
 import Link from "next/link";
@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { parseHighlights, type Highlight } from "@/lib/schemas";
 import { usePlanContext } from "@/components/PlanProvider";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type TeamSideValue = { home?: number; away?: number };
 type MatchStatEntry = {
@@ -799,9 +800,10 @@ const extractLineups = (source: DataObject): { home: TeamLineup; away: TeamLineu
   return { home, away };
 };
 
-export default function MatchPage() {
+function MatchPageInner() {
   const { user, supabase, bumpInteractions } = useAuth();
   const { plan } = usePlanContext();
+  const isPro = (plan ?? "free").toLowerCase() === "pro";
   const { eventId } = useParams<{ eventId: string }>();
   const searchParams = useSearchParams();
   const sid = searchParams?.get("sid") ?? "card";
@@ -831,6 +833,7 @@ export default function MatchPage() {
   const [teamsExtra, setTeamsExtra] = useState<{ home: DataObject | null; away: DataObject | null }>({ home: null, away: null });
   const [playersExtra, setPlayersExtra] = useState<{ home: DataObject[]; away: DataObject[] }>({ home: [], away: [] });
   const [oddsExtra, setOddsExtra] = useState<{ listed: DataObject[]; live: DataObject[] }>({ listed: [], live: [] });
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
   // const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] });
   // const [formExtra, setFormExtra] = useState<{ home: unknown[]; away: unknown[] }>({ home: [], away: [] }); // Only for legacy fallback, not used in UI
   interface TeamForm {
@@ -1044,6 +1047,10 @@ export default function MatchPage() {
     if (!user || !teamName) return;
     if (favoriteTeamPending.has(teamName)) return;
     if (favoriteTeams.includes(teamName)) return;
+    if (!isPro && favoriteTeams.length >= 3) {
+      setUpgradeDialogOpen(true);
+      return;
+    }
 
     updateFavoriteTeamPending(teamName, true);
     setFavoriteTeams(prev => [...prev, teamName]);
@@ -1152,7 +1159,7 @@ export default function MatchPage() {
     } finally {
       updateFavoriteTeamPending(teamName, false);
     }
-  }, [user, supabase, favoriteTeams, favoriteTeamPending, teamsExtra.home, teamsExtra.away, updateFavoriteTeamPending, removeFavoriteTeam]);
+  }, [user, supabase, favoriteTeams, favoriteTeamPending, teamsExtra.home, teamsExtra.away, updateFavoriteTeamPending, removeFavoriteTeam, isPro]);
 
   const toggleFavoriteTeam = useCallback((teamName: string) => {
     if (!teamName) return;
@@ -2094,32 +2101,45 @@ export default function MatchPage() {
               </Card>
             )}
           </TabsContent>
-
+          
           <TabsContent value="lineups" className="space-y-6">
-            {lineupData ? (
-              <LineupField
-                home={{
-                  teamName: match.homeTeam,
-                  formation: lineupData.home.formation,
-                  logo: match.homeTeamLogo,
-                  starters: lineupData.home.starters,
-                  substitutes: lineupData.home.substitutes,
-                }}
-                away={{
-                  teamName: match.awayTeam,
-                  formation: lineupData.away.formation,
-                  logo: match.awayTeamLogo,
-                  starters: lineupData.away.starters,
-                  substitutes: lineupData.away.substitutes,
-                }}
-              />
-            ) : (
-              <Card>
-                <CardContent className="p-6 text-sm text-muted-foreground">
-                  Lineup data not available for this fixture.
-                </CardContent>
-              </Card>
-            )}
+            {(() => {
+              const hasLineups = !!(
+                lineupData && (
+                  (typeof lineupData.home === "object" &&
+                    ((Array.isArray(lineupData.home.starters) ? lineupData.home.starters.length : 0) +
+                      (Array.isArray(lineupData.home.substitutes) ? lineupData.home.substitutes.length : 0) > 0)) ||
+                  (typeof lineupData.away === "object" &&
+                    ((Array.isArray(lineupData.away.starters) ? lineupData.away.starters.length : 0) +
+                      (Array.isArray(lineupData.away.substitutes) ? lineupData.away.substitutes.length : 0) > 0))
+                )
+              );
+
+              return hasLineups ? (
+                <LineupField
+                  home={{
+                    teamName: match.homeTeam,
+                    formation: lineupData?.home?.formation,
+                    logo: match.homeTeamLogo,
+                    starters: lineupData?.home?.starters ?? [],
+                    substitutes: lineupData?.home?.substitutes ?? [],
+                  }}
+                  away={{
+                    teamName: match.awayTeam,
+                    formation: lineupData?.away?.formation,
+                    logo: match.awayTeamLogo,
+                    starters: lineupData?.away?.starters ?? [],
+                    substitutes: lineupData?.away?.substitutes ?? [],
+                  }}
+                />
+              ) : (
+                <Card>
+                  <CardContent className="p-6 text-sm text-muted-foreground">
+                    Lineup data not available for this fixture.
+                  </CardContent>
+                </Card>
+              );
+            })()}
           </TabsContent>
 
           <TabsContent value="events" className="space-y-6">
@@ -2793,6 +2813,25 @@ export default function MatchPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>
+        <DialogContent className="border border-primary/40">
+          <DialogHeader>
+            <DialogTitle>Upgrade to save more favourites</DialogTitle>
+            <DialogDescription>
+              Start a 7-day free trial of Sports Analysis Pro to pin unlimited teams and leagues, plus unlock deeper analytics.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row sm:justify-end gap-2">
+            <Button variant="outline" onClick={() => setUpgradeDialogOpen(false)}>
+              Maybe later
+            </Button>
+            <Button asChild>
+              <Link href="/pro">Upgrade to Pro</Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2885,4 +2924,18 @@ function pickString(record: Record<string, unknown>, keys: string[]): string {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+export default function MatchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">Loading match details…</div>
+        </div>
+      }
+    >
+      <MatchPageInner />
+    </Suspense>
+  );
 }

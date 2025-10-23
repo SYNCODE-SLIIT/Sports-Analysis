@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -460,7 +460,7 @@ const computeLastUpdated = (rows: StandingRow[]): string | undefined => {
   return timestamps.sort((a, b) => (a > b ? -1 : 1))[0];
 };
 
-export default function LeagueDetailPage() {
+function LeagueDetailPageInner() {
   const { leagueId } = useParams<{ leagueId: string }>();
   const decodedLeagueId = leagueId ? decodeURIComponent(leagueId) : "";
   const searchParams = useSearchParams();
@@ -923,5 +923,19 @@ export default function LeagueDetailPage() {
       <LeagueLatestNews leagueName={leagueName || heroInfo?.name} />
 
     </div>
+  );
+}
+
+export default function LeagueDetailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container space-y-6 py-12">
+          <div className="text-sm text-muted-foreground">Loading league details…</div>
+        </div>
+      }
+    >
+      <LeagueDetailPageInner />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ interface NlSearchBarProps {
   onSubmit?: () => void;
 }
 
-export function NlSearchBar({
+function NlSearchBarInner({
   className,
   inputClassName,
   autoFocus = false,
@@ -82,5 +82,13 @@ export function NlSearchBar({
         {isSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Search"}
       </Button>
     </form>
+  );
+}
+
+export function NlSearchBar(props: NlSearchBarProps) {
+  return (
+    <Suspense fallback={null}>
+      <NlSearchBarInner {...props} />
+    </Suspense>
   );
 }

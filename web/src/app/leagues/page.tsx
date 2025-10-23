@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Check, ChevronRight, Plus } from "lucide-react";
@@ -11,6 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { postCollect, getLeagueNews } from "@/lib/collect";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
+import { usePlanContext } from "@/components/PlanProvider";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import rawLeagueMetadata from "./league-metadata.json";
 import rawCategoryMetadata from "./category-metadata.json";
 import { LeagueSearch } from "./LeagueSearch";
@@ -610,6 +613,8 @@ const getLeagueKey = (league: LeagueLite | DisplayLeague | null | undefined): st
 
 export default function LeaguesPage() {
   const { user, supabase } = useAuth();
+  const { plan } = usePlanContext();
+  const isPro = (plan ?? "free").toLowerCase() === "pro";
   const [allLeagues, setAllLeagues] = useState<LeagueLite[]>([]);
   const [initialLeagueParam, setInitialLeagueParam] = useState<string | null>(null);
   const [initialProviderParam, setInitialProviderParam] = useState<string | null>(null);
@@ -621,6 +626,7 @@ export default function LeaguesPage() {
   const [remainingVisibleCount, setRemainingVisibleCount] = useState<number>(INITIAL_REMAINING_COUNT);
   const [favLeagues, setFavLeagues] = useState<string[]>([]);
   const [pendingFavorites, setPendingFavorites] = useState<Set<string>>(new Set());
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
 
   const updateFavoritePending = useCallback((leagueName: string, pending: boolean) => {
     setPendingFavorites(prev => {
@@ -1080,6 +1086,10 @@ export default function LeaguesPage() {
       toast.info(`${displayLabel} is already saved`);
       return;
     }
+    if (!isPro && favLeagues.length >= 3) {
+      setUpgradeDialogOpen(true);
+      return;
+    }
 
     updateFavoritePending(name, true);
     setFavLeagues(prev => [...prev, name]);
@@ -1130,7 +1140,7 @@ export default function LeaguesPage() {
     } finally {
       updateFavoritePending(name, false);
     }
-  }, [user, supabase, favLeagues, pendingFavorites, ensureLeagueItemAndSend, updateFavoritePending, removeFavoriteLeague]);
+  }, [user, supabase, favLeagues, pendingFavorites, ensureLeagueItemAndSend, updateFavoritePending, removeFavoriteLeague, isPro]);
 
   const toggleFavoriteLeague = useCallback((league: DisplayLeague) => {
     const name = league.rawName;
@@ -1439,6 +1449,25 @@ export default function LeaguesPage() {
             </div>
           </div>
         )}
+
+        <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>
+          <DialogContent className="border border-primary/40">
+            <DialogHeader>
+              <DialogTitle>Upgrade to follow more leagues</DialogTitle>
+              <DialogDescription>
+                Start a 7-day free trial of Sports Analysis Pro to save unlimited leagues and unlock premium dashboards.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="flex flex-col sm:flex-row sm:justify-end gap-2">
+              <Button variant="outline" onClick={() => setUpgradeDialogOpen(false)}>
+                Maybe later
+              </Button>
+              <Button asChild>
+                <Link href="/pro">Upgrade to Pro</Link>
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       </section>
     </div>

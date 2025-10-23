@@ -1,11 +1,10 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Bot, Loader2, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -54,11 +53,21 @@ export function ChatbotPanel() {
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
   const [isLoadingPrompts, setIsLoadingPrompts] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const lastUserMessageRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const setLastUserMessageRef = useCallback((node: HTMLDivElement | null) => {
+    lastUserMessageRef.current = node;
+  }, []);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+    if (messages.length === 0) return;
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage.role === "user") {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      return;
+    }
+    lastUserMessageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [messages]);
 
   useEffect(() => {
     let isMounted = true;
@@ -188,7 +197,7 @@ export function ChatbotPanel() {
   const promptsToRender = (suggestedPrompts.length > 0 ? suggestedPrompts : FALLBACK_PROMPTS).slice(0, 4);
 
   return (
-    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full">
+    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full min-h-[75vh]">
       <CardHeader className="pb-1.5 pt-2 flex-shrink-0 hidden">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -217,11 +226,12 @@ export function ChatbotPanel() {
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
+                    ref={msg.role === "user" ? setLastUserMessageRef : undefined}
                     className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}
                   >
                     <div
                       className={cn(
-                        "rounded-lg border p-3 shadow-sm max-w-[75%]",
+                        "rounded-lg border p-3 shadow-sm max-w-full sm:max-w-[75%] break-words",
                         msg.role === "user"
                           ? "border-primary/40 bg-primary/10 text-primary-foreground/90 dark:text-primary-foreground"
                           : "border-border bg-background"
@@ -231,11 +241,11 @@ export function ChatbotPanel() {
                         {msg.role === "user" ? "You" : "Assistant"}
                       </div>
                       {msg.role === "assistant" ? (
-                        <div className="mt-2">
+                        <div className="mt-2 break-words">
                           <MarkdownMessage content={msg.content} />
                         </div>
                       ) : (
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
                           {msg.content}
                         </p>
                       )}
@@ -276,23 +286,18 @@ export function ChatbotPanel() {
               </div>
             </ScrollArea>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-primary/30 bg-muted/15 p-6 text-center">
-              <div className="flex flex-col items-center gap-2">
-                <Bot className="h-8 w-8 text-primary" />
-                <div className="space-y-1">
-                  <h3 className="text-sm font-semibold text-foreground">Ask about the sports world</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Try one of these prompts to explore matches, players, and trends.
-                  </p>
-                </div>
+            <div className="flex h-full flex-col items-center justify-center gap-6 rounded-xl border border-dashed border-primary/30 bg-muted/15 p-8 text-center">
+              <div className="space-y-3">
+                <h3 className="text-base font-semibold text-foreground">Ask about the sports world</h3>
+                <p className="text-sm text-muted-foreground">Try one of these prompts to explore matches, players, and trends.</p>
               </div>
-              <div className="grid w-full gap-2 sm:grid-cols-2">
+              <div className="grid w-full gap-3 sm:grid-cols-2">
                 {promptsToRender.map((prompt) => (
                   <Button
                     key={prompt}
                     type="button"
                     variant="outline"
-                    className="h-auto justify-start whitespace-normal px-3 py-2 text-left text-xs"
+                    className="h-auto justify-start whitespace-normal px-4 py-3 text-left text-sm"
                     onClick={() => handleSuggestionSelect(prompt)}
                     disabled={isLoading}
                   >
@@ -301,11 +306,12 @@ export function ChatbotPanel() {
                 ))}
               </div>
               {isLoadingPrompts && (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Updating suggestions…
                 </div>
               )}
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/80">ATHLETE AI can make mistakes</p>
             </div>
           )}
         </div>
@@ -317,23 +323,21 @@ export function ChatbotPanel() {
             </div>
           )}
 
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80 text-center sm:text-left">
+            ATHLETE AI can make mistakes
+          </p>
           <form onSubmit={handleSubmit} className="space-y-1.5">
-            <div className="space-y-0.5">
-              <Label htmlFor="question" className="text-xs font-semibold">
-                Your question
-              </Label>
-              <textarea
-                id="question"
-                name="question"
-                ref={inputRef}
-                value={inputValue}
-                onChange={(event) => setInputValue(event.currentTarget.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask a question... (Enter to send, Shift+Enter for new line)"
-                rows={2}
-                className="w-full resize-none rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-              />
-            </div>
+            <textarea
+              id="question"
+              name="question"
+              ref={inputRef}
+              value={inputValue}
+              onChange={(event) => setInputValue(event.currentTarget.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask a question... (Enter to send, Shift+Enter for new line)"
+              rows={2}
+              className="w-full resize-none rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            />
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 Depth
