@@ -88,7 +88,7 @@ export function FloatingChatbot() {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: "100%", opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed right-6 top-20 bottom-20 z-50 w-full sm:w-[480px] md:w-[560px] bg-background border shadow-2xl rounded-2xl overflow-hidden"
+              className="fixed right-6 top-8 bottom-8 z-50 w-full sm:w-[640px] md:w-[740px] bg-background border shadow-2xl rounded-2xl overflow-hidden"
             >
               <div className="h-full flex flex-col">
                 {/* Header */}

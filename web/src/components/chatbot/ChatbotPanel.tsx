@@ -198,7 +198,7 @@ export function ChatbotPanel() {
   const promptsToRender = (suggestedPrompts.length > 0 ? suggestedPrompts : FALLBACK_PROMPTS).slice(0, 4);
 
   return (
-    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full">
+    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full min-h-[75vh]">
       <CardHeader className="pb-1.5 pt-2 flex-shrink-0 hidden">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -232,7 +232,7 @@ export function ChatbotPanel() {
                   >
                     <div
                       className={cn(
-                        "rounded-lg border p-3 shadow-sm max-w-[75%]",
+                        "rounded-lg border p-3 shadow-sm max-w-full sm:max-w-[75%] break-words",
                         msg.role === "user"
                           ? "border-primary/40 bg-primary/10 text-primary-foreground/90 dark:text-primary-foreground"
                           : "border-border bg-background"
@@ -242,11 +242,11 @@ export function ChatbotPanel() {
                         {msg.role === "user" ? "You" : "Assistant"}
                       </div>
                       {msg.role === "assistant" ? (
-                        <div className="mt-2">
+                        <div className="mt-2 break-words">
                           <MarkdownMessage content={msg.content} />
                         </div>
                       ) : (
-                        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
                           {msg.content}
                         </p>
                       )}
