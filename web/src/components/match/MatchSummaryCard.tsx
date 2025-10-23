@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { sanitizeInput } from "@/lib/collect";
-import { safeSummarize, sendSummaryFeedback } from "@/lib/summarizeSafe";
+import { safeSummarize } from "@/lib/summarizeSafe";
 import type { DataObject, Json } from "@/lib/collect";
 
 export type MatchSummaryCardProps = {
@@ -162,7 +162,7 @@ export function MatchSummaryCard({ event, rawEvent }: MatchSummaryCardProps) {
   }, [event, fallback, inflightMap, resultCache, stableEventKey]);
 
   const summary = state.data;
-  const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  // const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   return (
     <Card>

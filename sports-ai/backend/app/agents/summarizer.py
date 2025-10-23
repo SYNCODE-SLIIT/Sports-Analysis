@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from bs4 import BeautifulSoup
 
 # -----------------------
 # Config / Env
@@ -29,6 +30,13 @@ except Exception:
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.35"))
+NEWS_SUMMARY_USER_AGENT = os.getenv(
+    "NEWS_SUMMARY_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+NEWS_SUMMARY_MAX_CHARS = int(os.getenv("NEWS_SUMMARY_MAX_CHARS", "12000"))
+NEWS_SUMMARY_TIMEOUT = float(os.getenv("NEWS_SUMMARY_TIMEOUT", "12.0"))
 
 # Optional: import your agents for local mode (robust to different import roots)
 CollectorAgentV2 = None
@@ -129,6 +137,22 @@ class EventBriefsOut(BaseModel):
     items: List[EventBriefItemOut]
 
 
+class NewsSummaryRequest(BaseModel):
+    url: Optional[str] = None
+    title: Optional[str] = None
+    text: Optional[str] = None
+    max_words: int = Field(default=150, ge=60, le=400)
+
+
+class NewsSummaryOut(BaseModel):
+    ok: bool
+    title: Optional[str]
+    summary: str
+    bullets: List[str]
+    url: Optional[str] = None
+    original_word_count: Optional[int] = None
+
+
 # -----------------------
 # Utilities
 # -----------------------
@@ -219,6 +243,190 @@ def _minute_of_equalizer(score_home: int | None, score_away: int | None, timelin
                 m = ev.get("time") or ev.get("time_elapsed") or ev.get("minute") or ev.get("event_time")
                 return str(m).strip("′ '") if m else None
     return None
+
+
+# -----------------------
+# Article helpers
+# -----------------------
+def _normalize_spaces(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def _node_to_paragraphs(node) -> List[str]:
+    if node is None:
+        return []
+    paragraphs: List[str] = []
+    for tag in node.find_all(["p", "li", "h2", "h3"]):
+        if tag.name in {"script", "style"}:
+            continue
+        snippet = tag.get_text(" ", strip=True)
+        if not snippet:
+            continue
+        if len(snippet.split()) < 5:
+            continue
+        paragraphs.append(_normalize_spaces(snippet))
+    return paragraphs
+
+
+def _extract_article_text(soup: BeautifulSoup) -> str:
+    if soup is None:
+        return ""
+
+    candidates: List[str] = []
+    seen: set[int] = set()
+    selectors = [
+        "article",
+        "main",
+        "[role='main']",
+        "section",
+        "div[itemprop='articleBody']",
+        "div[class*='article']",
+        "div[class*='story']",
+        "div[class*='content']",
+    ]
+
+    for selector in selectors:
+        try:
+            for node in soup.select(selector):
+                if id(node) in seen:
+                    continue
+                seen.add(id(node))
+                paras = _node_to_paragraphs(node)
+                if not paras:
+                    continue
+                text = "\n\n".join(paras)
+                if word_count(text) >= 80:
+                    candidates.append(text)
+        except Exception:
+            continue
+
+    if not candidates and soup.body:
+        paras = _node_to_paragraphs(soup.body)
+        if paras:
+            candidates.append("\n\n".join(paras))
+
+    if not candidates:
+        paras = _node_to_paragraphs(soup)
+        if paras:
+            candidates.append("\n\n".join(paras))
+
+    if not candidates:
+        return ""
+
+    return max(candidates, key=lambda txt: word_count(txt))
+
+
+def _clip_article_text(text: str, max_chars: int = NEWS_SUMMARY_MAX_CHARS) -> str:
+    if not text or len(text) <= max_chars:
+        return text or ""
+    clipped = text[:max_chars]
+    last_space = clipped.rfind(" ")
+    if last_space > max_chars * 0.6:
+        clipped = clipped[:last_space]
+    return clipped.strip()
+
+
+async def _fetch_article_text(url: str) -> tuple[Optional[str], str]:
+    headers = {"User-Agent": NEWS_SUMMARY_USER_AGENT}
+    try:
+        async with httpx.AsyncClient(headers=headers, timeout=NEWS_SUMMARY_TIMEOUT, follow_redirects=True) as client:
+            response = await client.get(url)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch article: {exc}") from exc
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=f"Article fetch failed with status {response.status_code}")
+
+    html = response.text or ""
+    if not html.strip():
+        raise HTTPException(status_code=502, detail="Article response was empty")
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    title = None
+    try:
+        raw_title = soup.title.string if soup.title else None
+        if raw_title:
+            title = _normalize_spaces(raw_title)
+    except Exception:
+        title = None
+
+    body_text = _extract_article_text(soup)
+    if not body_text or word_count(body_text) < 40:
+        raise HTTPException(status_code=502, detail="Unable to extract article body")
+    return title, _clip_article_text(body_text)
+
+
+async def _summarize_news_article(title: Optional[str], text: str, max_words: int = 150) -> Dict[str, Any]:
+    cleaned = text.strip()
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="Article text empty after cleaning")
+
+    if Groq is None or not GROQ_API_KEY:
+        paragraphs = cleaned.split("\n\n")
+        snippet = " ".join(paragraphs[:4])
+        summary = _truncate_brief(snippet, max_words)
+        bullets: List[str] = []
+        if paragraphs:
+            bullets = [_truncate_brief(p, 25) for p in paragraphs[:3]]
+        return {
+            "title": title or "Article Summary",
+            "summary": summary or snippet[:280],
+            "bullets": [b for b in bullets if b],
+        }
+
+    system_prompt = (
+        "You are a precise sports news editor. Summarize the provided article factually. "
+        "Return concise copy with a neutral tone."
+    )
+    headline = title or ""
+    user_prompt = (
+        f"Title: {headline}\n\nArticle:\n{cleaned}\n\n"
+        "Produce JSON with keys: summary (120-160 words narrative paragraph) and bullets (array of 3-5 punchy bullet points). "
+        "Each bullet <= 24 words, no hype."
+    )
+
+    import json
+
+    def _invoke():
+        client = Groq(api_key=GROQ_API_KEY)
+        return client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            model=GROQ_MODEL,
+            temperature=min(LLM_TEMPERATURE, 0.4),
+            response_format={"type": "json_object"},
+            max_tokens=700,
+        )
+
+    try:
+        chat = await asyncio.to_thread(_invoke)
+        content = chat.choices[0].message.content if chat.choices else ""
+        data = json.loads(content or "{}")
+        summary = _normalize_spaces(str(data.get("summary") or data.get("synopsis") or ""))
+        bullets_raw = data.get("bullets") or data.get("highlights") or []
+        bullets_clean: List[str] = []
+        if isinstance(bullets_raw, list):
+            for item in bullets_raw:
+                if isinstance(item, str) and item.strip():
+                    bullets_clean.append(_normalize_spaces(item))
+        if not summary:
+            summary = _truncate_brief(cleaned, max_words)
+        if not bullets_clean:
+            bullets_clean = [
+                _truncate_brief(part, 20)
+                for part in cleaned.split("\n\n")[:3]
+                if part.strip()
+            ]
+        return {
+            "title": title or data.get("title") or "Article Summary",
+            "summary": summary,
+            "bullets": bullets_clean[:5],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Summarizer LLM failed: {exc}") from exc
 
 
 def _is_live_status(status: str | None) -> bool | None:
@@ -1143,8 +1351,53 @@ Do not add extra fields.
 
 
 # -----------------------
-# FastAPI route
+# FastAPI routes
 # -----------------------
+@app.post("/summarize/news", response_model=NewsSummaryOut)
+async def summarize_news(req: NewsSummaryRequest):
+    if not req.url and not req.text:
+        raise HTTPException(status_code=400, detail="url or text is required")
+
+    title = (req.title or "").strip() or None
+    article_text = (req.text or "").strip()
+    original_word_count = word_count(article_text) if article_text else 0
+
+    if req.url:
+        fetched_title, fetched_text = await _fetch_article_text(req.url)
+        if not title and fetched_title:
+            title = fetched_title
+        # Use fetched text when provided text missing or extremely short
+        if not article_text or word_count(article_text) < 40:
+            article_text = fetched_text
+            original_word_count = word_count(fetched_text)
+        elif not original_word_count:
+            original_word_count = word_count(fetched_text)
+
+    if not article_text:
+        raise HTTPException(status_code=422, detail="No article text available to summarize")
+
+    clipped = _clip_article_text(article_text)
+    summary_payload = await _summarize_news_article(title, clipped, max_words=req.max_words)
+    if not isinstance(summary_payload, dict):
+        summary_payload = {"title": title or "Article Summary", "summary": clipped, "bullets": []}
+    summary_title = summary_payload.get("title") or title or "Article Summary"
+    summary_text = summary_payload.get("summary") or clipped
+    summary_bullets_raw = summary_payload.get("bullets") or []
+    summary_bullets = [
+        _normalize_spaces(str(item))
+        for item in summary_bullets_raw
+        if isinstance(item, str) and item.strip()
+    ]
+    return NewsSummaryOut(
+        ok=True,
+        title=summary_title,
+        summary=summary_text,
+        bullets=list(summary_bullets),
+        url=req.url,
+        original_word_count=original_word_count or word_count(article_text),
+    )
+
+
 @app.post("/summarize", response_model=SummaryOut)
 async def summarize(req: SummarizeRequest):
     trace: List[Dict[str, Any]] = []

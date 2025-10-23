@@ -10,7 +10,7 @@ export default function Page() {
 
       {/* Option B: let component fetch from /api/news?sport=football */}
       <div>
-  <FootballNews limit={100} />
+        <FootballNews limit={100} variant="full" />
       </div>
     </main>
   );

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { ArticleSummaryCard } from "@/components/news/ArticleSummaryCard";
 import { getLeagueNews } from "@/lib/collect";
 
 type Article = {
@@ -20,39 +22,22 @@ type Article = {
 type Props = {
   articles?: Article[];
   limit?: number;
+  moreHref?: string;
+  moreLabel?: string;
+  variant?: "full" | "preview";
+  showSearch?: boolean;
 };
 
-const formatRelativeTime = (value?: string) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+export default function FootballNews({
+  articles: initialArticles,
+  limit = 0,
+  moreHref,
+  moreLabel = "Explore more",
+  variant = "full",
+  showSearch: showSearchProp,
+}: Props) {
+  const showSearch = showSearchProp ?? variant === "full";
 
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  const divisions: { amount: number; name: Intl.RelativeTimeFormatUnit }[] = [
-    { amount: 60, name: "second" },
-    { amount: 60, name: "minute" },
-    { amount: 24, name: "hour" },
-    { amount: 7, name: "day" },
-    { amount: 4.34524, name: "week" },
-    { amount: 12, name: "month" },
-    { amount: Number.POSITIVE_INFINITY, name: "year" },
-  ];
-
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  let duration = seconds;
-
-  for (const division of divisions) {
-    if (Math.abs(duration) < division.amount) {
-      return formatter.format(Math.round(duration), division.name);
-    }
-
-    duration /= division.amount;
-  }
-
-  return null;
-};
-
-export default function FootballNews({ articles: initialArticles, limit = 0 }: Props) {
   const [articles, setArticles] = useState<Article[] | null>(initialArticles ?? null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,8 +83,21 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
           } as Article;
         });
 
+        const seen = new Set<string>();
+        const unique = normalized.filter((article) => {
+          const key = article.id || article.url;
+          if (!key) return true;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        const finalPool =
+          limit && limit > 0 && unique.length < limit ? normalized : unique;
+
         if (!active) return;
-        setArticles(limit && limit > 0 ? normalized.slice(0, limit) : normalized);
+        setArticles(
+          limit && limit > 0 ? finalPool.slice(0, limit) : finalPool
+        );
       } catch (err: unknown) {
         if (!active) return;
         const toMessage = (value: unknown) => {
@@ -133,9 +131,13 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
     if (q) {
       filtered = filtered.filter((a) => {
         const title = a.title?.toLowerCase() || "";
-        const source = a.source?.toLowerCase() || "";
         const author = a.author?.toLowerCase() || "";
-        return title.includes(q) || source.includes(q) || author.includes(q);
+        const source = a.source?.toLowerCase() || "";
+        return (
+          title.includes(q) ||
+          author.includes(q) ||
+          source.includes(q)
+        );
       });
     }
     return filtered;
@@ -144,17 +146,23 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
   const totalPages = Math.ceil(filteredArticles.length / ARTICLES_PER_PAGE) || 1;
   // Scroll to top of news list on page change
   const newsListRef = useRef<HTMLDivElement>(null);
-  const scrollNewsListToTop = () => {
+  const scrollNewsListToTop = useCallback(() => {
+    if (variant === "full" && typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
     if (newsListRef.current) {
       newsListRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     } else if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-  };
+  }, [variant]);
 
   useEffect(() => {
+    if (variant !== "full") return;
     scrollNewsListToTop();
-  }, [page]);
+  }, [page, variant, scrollNewsListToTop]);
 
   const pagedArticles = useMemo(() => {
     const start = (page - 1) * ARTICLES_PER_PAGE;
@@ -179,30 +187,44 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
         <CardDescription className="text-sm text-muted-foreground">
           Hand-picked headlines from across the football world, refreshed throughout the day.
         </CardDescription>
-        {/* Search control */}
-        <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:gap-4 w-full">
-          <div className="relative w-full max-w-xl">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-              {/* Search icon (inline SVG) */}
-              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="text-muted-foreground">
-                <circle cx="11" cy="11" r="7" strokeWidth="2" />
-                <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35" />
-              </svg>
-            </span>
-            <Input
-              type="text"
-              placeholder="Search by title or source..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-10 pr-4 py-2 w-full text-base rounded-md border border-border focus:ring-2 focus:ring-primary/30 focus:border-primary/60 transition-colors"
-              style={{ minWidth: 320, width: "100%", maxWidth: 480 }}
-            />
+        {showSearch ? (
+          <div className="mt-4 flex flex-col gap-2 md:flex-row md:items-center md:gap-4 w-full">
+            <div className="relative w-full max-w-xl">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                <svg
+                  width="20"
+                  height="20"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  className="text-muted-foreground"
+                >
+                  <circle cx="11" cy="11" r="7" strokeWidth="2" />
+                  <path strokeWidth="2" strokeLinecap="round" d="M21 21l-4.35-4.35" />
+                </svg>
+              </span>
+              <Input
+                type="text"
+                placeholder="Search by title, author, or source..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-md border border-border py-2 pl-10 pr-4 text-base transition-colors focus:border-primary/60 focus:ring-2 focus:ring-primary/30"
+                style={{ minWidth: 320, width: "100%", maxWidth: 480 }}
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {loading ? (
-          <div ref={newsListRef} className="grid gap-4 md:grid-cols-2">
+          <div
+            ref={newsListRef}
+            className={
+              variant === "preview"
+                ? "grid gap-4 sm:grid-cols-2"
+                : "grid gap-4 md:grid-cols-2"
+            }
+          >
             {Array.from({ length: skeletonCount }).map((_, index) => (
               <div
                 key={`news-skeleton-${index}`}
@@ -229,87 +251,33 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
           <div className="text-sm text-muted-foreground">No football headlines available right now.</div>
         ) : (
           <>
-            <div className="grid gap-4 md:grid-cols-2">
-              {pagedArticles.map((article) => {
-                const displayTitle = article.title || "Untitled headline";
-                const relativeTime = formatRelativeTime(article.publishedAt);
+            <div
+              ref={newsListRef}
+              className={
+                variant === "preview"
+                  ? "grid gap-4 sm:grid-cols-2"
+                  : "grid gap-4 md:grid-cols-2"
+              }
+            >
+              {pagedArticles.map((article, index) => {
+                const articleKey = article.id || article.url || `football-news-${index}`;
                 return (
-                  <a
-                    key={article.id}
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group relative block overflow-hidden rounded-xl border border-border/60 bg-background/80 p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-background hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                  >
-                    <span
-                      aria-hidden
-                      className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-primary/0 via-primary/5 to-primary/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                    />
-                    <div className="flex flex-col gap-4 sm:flex-row">
-                      {article.imageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={article.imageUrl}
-                          alt={displayTitle}
-                          className="h-24 w-full flex-shrink-0 rounded-lg object-cover shadow-sm sm:h-24 sm:w-32"
-                          onError={(event) => {
-                            (event.currentTarget as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      ) : null}
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-primary/70">Latest headline</div>
-                        <div className="mt-1 text-base font-semibold leading-tight text-foreground transition-colors group-hover:text-primary">
-                          {displayTitle}
-                        </div>
-                        {article.summary ? (
-                          <p className="mt-2 text-sm text-muted-foreground line-clamp-3">{article.summary}</p>
-                        ) : null}
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          {article.source ? (
-                            <span className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary/80">
-                              {article.source}
-                            </span>
-                          ) : null}
-                          {article.source && article.publishedAt ? (
-                            <span aria-hidden className="h-1 w-1 rounded-full bg-border" />
-                          ) : null}
-                          {article.publishedAt ? (
-                            <time
-                              dateTime={article.publishedAt}
-                              className="truncate"
-                              title={new Date(article.publishedAt).toLocaleString()}
-                            >
-                              {relativeTime ?? new Date(article.publishedAt).toLocaleDateString()}
-                            </time>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-primary/80 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                      Read full story
-                      <svg
-                        aria-hidden
-                        className="h-3.5 w-3.5 translate-x-0 transition-transform duration-300 group-hover:translate-x-1"
-                        viewBox="0 0 16 16"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                      >
-                        <path
-                          d="M4 12L12 4M12 4H6M12 4V10"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </span>
-                  </a>
+                  <ArticleSummaryCard
+                    key={articleKey}
+                    articleId={articleKey}
+                    title={article.title}
+                    url={article.url}
+                    preview={article.summary}
+                    imageUrl={article.imageUrl}
+                    source={article.source}
+                    publishedAt={article.publishedAt}
+                    ctaLabel="Latest headline"
+                  />
                 );
               })}
             </div>
             {/* Pagination controls with ellipsis and scroll-to-top */}
-            {totalPages > 1 && (
+            {variant === "full" && totalPages > 1 && (
               <div className="mt-8 flex flex-col items-center justify-center gap-2">
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="ghost" onClick={() => { setPage(p => Math.max(1, p - 1)); scrollNewsListToTop(); }} disabled={page === 1}>
@@ -354,6 +322,13 @@ export default function FootballNews({ articles: initialArticles, limit = 0 }: P
                 </span>
               </div>
             )}
+            {moreHref ? (
+              <div className="mt-8 flex justify-center">
+                <Button asChild variant="default" size="default">
+                  <Link href={moreHref}>{moreLabel}</Link>
+                </Button>
+              </div>
+            ) : null}
           </>
         )}
       </CardContent>

@@ -81,6 +81,7 @@ const getString = (o: DataObject, keys: string[], fallback?: string) => {
   for (const k of keys) {
     const v = k.includes('.') ? getPathVal(o, k) : (o as Record<string, unknown>)[k];
     if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'bigint') return String(v);
   }
   return fallback;
 };
@@ -1049,7 +1050,7 @@ export default function MatchPage() {
     return () => {
       active = false;
     };
-  }, [event?.eventId, event?.homeTeam, event?.awayTeam, event?.date, eventRaw]);
+  }, [event, event?.eventId, event?.homeTeam, event?.awayTeam, event?.date, eventRaw]);
 
   const match = event;
 

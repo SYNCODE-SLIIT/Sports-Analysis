@@ -40,10 +40,14 @@ export function LeagueInfoHero({ info }: LeagueInfoHeroProps) {
     description,
   } = info;
 
+  const normalizedDescription = description
+    ?.replace(/\r?\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const summary =
-    description && description.length > 360
-      ? `${description.slice(0, 360).trimEnd()}…`
-      : description;
+    normalizedDescription && normalizedDescription.length > 360
+      ? `${normalizedDescription.slice(0, 360).trimEnd()}...`
+      : normalizedDescription;
 
   return (
     <Card className="border-border/60 shadow-sm">
