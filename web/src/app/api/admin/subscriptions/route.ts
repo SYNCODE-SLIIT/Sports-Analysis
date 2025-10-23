@@ -12,6 +12,7 @@ const DEFAULT_PRO_PRICE_ID =
   "";
 
 const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const TRIAL_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
 
 function isPlanValue(value: unknown): value is "free" | "pro" {
   return value === "free" || value === "pro";
@@ -231,7 +232,9 @@ export async function PATCH(req: NextRequest) {
   };
 
   if (targetPlan === "pro") {
-    const nextPeriodEnd = providedPeriodEnd ? new Date(providedPeriodEnd) : new Date(Date.now() + ONE_MONTH_MS);
+    const includeTrialBuffer = (existingRow?.plan ?? "free") !== "pro";
+    const defaultRenewalMs = Date.now() + ONE_MONTH_MS + (includeTrialBuffer ? TRIAL_PERIOD_MS : 0);
+    const nextPeriodEnd = providedPeriodEnd ? new Date(providedPeriodEnd) : new Date(defaultRenewalMs);
     updates.current_period_end = Number.isNaN(nextPeriodEnd.getTime()) ? null : nextPeriodEnd.toISOString();
 
     const chosenPriceId =

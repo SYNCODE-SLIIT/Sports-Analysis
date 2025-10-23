@@ -31,6 +31,8 @@ import { isAdminEmail } from "@/lib/admin";
 import { usePlanContext } from "@/components/PlanProvider";
 import { ProfilePlanSummary } from "@/components/ProfilePlan";
 import { UpgradeCta } from "@/components/pro/UpgradeCta";
+import { ProfileBillingManager } from "@/components/ProfileBillingManager";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 type ProfileState = {
   full_name: string;
@@ -301,7 +303,7 @@ const readFileAsDataUrl = (file: File): Promise<string> =>
 
 export default function ProfilePage() {
   const { user, supabase, loading, prefsVersion, interactionsVersion } = useAuth();
-  const { plan } = usePlanContext();
+  const { plan, planInfo, refreshPlan } = usePlanContext();
   const recs = useRecommendations();
   const refetchRecommendations = recs.refetch;
   const router = useRouter();
@@ -320,6 +322,9 @@ export default function ProfilePage() {
   const [recentViews, setRecentViews] = useState<RecentView[]>([]);
   const [recentViewsLoading, setRecentViewsLoading] = useState(false);
   const [interactionLog, setInteractionLog] = useState<InteractionEvent[]>([]);
+  const [showBillingManager, setShowBillingManager] = useState(false);
+  const [billingDialogError, setBillingDialogError] = useState<string | null>(null);
+  const [cancelSubscriptionLoading, setCancelSubscriptionLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -329,6 +334,64 @@ export default function ProfilePage() {
     monthlyPriceId: "",
     configured: false,
   });
+
+  const handleViewPlans = useCallback(() => {
+    router.push("/pro");
+  }, [router]);
+
+  const handleManageBilling = useCallback(() => {
+    setBillingDialogError(null);
+    setCancelSubscriptionLoading(false);
+    setShowBillingManager(true);
+  }, []);
+
+  const handleCloseBillingManager = useCallback(() => {
+    setShowBillingManager(false);
+    setBillingDialogError(null);
+    setCancelSubscriptionLoading(false);
+  }, []);
+
+  const handleCancelSubscription = useCallback(async () => {
+    setBillingDialogError(null);
+    setCancelSubscriptionLoading(true);
+    try {
+      const response = await fetch("/api/stripe/cancel-subscription", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        const loginUrl = typeof data?.loginUrl === "string" ? data.loginUrl : "/auth/login?next=/profile";
+        window.location.href = loginUrl;
+        return false;
+      }
+
+      if (!response.ok) {
+        const errorMessage = typeof data?.error === "string" ? data.error : "Unable to cancel subscription.";
+        setBillingDialogError(errorMessage);
+        toast.error(errorMessage);
+        setCancelSubscriptionLoading(false);
+        return false;
+      }
+
+      await refreshPlan?.();
+      setCancelSubscriptionLoading(false);
+      toast.success("Subscription cancelled. You are back on the Free plan.");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unexpected error";
+      setBillingDialogError(message);
+      toast.error(message);
+      setCancelSubscriptionLoading(false);
+      return false;
+    }
+  }, [refreshPlan]);
+
+  useEffect(() => {
+    if (plan !== "pro") {
+      setShowBillingManager(false);
+      setBillingDialogError(null);
+      setCancelSubscriptionLoading(false);
+    }
+  }, [plan]);
 
   useEffect(() => {
     let active = true;
@@ -1105,6 +1168,31 @@ export default function ProfilePage() {
 
   return (
     <div className="container py-10 space-y-10">
+      <Dialog
+        open={plan === "pro" && showBillingManager}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) {
+            setShowBillingManager(true);
+          } else {
+            handleCloseBillingManager();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-xl">
+          {plan === "pro" ? (
+            <ProfileBillingManager
+              key={planInfo.stripe_price_id ?? plan}
+              plan={plan}
+              planInfo={planInfo}
+              onClose={handleCloseBillingManager}
+              onViewPlans={handleViewPlans}
+              error={billingDialogError}
+              onCancelSubscription={handleCancelSubscription}
+              cancelPending={cancelSubscriptionLoading}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
         <Card className="neon-card">
           <CardContent className="p-8 space-y-6">
@@ -1160,7 +1248,7 @@ export default function ProfilePage() {
               <div className="flex flex-col items-end gap-3">
                 <ProfilePlanSummary />
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                  <div className="w-full min-w-[180px]">
+                  <div className="flex w-full justify-end">
                     <UpgradeCta
                       priceId={stripeConfig.monthlyPriceId}
                       label="Start 7-day trial"
@@ -1175,6 +1263,9 @@ export default function ProfilePage() {
                         "Personalised alerts with unlimited saved teams",
                       ]}
                       redirectWhenFreeHref="/pro"
+                      onManageBilling={handleManageBilling}
+                      manageButtonClassName="w-auto"
+                      manageButtonSize="sm"
                     />
                   </div>
                   {stripeConfig.loaded && !stripeConfig.configured && plan !== "pro" && (
@@ -1254,6 +1345,7 @@ export default function ProfilePage() {
                 </div>
               </div>
             )}
+
           </CardContent>
         </Card>
       </motion.div>
