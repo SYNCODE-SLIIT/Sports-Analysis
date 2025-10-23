@@ -639,13 +639,13 @@ export function Hero() {
                 <span className="block">Live Football</span>
                 <span className="block text-gradient">Analytics & Insights</span>
               </h1>
-              <p
-                className={
-                  `max-w-lg text-lg ${resolvedTheme === 'light' ? 'text-zinc-700' : 'text-muted-foreground'}`
-                }
-              >
-                Dive into tailored match analysis, real-time probabilities, and stories curated around the clubs and leagues you care about most.
-              </p>
+              {mounted && (
+                <p
+                  className={`max-w-lg text-lg ${resolvedTheme === 'light' ? 'text-zinc-700' : 'text-muted-foreground'}`}
+                >
+                  Dive into tailored match analysis, real-time probabilities, and stories curated around the clubs and leagues you care about most.
+                </p>
+              )}
             </motion.div>
 
             <motion.div variants={textVariants} className="flex flex-col gap-4 sm:flex-row">

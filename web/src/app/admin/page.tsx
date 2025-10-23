@@ -6,14 +6,12 @@ import { motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
-  BarChart3,
   Bell,
   CalendarClock,
   ClipboardCheck,
   FilePlus2,
   Loader2,
   RefreshCcw,
-  ShieldCheck,
   Timer,
   TrendingUp,
   Users,
@@ -30,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { isAdminEmail, PRIMARY_ADMIN_EMAIL } from "@/lib/admin";
+import { isAdminEmail } from "@/lib/admin";
 import { SubscriptionManager } from "./SubscriptionManager";
 
 type SparkCoordinate = { x: number; y: number; value: number };
@@ -391,7 +389,7 @@ export default function AdminPage() {
         // load avatar URLs from profiles table for users returned by the snapshot
         (async () => {
           try {
-            const ids = (payload?.users ?? []).map((u: any) => u.id).filter(Boolean);
+            const ids = (payload?.users ?? []).map((u: { id: string }) => u.id).filter(Boolean);
             if (ids.length) {
               const { data: profilesData, error: profilesError } = await supabase
                 .from("profiles")
@@ -399,7 +397,7 @@ export default function AdminPage() {
                 .in("id", ids as string[]);
               if (!profilesError && Array.isArray(profilesData)) {
                 const map: Record<string, string | null> = {};
-                profilesData.forEach((r: any) => {
+                profilesData.forEach((r: { id: string; avatar_url?: string | null }) => {
                   map[r.id] = r.avatar_url ?? null;
                 });
                 setUserAvatars(map);
@@ -429,7 +427,7 @@ export default function AdminPage() {
     return () => {
       active = false;
     };
-  }, [fetchSnapshot, isAdmin]);
+  }, [fetchSnapshot, isAdmin, supabase]);
 
   const refreshSnapshot = useCallback(async () => {
     if (!isAdmin) return;
@@ -439,7 +437,7 @@ export default function AdminPage() {
       setSnapshot(payload);
       // refresh avatars for the newly fetched users
       try {
-        const ids = (payload?.users ?? []).map((u: any) => u.id).filter(Boolean);
+  const ids = (payload?.users ?? []).map((u: { id: string }) => u.id).filter(Boolean);
         if (ids.length) {
           const { data: profilesData, error: profilesError } = await supabase
             .from("profiles")
@@ -447,7 +445,7 @@ export default function AdminPage() {
             .in("id", ids as string[]);
           if (!profilesError && Array.isArray(profilesData)) {
             const map: Record<string, string | null> = {};
-            profilesData.forEach((r: any) => {
+            profilesData.forEach((r: { id: string; avatar_url?: string | null }) => {
               map[r.id] = r.avatar_url ?? null;
             });
             setUserAvatars(map);
@@ -469,7 +467,7 @@ export default function AdminPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [fetchSnapshot, isAdmin]);
+  }, [fetchSnapshot, isAdmin, supabase]);
 
   const handleFlagChange = useCallback(
     async (flag: SystemFlag, checked: boolean, metadataOverride?: Record<string, unknown> | null) => {
@@ -762,15 +760,15 @@ export default function AdminPage() {
 
   const retentionDeltaLabel = `${retentionDeltaPercent >= 0 ? "+" : ""}${retentionDeltaPercent.toFixed(1)}%`;
 
-  const lastActivityIso = useMemo(() => {
-    const timestamps = users
-      .map((entry) => (entry.lastSeen ? Date.parse(entry.lastSeen) : Number.NaN))
-      .filter((value) => Number.isFinite(value));
-    if (!timestamps.length) return null;
-    return new Date(Math.max(...timestamps)).toISOString();
-  }, [users]);
+  // const lastActivityIso = useMemo(() => {
+  //   const timestamps = users
+  //     .map((entry) => (entry.lastSeen ? Date.parse(entry.lastSeen) : Number.NaN))
+  //     .filter((value) => Number.isFinite(value));
+  //   if (!timestamps.length) return null;
+  //   return new Date(Math.max(...timestamps)).toISOString();
+  // }, [users]);
 
-  const lastActiveDisplay = lastActivityIso ? formatRelativeTime(lastActivityIso) : "Awaiting activity";
+  // const lastActiveDisplay = lastActivityIso ? formatRelativeTime(lastActivityIso) : "Awaiting activity";
 
   const alerts = useMemo<AlertEntry[]>(() => {
     if (!stats) return [];
