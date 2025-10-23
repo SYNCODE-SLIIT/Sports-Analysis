@@ -8,15 +8,15 @@
 
 ## Data model (Supabase)
 
-- Extend `supabase.sql`:
-- Add to `profiles` (or create new table) fields:
+
+-  create new table `subscriptions` fields:
   - `plan` text check in ('free','pro') default 'free'
   - `stripe_customer_id` text nullable
   - `stripe_subscription_id` text nullable
   - `stripe_price_id` text nullable
   - `subscription_status` text nullable
   - `current_period_end` timestamptz nullable
-- If `profiles` already exists, create a `subscriptions` table keyed by `user_id` with the above fields and a view that exposes `plan`.
+-  create a `subscriptions` table keyed by `user_id` with the above fields and a view that exposes `plan`.
 
 ## Stripe setup
 

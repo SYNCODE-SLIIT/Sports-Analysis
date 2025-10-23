@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { isAdminEmail, PRIMARY_ADMIN_EMAIL } from "@/lib/admin";
+import { SubscriptionManager } from "./SubscriptionManager";
 
 type SparkCoordinate = { x: number; y: number; value: number };
 
@@ -853,6 +854,7 @@ export default function AdminPage() {
             <TabsList>
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="subscriptions">Subscriptions</TabsTrigger>
               <TabsTrigger value="system">System</TabsTrigger>
             </TabsList>
           </div>
@@ -1107,6 +1109,12 @@ export default function AdminPage() {
                 </table>
               </CardContent>
             </Card>
+          </motion.div>
+        </TabsContent>
+
+        <TabsContent value="subscriptions">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <SubscriptionManager />
           </motion.div>
         </TabsContent>
 

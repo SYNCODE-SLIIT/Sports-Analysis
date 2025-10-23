@@ -4,15 +4,18 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, LogIn } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { ChatbotPanel } from "./ChatbotPanel";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
+import { usePlanContext } from "@/components/PlanProvider";
 
 export function FloatingChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const { user } = useAuth();
+  const { plan } = usePlanContext();
 
   // Don't show on login/signup pages
   if (pathname?.startsWith("/auth/")) {
@@ -122,7 +125,31 @@ export function FloatingChatbot() {
                 <div className="flex-1 overflow-hidden p-3">
                   <div className="h-full">
                     {user ? (
-                      <ChatbotPanel />
+                      plan === "pro" ? (
+                        <ChatbotPanel />
+                      ) : (
+                        <div className="h-full flex items-center justify-center">
+                          <div className="text-center space-y-4 max-w-sm px-6">
+                            <div className="mx-auto h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                              <Image
+                                src="/logo/chatbot.svg"
+                                alt="Chatbot Locked"
+                                width={32}
+                                height={32}
+                                className="h-8 w-8"
+                              />
+                            </div>
+                            <h3 className="text-xl font-bold">Upgrade to chat with ATHLETE AI</h3>
+                            <p className="text-sm text-muted-foreground">
+                              Start a 7-day free trial of Sports Analysis Pro to unlock our AI assistant for game plans,
+                              stats, and predictions.
+                            </p>
+                            <Button asChild className="mt-2">
+                              <Link href="/pro">Upgrade to Pro</Link>
+                            </Button>
+                          </div>
+                        </div>
+                      )
                     ) : (
                       <div className="h-full flex items-center justify-center">
                         <div className="text-center space-y-4 max-w-sm px-6">
