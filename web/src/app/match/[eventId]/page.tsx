@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
+import Image from "next/image";
+import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Calendar, MapPin, Users, Trophy, ThumbsUp, Bookmark, Share2, Plus, Check, Heart } from "lucide-react";
 import { toast } from "sonner";
@@ -35,16 +37,75 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { parseHighlights, type Highlight } from "@/lib/schemas";
+import { usePlanContext } from "@/components/PlanProvider";
 
 type TeamSideValue = { home?: number; away?: number };
-type MatchStats = {
-  possession?: TeamSideValue;
-  shots?: TeamSideValue;
-  shotsOnTarget?: TeamSideValue;
-  corners?: TeamSideValue;
-  fouls?: TeamSideValue;
-  yellowCards?: TeamSideValue;
-  redCards?: TeamSideValue;
+type MatchStatEntry = {
+  key: string;
+  label: string;
+  home: string;
+  away: string;
+  homeNumeric?: number;
+  awayNumeric?: number;
+};
+type StandardStatField =
+  | "possession"
+  | "shots"
+  | "shotsOnTarget"
+  | "shotsOffTarget"
+  | "shotsBlocked"
+  | "shotsInsideBox"
+  | "shotsOutsideBox"
+  | "corners"
+  | "fouls"
+  | "offsides"
+  | "yellowCards"
+  | "redCards"
+  | "saves"
+  | "passesTotal"
+  | "passesAccurate";
+type MatchStats = Partial<Record<StandardStatField, TeamSideValue>> & {
+  entries?: MatchStatEntry[];
+};
+
+type GoalEvent = {
+  key: string;
+  minute: number | null;
+  minuteLabel: string;
+  team: "home" | "away" | "neutral";
+  player: string;
+  assist?: string;
+  score?: string;
+  period?: string;
+  note?: string;
+};
+
+type CardEvent = {
+  key: string;
+  minute: number | null;
+  minuteLabel: string;
+  team: "home" | "away" | "neutral";
+  player: string;
+  cardType: string;
+  description?: string;
+};
+
+type SubstitutionEvent = {
+  key: string;
+  minute: number | null;
+  minuteLabel: string;
+  team: "home" | "away" | "neutral";
+  playerIn?: string;
+  playerOut?: string;
+  reason?: string;
+};
+
+type FoulEvent = {
+  key: string;
+  minute: number | null;
+  minuteLabel: string;
+  team?: "home" | "away" | "neutral";
+  description: string;
 };
 
 type RenderEvent = {
@@ -121,8 +182,493 @@ const getLogo = (o: DataObject, homeOrAway: 'home' | 'away'): string | undefined
   return undefined;
 };
 
+const STAT_LABELS: Record<StandardStatField, string> = {
+  possession: "Ball Possession",
+  shots: "Shots Total",
+  shotsOnTarget: "Shots On Target",
+  shotsOffTarget: "Shots Off Target",
+  shotsBlocked: "Shots Blocked",
+  shotsInsideBox: "Shots Inside Box",
+  shotsOutsideBox: "Shots Outside Box",
+  corners: "Corners",
+  fouls: "Fouls",
+  offsides: "Offsides",
+  yellowCards: "Yellow Cards",
+  redCards: "Red Cards",
+  saves: "Saves",
+  passesTotal: "Passes Total",
+  passesAccurate: "Passes Accurate",
+};
+
+const STANDARD_STAT_FIELDS: StandardStatField[] = [
+  "possession",
+  "shots",
+  "shotsOnTarget",
+  "shotsOffTarget",
+  "shotsBlocked",
+  "shotsInsideBox",
+  "shotsOutsideBox",
+  "corners",
+  "fouls",
+  "offsides",
+  "yellowCards",
+  "redCards",
+  "saves",
+  "passesTotal",
+  "passesAccurate",
+];
+
+const STAT_FIELD_ALIASES: Array<{ pattern: RegExp; field: StandardStatField }> = [
+  { pattern: /ball\s*possession/i, field: "possession" },
+  { pattern: /(shots?\s+total|total\s+shots?)/i, field: "shots" },
+  { pattern: /shots?\s+on\s+(goal|target)/i, field: "shotsOnTarget" },
+  { pattern: /shots?\s+off\s+(goal|target)/i, field: "shotsOffTarget" },
+  { pattern: /shots?\s+blocked/i, field: "shotsBlocked" },
+  { pattern: /shots?\s+inside(\s+the)?\s+box/i, field: "shotsInsideBox" },
+  { pattern: /shots?\s+outside(\s+the)?\s+box/i, field: "shotsOutsideBox" },
+  { pattern: /corners?/i, field: "corners" },
+  { pattern: /fouls?/i, field: "fouls" },
+  { pattern: /offsides?/i, field: "offsides" },
+  { pattern: /yellow\s+cards?/i, field: "yellowCards" },
+  { pattern: /red\s+cards?/i, field: "redCards" },
+  { pattern: /saves?/i, field: "saves" },
+  { pattern: /passes?\s+total/i, field: "passesTotal" },
+  { pattern: /passes?\s+accurate/i, field: "passesAccurate" },
+];
+
+const toDisplayValue = (value: unknown): string => {
+  if (value === null || value === undefined) return "0";
+  if (typeof value === "number") {
+    if (Number.isFinite(value)) return String(value);
+    return "0";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed === "" ? "0" : trimmed;
+  }
+  try {
+    return String(value);
+  } catch {
+    return "0";
+  }
+};
+
+const toNumericValue = (value: unknown): number | undefined => {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+    const cleaned = trimmed.replace(/[^0-9.+-]/g, "");
+    if (!cleaned) return undefined;
+    const num = Number(cleaned);
+    return Number.isNaN(num) ? undefined : num;
+  }
+  return undefined;
+};
+
+const getStatValue = (obj: DataObject, keys: string[]): unknown => {
+  for (const key of keys) {
+    const val = key.includes(".") ? getPathVal(obj, key) : (obj as Record<string, unknown>)[key];
+    if (val === undefined || val === null) continue;
+    if (typeof val === "string" && val.trim() === "") continue;
+    return val;
+  }
+  return undefined;
+};
+
+const buildSummaryEntries = (
+  stats: MatchStats,
+  push: (entry: MatchStatEntry) => void
+) => {
+  for (const field of STANDARD_STAT_FIELDS) {
+    const stat = stats[field];
+    if (!stat) continue;
+    const { home, away } = stat;
+    if (home === undefined && away === undefined) continue;
+    push({
+      key: field,
+      label: STAT_LABELS[field],
+      home: toDisplayValue(home),
+      away: toDisplayValue(away),
+      homeNumeric: typeof home === "number" ? home : toNumericValue(home),
+      awayNumeric: typeof away === "number" ? away : toNumericValue(away),
+    });
+  }
+};
+
+const extractMatchStats = (source: DataObject): MatchStats | undefined => {
+  const legacyRaw = (source as Record<string, unknown>)["stats"];
+  const legacy = legacyRaw && typeof legacyRaw === "object" ? (legacyRaw as MatchStats) : undefined;
+
+  const statsCandidate = getPathVal(source, "statistics");
+  const statsArray: DataObject[] = Array.isArray(statsCandidate)
+    ? (statsCandidate as DataObject[])
+    : statsCandidate && typeof statsCandidate === "object" && Array.isArray((statsCandidate as Record<string, unknown>).statistics)
+    ? ((statsCandidate as Record<string, unknown>).statistics as DataObject[])
+    : [];
+
+  const stats: MatchStats = legacy ? { ...legacy } : {};
+  const entries: MatchStatEntry[] = Array.isArray(legacy?.entries) ? [...legacy.entries] : [];
+  const seenKeys = new Map(entries.map((entry, idx) => [entry.key, idx]));
+
+  const pushEntry = (entry: MatchStatEntry) => {
+    if (seenKeys.has(entry.key)) {
+      const existingIndex = seenKeys.get(entry.key)!;
+      entries[existingIndex] = entry;
+    } else {
+      seenKeys.set(entry.key, entries.length);
+      entries.push(entry);
+    }
+  };
+
+  const applyField = (field: StandardStatField, homeNumeric?: number, awayNumeric?: number) => {
+    if (homeNumeric === undefined && awayNumeric === undefined) return;
+    const prev = stats[field] ?? {};
+    stats[field] = {
+      home: homeNumeric ?? prev.home,
+      away: awayNumeric ?? prev.away,
+    };
+  };
+
+  if (statsArray.length) {
+    const homeValueKeys = ["home", "home_value", "homeTeam", "home_team", "team_home", "home_stat"];
+    const awayValueKeys = ["away", "away_value", "awayTeam", "away_team", "team_away", "away_stat"];
+    statsArray.forEach((statObj, index) => {
+      const labelRaw = getString(statObj, ["type", "stat_type", "name", "label"], `Stat ${index + 1}`);
+      const label = (labelRaw ?? `Stat ${index + 1}`).trim();
+      const homeValueRaw = getStatValue(statObj, homeValueKeys);
+      const awayValueRaw = getStatValue(statObj, awayValueKeys);
+      const homeDisplay = toDisplayValue(homeValueRaw);
+      const awayDisplay = toDisplayValue(awayValueRaw);
+      const homeNumeric = toNumericValue(homeValueRaw);
+      const awayNumeric = toNumericValue(awayValueRaw);
+
+      let key = label.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      key = key.replace(/^_+|_+$/g, "");
+      if (!key) key = `stat_${index}`;
+
+      pushEntry({
+        key,
+        label,
+        home: homeDisplay,
+        away: awayDisplay,
+        homeNumeric,
+        awayNumeric,
+      });
+
+      const alias = STAT_FIELD_ALIASES.find((candidate) => candidate.pattern.test(label));
+      if (alias) {
+        applyField(alias.field, homeNumeric, awayNumeric);
+      }
+    });
+  }
+
+  if (!entries.length) {
+    buildSummaryEntries(stats, pushEntry);
+  }
+
+  const hasSummaryData = STANDARD_STAT_FIELDS.some((field) => {
+    const value = stats[field];
+    return value && (value.home !== undefined || value.away !== undefined);
+  });
+
+  if (!entries.length && !hasSummaryData) {
+    return undefined;
+  }
+
+  stats.entries = entries;
+  return stats;
+};
+
+const cleanString = (value?: string | null): string | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const trimmed = String(value).trim();
+  return trimmed.length ? trimmed : undefined;
+};
+
+const getInitials = (value?: string | null): string => {
+  const source = cleanString(value) ?? "";
+  if (!source) return "NA";
+  const parts = source.split(/\s+/).filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "");
+  return initials.join("") || source.slice(0, 2).toUpperCase();
+};
+
+const parseMinuteInfo = (
+  timeRaw: unknown,
+  periodRaw: unknown,
+  index: number,
+  fallbackLabelPrefix: string
+): { minute: number | null; label: string } => {
+  let label = "";
+  let minute: number | null = null;
+
+  const timeStr =
+    typeof timeRaw === "number"
+      ? String(timeRaw)
+      : typeof timeRaw === "string"
+      ? timeRaw.trim()
+      : "";
+
+  if (timeStr) {
+    const match = timeStr.match(/\d+/);
+    if (match) {
+      const candidate = Number(match[0]);
+      if (Number.isFinite(candidate)) minute = candidate;
+    }
+    if (timeStr.includes("'") || timeStr.includes("’")) {
+      label = timeStr;
+    } else if (timeStr.includes("+")) {
+      label = `${timeStr}′`;
+    } else {
+      label = `${timeStr}′`;
+    }
+  }
+
+  const periodStr =
+    typeof periodRaw === "string" && periodRaw.trim().length ? periodRaw.trim() : "";
+  if (periodStr) {
+    label = label ? `${label} · ${periodStr}` : periodStr;
+  }
+
+  if (!label) {
+    label = `${fallbackLabelPrefix} ${index + 1}`;
+  }
+
+  return { minute, label };
+};
+
+const extractGoalEvents = (source: DataObject): GoalEvent[] => {
+  const rawGoals = getPathVal(source, "goalscorers");
+  const goalArray = Array.isArray(rawGoals) ? (rawGoals as DataObject[]) : [];
+  const events: GoalEvent[] = [];
+
+  goalArray.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") return;
+    const time = getString(raw, ["time", "minute", "min"]);
+    const period = getString(raw, ["info_time", "info", "period"]);
+    const { minute, label } = parseMinuteInfo(time, period, index, "Goal");
+    const score = cleanString(getString(raw, ["score", "result"]));
+    const homeScorer = cleanString(getString(raw, ["home_scorer", "homeScorer", "home_player"]));
+    const awayScorer = cleanString(getString(raw, ["away_scorer", "awayScorer", "away_player"]));
+    const player =
+      homeScorer ??
+      awayScorer ??
+      cleanString(getString(raw, ["player", "scorer", "name"], "Goal")) ??
+      "Goal";
+    const assist = cleanString(
+      getString(raw, ["home_assist", "away_assist", "assist", "assist_name", "second_assist"])
+    );
+    const note = cleanString(getString(raw, ["detail", "note"]));
+
+    const team: "home" | "away" | "neutral" = homeScorer
+      ? "home"
+      : awayScorer
+      ? "away"
+      : "neutral";
+
+    events.push({
+      key: `goal-${team}-${minute ?? index}-${index}`,
+      minute,
+      minuteLabel: label,
+      team,
+      player,
+      assist: assist,
+      score: score,
+      period: cleanString(period),
+      note,
+    });
+  });
+
+  return events.sort((a, b) => {
+    const aMin = a.minute ?? Number.POSITIVE_INFINITY;
+    const bMin = b.minute ?? Number.POSITIVE_INFINITY;
+    if (aMin !== bMin) return aMin - bMin;
+    return a.key.localeCompare(b.key);
+  });
+};
+
+const extractCardEvents = (source: DataObject): CardEvent[] => {
+  const rawCards = getPathVal(source, "cards");
+  const cardsArray = Array.isArray(rawCards) ? (rawCards as DataObject[]) : [];
+  const events: CardEvent[] = [];
+
+  cardsArray.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") return;
+    const cardType =
+      cleanString(getString(raw, ["card", "type", "detail"], "Card")) ?? "Card";
+    const homeFault = cleanString(getString(raw, ["home_fault", "homeFault", "player_home"]));
+    const awayFault = cleanString(getString(raw, ["away_fault", "awayFault", "player_away"]));
+    const player =
+      homeFault ??
+      awayFault ??
+      cleanString(getString(raw, ["player", "name"], cardType)) ??
+      cardType;
+    const description = cleanString(getString(raw, ["info", "note", "detail"]));
+    const time = getString(raw, ["time", "minute", "min"]);
+    const period = getString(raw, ["info_time", "period"]);
+    const { minute, label } = parseMinuteInfo(time, period, index, "Card");
+
+    const team: "home" | "away" | "neutral" = homeFault
+      ? "home"
+      : awayFault
+      ? "away"
+      : "neutral";
+
+    events.push({
+      key: `card-${team}-${minute ?? index}-${index}`,
+      minute,
+      minuteLabel: label,
+      team,
+      player,
+      cardType,
+      description,
+    });
+  });
+
+  return events.sort((a, b) => {
+    const aMin = a.minute ?? Number.POSITIVE_INFINITY;
+    const bMin = b.minute ?? Number.POSITIVE_INFINITY;
+    if (aMin !== bMin) return aMin - bMin;
+    return a.key.localeCompare(b.key);
+  });
+};
+
+const parseSubstitutionRecord = (value: unknown): { in?: string; out?: string } => {
+  if (!value) return {};
+  if (Array.isArray(value)) {
+    if (value.length >= 2) {
+      return {
+        out: cleanString(value[0] as string),
+        in: cleanString(value[1] as string),
+      };
+    }
+    if (value.length === 1) {
+      return { in: cleanString(value[0] as string) };
+    }
+    return {};
+  }
+  if (typeof value === "object") {
+    const obj = value as DataObject;
+    return {
+      in: cleanString(getString(obj, ["in", "player_in", "playerIn"])),
+      out: cleanString(getString(obj, ["out", "player_out", "playerOut"])),
+    };
+  }
+  if (typeof value === "string") {
+    if (value.includes("->") || value.includes("→")) {
+      const segments = value.replace("→", "->").split("->");
+      if (segments.length >= 2) {
+        return {
+          out: cleanString(segments[0]),
+          in: cleanString(segments[1]),
+        };
+      }
+    }
+    return { in: cleanString(value) };
+  }
+  return {};
+};
+
+const extractSubstitutionEvents = (source: DataObject): SubstitutionEvent[] => {
+  const rawSubs = getPathVal(source, "substitutes");
+  const subsArray = Array.isArray(rawSubs) ? (rawSubs as DataObject[]) : [];
+  const events: SubstitutionEvent[] = [];
+
+  subsArray.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") return;
+    const homeSub = parseSubstitutionRecord(
+      (raw as Record<string, unknown>)["home_scorer"] ??
+        (raw as Record<string, unknown>)["home_player"]
+    );
+    const awaySub = parseSubstitutionRecord(
+      (raw as Record<string, unknown>)["away_scorer"] ??
+        (raw as Record<string, unknown>)["away_player"]
+    );
+
+    const team: "home" | "away" | "neutral" = homeSub.in || homeSub.out ? "home" : awaySub.in || awaySub.out ? "away" : "neutral";
+    const sub = team === "home" ? homeSub : team === "away" ? awaySub : homeSub.in || homeSub.out ? homeSub : awaySub;
+
+    if (!sub.in && !sub.out) return;
+
+    const time = getString(raw, ["time", "minute", "min"]);
+    const period = getString(raw, ["info_time", "period"]);
+    const { minute, label } = parseMinuteInfo(time, period, index, "Substitution");
+    const reason =
+      cleanString(getString(raw, ["info", "note", "detail"])) ||
+      (cleanString(getString(raw, ["score"])) === "substitution" ? undefined : cleanString(getString(raw, ["score"])));
+
+    events.push({
+      key: `sub-${team}-${minute ?? index}-${index}`,
+      minute,
+      minuteLabel: label,
+      team,
+      playerIn: sub.in,
+      playerOut: sub.out,
+      reason,
+    });
+  });
+
+  return events.sort((a, b) => {
+    const aMin = a.minute ?? Number.POSITIVE_INFINITY;
+    const bMin = b.minute ?? Number.POSITIVE_INFINITY;
+    if (aMin !== bMin) return aMin - bMin;
+    return a.key.localeCompare(b.key);
+  });
+};
+
+const extractFoulEvents = (source: DataObject): FoulEvent[] => {
+  const timelineRaw = getPathVal(source, "timeline");
+  const timelineArray = Array.isArray(timelineRaw) ? (timelineRaw as DataObject[]) : [];
+  const events: FoulEvent[] = [];
+
+  timelineArray.forEach((raw, index) => {
+    if (!raw || typeof raw !== "object") return;
+    const description = cleanString(getString(raw, ["description", "detail", "event"]));
+    const tagsRaw = getPathVal(raw, "predicted_tags");
+    const tags = Array.isArray(tagsRaw) ? (tagsRaw as unknown[]) : [];
+    const hasFoulTag = tags.some(
+      (tag) => typeof tag === "string" && /foul/i.test(tag)
+    );
+
+    if (!description && !hasFoulTag) return;
+    const isFoul = description ? /foul/i.test(description) : hasFoulTag;
+    if (!isFoul) return;
+
+    const time = getString(raw, ["minute", "time"]);
+    const period = getString(raw, ["period"]);
+    const teamRaw = cleanString(getString(raw, ["team", "side", "club"]));
+    const team =
+      teamRaw && /home/i.test(teamRaw)
+        ? "home"
+        : teamRaw && /away/i.test(teamRaw)
+        ? "away"
+        : undefined;
+    const { minute, label } = parseMinuteInfo(time, period, index, "Foul");
+
+    events.push({
+      key: `foul-${minute ?? index}-${index}`,
+      minute,
+      minuteLabel: label,
+      team,
+      description: description || "Foul",
+    });
+  });
+
+  return events.sort((a, b) => {
+    const aMin = a.minute ?? Number.POSITIVE_INFINITY;
+    const bMin = b.minute ?? Number.POSITIVE_INFINITY;
+    if (aMin !== bMin) return aMin - bMin;
+    return a.key.localeCompare(b.key);
+  });
+};
+
 export default function MatchPage() {
   const { user, supabase, bumpInteractions } = useAuth();
+  const { plan } = usePlanContext();
   const { eventId } = useParams<{ eventId: string }>();
   const searchParams = useSearchParams();
   const sid = searchParams?.get("sid") ?? "card";
@@ -544,7 +1090,7 @@ export default function MatchPage() {
             homeTeamLogo: getLogo(raw, 'home'),
             awayTeamLogo: getLogo(raw, 'away'),
             winProbabilities: (raw['winProbabilities'] || raw['winprob']) as RenderEvent['winProbabilities'],
-            stats: (raw['stats'] as MatchStats) || undefined,
+            stats: extractMatchStats(raw) ?? ((raw['stats'] as MatchStats) || undefined),
             events: Array.isArray(raw['events']) ? (raw['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
           };
           setEvent(e);
@@ -606,7 +1152,7 @@ export default function MatchPage() {
           homeTeamLogo: getLogo(coreObj, 'home'),
           awayTeamLogo: getLogo(coreObj, 'away'),
           winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
-          stats: (coreObj['stats'] as MatchStats) || undefined,
+          stats: extractMatchStats(coreObj) ?? ((coreObj['stats'] as MatchStats) || undefined),
           events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
         };
         setEventRaw(coreObj);
@@ -642,7 +1188,7 @@ export default function MatchPage() {
             homeTeamLogo: getLogo(coreObj, 'home'),
             awayTeamLogo: getLogo(coreObj, 'away'),
             winProbabilities: (coreObj['winProbabilities'] || coreObj['winprob']) as RenderEvent['winProbabilities'],
-            stats: (coreObj['stats'] as MatchStats) || undefined,
+            stats: extractMatchStats(coreObj) ?? ((coreObj['stats'] as MatchStats) || undefined),
             events: Array.isArray(coreObj['events']) ? (coreObj['events'] as Array<{ time?: number; type?: string; team?: string; player?: string }>) : [],
           };
           setEventRaw(coreObj);
@@ -1052,11 +1598,43 @@ export default function MatchPage() {
     };
   }, [event, event?.eventId, event?.homeTeam, event?.awayTeam, event?.date, eventRaw]);
 
+  const eventDetails = useMemo(() => {
+    if (!eventRaw) {
+      return {
+        goals: [] as GoalEvent[],
+        cards: [] as CardEvent[],
+        substitutions: [] as SubstitutionEvent[],
+        fouls: [] as FoulEvent[],
+      };
+    }
+    return {
+      goals: extractGoalEvents(eventRaw),
+      cards: extractCardEvents(eventRaw),
+      substitutions: extractSubstitutionEvents(eventRaw),
+      fouls: extractFoulEvents(eventRaw),
+    };
+  }, [eventRaw]);
+
+  const statEntries = useMemo(() => {
+    const stats = event?.stats;
+    if (!stats) return [] as MatchStatEntry[];
+    if (Array.isArray(stats.entries) && stats.entries.length) {
+      return stats.entries;
+    }
+    const fallback: MatchStatEntry[] = [];
+    buildSummaryEntries(stats, (entry) => {
+      fallback.push(entry);
+    });
+    return fallback;
+  }, [event?.stats]);
+
   const match = event;
 
   if (!match) {
     return null;
   }
+
+  const { goals, cards, substitutions, fouls } = eventDetails;
 
   const matchDate = new Date(match.date);
   const st = (match.status || '').toLowerCase();
@@ -1277,94 +1855,377 @@ export default function MatchPage() {
           </TabsList>
 
           <TabsContent value="stats" className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Possession</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">{match.stats?.possession?.home ?? 0}%</span>
-                    <span className="text-muted-foreground">-</span>
-                    <span className="font-semibold">{match.stats?.possession?.away ?? 0}%</span>
-                  </div>
-                </CardContent>
-              </Card>
+            {statEntries.length ? (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+                {statEntries.map((entry) => {
+                  const homeNumeric = entry.homeNumeric ?? toNumericValue(entry.home);
+                  const awayNumeric = entry.awayNumeric ?? toNumericValue(entry.away);
+                  const totalNumeric = (homeNumeric ?? 0) + (awayNumeric ?? 0);
+                  const showBar =
+                    homeNumeric !== undefined &&
+                    awayNumeric !== undefined &&
+                    totalNumeric > 0;
+                  const homeShare = showBar
+                    ? Math.max(0, Math.min(100, (homeNumeric! / totalNumeric) * 100))
+                    : 0;
+                  const awayShare = showBar
+                    ? Math.max(0, Math.min(100, (awayNumeric! / totalNumeric) * 100))
+                    : 0;
 
+                  return (
+                    <Card key={entry.key}>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base">{entry.label}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-3 text-sm font-semibold">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Avatar className="h-9 w-9 border border-border/40 bg-background">
+                                {match.homeTeamLogo ? (
+                                  <AvatarImage src={match.homeTeamLogo} alt={match.homeTeam} />
+                                ) : (
+                                  <AvatarFallback className="text-xs font-semibold">
+                                    {getInitials(match.homeTeam)}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium uppercase text-muted-foreground">
+                                  {match.homeTeam}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-lg font-semibold tabular-nums">{entry.home}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Avatar className="h-9 w-9 border border-border/40 bg-background">
+                                {match.awayTeamLogo ? (
+                                  <AvatarImage src={match.awayTeamLogo} alt={match.awayTeam} />
+                                ) : (
+                                  <AvatarFallback className="text-xs font-semibold">
+                                    {getInitials(match.awayTeam)}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium uppercase text-muted-foreground">
+                                  {match.awayTeam}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-lg font-semibold tabular-nums">{entry.away}</span>
+                          </div>
+                        </div>
+                        {showBar ? (
+                          <div className="space-y-1">
+                            <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
+                              <div
+                                className="h-full bg-primary transition-all"
+                                style={{ width: `${homeShare}%` }}
+                              />
+                              <div
+                                className="h-full bg-primary/20 transition-all"
+                                style={{ width: `${awayShare}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span className="truncate">{match.homeTeam}</span>
+                              <span className="truncate text-right">{match.awayTeam}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span className="truncate">{match.homeTeam}</span>
+                            <span className="truncate text-right">{match.awayTeam}</span>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Shots</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">{match.stats?.shots?.home ?? 0}</span>
-                    <span className="text-muted-foreground">-</span>
-                    <span className="font-semibold">{match.stats?.shots?.away ?? 0}</span>
+                <CardContent className="p-6">
+                  <div className="text-sm text-muted-foreground">
+                    No statistics available for this match yet.
                   </div>
                 </CardContent>
               </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Shots on Target</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">{match.stats?.shotsOnTarget?.home ?? 0}</span>
-                    <span className="text-muted-foreground">-</span>
-                    <span className="font-semibold">{match.stats?.shotsOnTarget?.away ?? 0}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Corners</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">{match.stats?.corners?.home ?? 0}</span>
-                    <span className="text-muted-foreground">-</span>
-                    <span className="font-semibold">{match.stats?.corners?.away ?? 0}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Fouls</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">{match.stats?.fouls?.home ?? 0}</span>
-                    <span className="text-muted-foreground">-</span>
-                    <span className="font-semibold">{match.stats?.fouls?.away ?? 0}</span>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Cards</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-yellow-600">
-                      {(match.stats?.yellowCards?.home ?? 0)}Y {(match.stats?.redCards?.home ?? 0)}R
-                    </span>
-                    <span className="text-muted-foreground">-</span>
-                    <span className="font-semibold text-yellow-600">
-                      {(match.stats?.yellowCards?.away ?? 0)}Y {(match.stats?.redCards?.away ?? 0)}R
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            )}
           </TabsContent>
 
-          <TabsContent value="events" className="space-y-4">
-            <BestPlayerCard best={best} />
-            <LeadersCard leaders={leaders} />
+          <TabsContent value="events" className="space-y-6">
+            <div className="space-y-6">
+              {best ? <BestPlayerCard best={best} /> : null}
+
+              {goals.length ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Goals</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ul className="space-y-3">
+                      {goals.map((goal) => {
+                        const teamLabel =
+                          goal.team === "home"
+                            ? match.homeTeam
+                            : goal.team === "away"
+                            ? match.awayTeam
+                            : "Neutral";
+                        const teamLogo =
+                          goal.team === "home"
+                            ? match.homeTeamLogo
+                            : goal.team === "away"
+                            ? match.awayTeamLogo
+                            : undefined;
+                        const badgeTone =
+                          goal.team === "home"
+                            ? "border-primary/60 text-primary"
+                            : goal.team === "away"
+                            ? "border-emerald-500/60 text-emerald-400"
+                            : "border-border/60 text-muted-foreground";
+                        const playerInitials = getInitials(goal.player);
+                        return (
+                          <li
+                            key={goal.key}
+                            className="flex items-start gap-3 rounded-lg border border-border/50 bg-card/50 p-3"
+                          >
+                            <Badge variant="outline" className={`mt-0.5 ${badgeTone}`}>
+                              {goal.minuteLabel}
+                            </Badge>
+                            <div className="flex flex-1 items-start gap-3">
+                              <Avatar className="h-9 w-9 border border-border/40 bg-background">
+                                {teamLogo ? (
+                                  <AvatarImage src={teamLogo} alt={teamLabel} />
+                                ) : (
+                                  <AvatarFallback className="text-xs font-semibold">
+                                    {playerInitials}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-semibold">{goal.player}</span>
+                                  {goal.score ? (
+                                    <span className="text-xs font-semibold text-muted-foreground">
+                                      {goal.score}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {teamLabel}
+                                  {goal.assist ? ` · Assist: ${goal.assist}` : ""}
+                                  {goal.note ? ` · ${goal.note}` : ""}
+                                </div>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {cards.length ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Discipline</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ul className="space-y-3">
+                      {cards.map((cardEvent) => {
+                        const teamLabel =
+                          cardEvent.team === "home"
+                            ? match.homeTeam
+                            : cardEvent.team === "away"
+                            ? match.awayTeam
+                            : "Neutral";
+                        const teamLogo =
+                          cardEvent.team === "home"
+                            ? match.homeTeamLogo
+                            : cardEvent.team === "away"
+                            ? match.awayTeamLogo
+                            : undefined;
+                        const isRed = /red/i.test(cardEvent.cardType);
+                        const isYellow = /yellow/i.test(cardEvent.cardType);
+                        const badgeTone = isRed
+                          ? "border-red-500/60 text-red-500 bg-red-500/10"
+                          : isYellow
+                          ? "border-yellow-500/60 text-yellow-700 bg-yellow-500/10"
+                          : "border-border/60 text-muted-foreground bg-muted/20";
+                        const playerInitials = getInitials(cardEvent.player);
+
+                        return (
+                          <li
+                            key={cardEvent.key}
+                            className="flex items-start gap-3 rounded-lg border border-border/50 bg-card/50 p-3"
+                          >
+                            <Badge variant="outline" className={`mt-0.5 ${badgeTone}`}>
+                              {cardEvent.minuteLabel}
+                            </Badge>
+                            <div className="flex flex-1 items-start gap-3">
+                              <Avatar className="h-9 w-9 border border-border/40 bg-background">
+                                {teamLogo ? (
+                                  <AvatarImage src={teamLogo} alt={teamLabel} />
+                                ) : (
+                                  <AvatarFallback className="text-xs font-semibold">
+                                    {playerInitials}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="flex-1 space-y-1">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="font-semibold">{cardEvent.player}</span>
+                                  <span className="text-xs font-semibold uppercase text-muted-foreground">
+                                    {cardEvent.cardType}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {teamLabel}
+                                  {cardEvent.description ? ` · ${cardEvent.description}` : ""}
+                                </div>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {substitutions.length ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Substitutions</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ul className="space-y-3">
+                      {substitutions.map((sub) => {
+                        const teamLabel =
+                          sub.team === "home"
+                            ? match.homeTeam
+                            : sub.team === "away"
+                            ? match.awayTeam
+                            : "Neutral";
+                        const teamLogo =
+                          sub.team === "home"
+                            ? match.homeTeamLogo
+                            : sub.team === "away"
+                            ? match.awayTeamLogo
+                            : undefined;
+                        const badgeTone =
+                          sub.team === "home"
+                            ? "border-primary/60 text-primary"
+                            : sub.team === "away"
+                            ? "border-emerald-500/60 text-emerald-400"
+                            : "border-border/60 text-muted-foreground";
+                        const changeLine =
+                          sub.playerOut && sub.playerIn
+                            ? `${sub.playerOut} → ${sub.playerIn}`
+                            : sub.playerIn ?? sub.playerOut ?? "Substitution";
+                        const primaryName = sub.playerIn ?? sub.playerOut ?? teamLabel;
+                        return (
+                          <li
+                            key={sub.key}
+                            className="flex items-start gap-3 rounded-lg border border-border/50 bg-card/50 p-3"
+                          >
+                            <Badge variant="outline" className={`mt-0.5 ${badgeTone}`}>
+                              {sub.minuteLabel}
+                            </Badge>
+                            <div className="flex flex-1 items-start gap-3">
+                              <Avatar className="h-9 w-9 border border-border/40 bg-background">
+                                {teamLogo ? (
+                                  <AvatarImage src={teamLogo} alt={teamLabel} />
+                                ) : (
+                                  <AvatarFallback className="text-xs font-semibold">
+                                    {getInitials(primaryName)}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="flex-1 space-y-1">
+                                <div className="font-semibold">{changeLine}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {teamLabel}
+                                  {sub.reason ? ` · ${sub.reason}` : ""}
+                                </div>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {fouls.length ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Fouls</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <ul className="space-y-3">
+                      {fouls.map((foul) => {
+                        const teamLabel =
+                          foul.team === "home"
+                            ? match.homeTeam
+                            : foul.team === "away"
+                            ? match.awayTeam
+                            : foul.team === "neutral"
+                            ? "Neutral"
+                            : "Unspecified";
+                        const teamLogo =
+                          foul.team === "home"
+                            ? match.homeTeamLogo
+                            : foul.team === "away"
+                            ? match.awayTeamLogo
+                            : undefined;
+                        return (
+                          <li
+                            key={foul.key}
+                            className="flex items-start gap-3 rounded-lg border border-border/50 bg-card/50 p-3"
+                          >
+                            <Badge variant="outline" className="mt-0.5 border-border/60 text-muted-foreground">
+                              {foul.minuteLabel}
+                            </Badge>
+                            <div className="flex flex-1 items-start gap-3">
+                              <Avatar className="h-9 w-9 border border-border/40 bg-background">
+                                {teamLogo ? (
+                                  <AvatarImage src={teamLogo} alt={teamLabel} />
+                                ) : (
+                                  <AvatarFallback className="text-xs font-semibold">
+                                    {getInitials(foul.description)}
+                                  </AvatarFallback>
+                                )}
+                              </Avatar>
+                              <div className="flex-1 space-y-1">
+                                <div className="font-semibold">{foul.description}</div>
+                                <div className="text-xs text-muted-foreground">{teamLabel}</div>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {leaders ? (
+                <LeadersCard
+                  leaders={leaders}
+                  homeTeam={match.homeTeam}
+                  awayTeam={match.awayTeam}
+                  homeLogo={match.homeTeamLogo}
+                  awayLogo={match.awayTeamLogo}
+                />
+              ) : null}
+            </div>
           </TabsContent>
 
           <TabsContent value="league" className="space-y-4">
@@ -1545,8 +2406,30 @@ export default function MatchPage() {
           </TabsContent>
 
           <TabsContent value="analysis" className="space-y-6">
-            {/* Highlights section removed as requested */}
-            {extrasLoading ? (
+            {plan !== "pro" ? (
+              <Card>
+                <CardContent className="py-16">
+                  <div className="flex flex-col items-center text-center space-y-4 max-w-sm mx-auto">
+                    <div className="mx-auto h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Image
+                        src="/logo/chatbot.svg"
+                        alt="Analytics Locked"
+                        width={32}
+                        height={32}
+                        className="h-8 w-8"
+                      />
+                    </div>
+                    <h3 className="text-xl font-bold">Upgrade to view analytics</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Start a 7-day free trial of Sports Analysis Pro to unlock our AI assistant for game plans, stats, and predictions.
+                    </p>
+                    <Button asChild className="mt-2">
+                      <Link href="/pro">Upgrade to Pro</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : extrasLoading ? (
               <Card>
                 <CardContent className="p-6">
                   <div className="text-sm text-muted-foreground">Loading analysis data...</div>
