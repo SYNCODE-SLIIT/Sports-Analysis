@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, type KeyboardEventHandler } from "react";
 import { motion } from "framer-motion";
 // Removed Link; navigation is handled programmatically
 import { useRouter } from "next/navigation";
@@ -25,6 +26,50 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
   const hasScore =
     typeof fixture.home_score === "number" &&
     typeof fixture.away_score === "number";
+  const navigateToMatch = useCallback(() => {
+    try {
+      const id = pickEventId(fixture as unknown as Record<string, unknown>);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("sa_selected_event_card", JSON.stringify(fixture));
+      }
+      if (user && supabase) {
+        void (async () => {
+          try {
+            const title = `${fixture.home_team} vs ${fixture.away_team}`;
+            const teams = [fixture.home_team, fixture.away_team].filter(Boolean);
+            const league = fixture.league ?? null;
+            const { data: item_id } = await supabase.rpc("ensure_match_item", {
+              p_event_id: String(id),
+              p_title: title,
+              p_teams: teams,
+              p_league: league,
+              p_popularity: 0,
+            });
+            if (item_id) {
+              await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: "click" });
+              try {
+                bumpInteractions();
+              } catch {
+                // no-op if bump fails
+              }
+            }
+          } catch {
+            // ignore analytics failures
+          }
+        })();
+      }
+      router.push(`/match/${encodeURIComponent(id)}?sid=card`);
+    } catch {
+      router.push(`/match/${encodeURIComponent(String(fixture.id))}`);
+    }
+  }, [bumpInteractions, fixture, router, supabase, user]);
+
+  const handleKeyDown: KeyboardEventHandler<HTMLDivElement> = event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      navigateToMatch();
+    }
+  };
   
   const formatFixtureDateTime = (fixture: Fixture) => {
     const rawDate = fixture.date?.trim();
@@ -105,7 +150,14 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
       transition={{ duration: 0.2 }}
       className={className}
     >
-  <Card className="group relative h-[360px] min-h-[320px] w-full cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-xl">
+  <Card
+        className="group relative h-[360px] min-h-[320px] w-full cursor-pointer overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/60 hover:shadow-xl"
+        role="button"
+        tabIndex={0}
+        aria-label={`View match details for ${fixture.home_team} vs ${fixture.away_team}`}
+        onClick={navigateToMatch}
+        onKeyDown={handleKeyDown}
+      >
         <div className="pointer-events-none absolute inset-0 opacity-0 mix-blend-screen transition-opacity duration-300 group-hover:opacity-100">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-primary/10" />
         </div>
@@ -224,37 +276,9 @@ export function MatchCard({ fixture, insights, className }: MatchCardProps) {
               variant="default"
               size="sm"
               className="w-full justify-center rounded-full shadow-md transition-all duration-200 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
-              onClick={() => {
-                try {
-                  const id = pickEventId(fixture as unknown as Record<string, unknown>);
-                  if (typeof window !== "undefined") {
-                    sessionStorage.setItem("sa_selected_event_card", JSON.stringify(fixture));
-                  }
-                  // best-effort: log a click interaction by ensuring the match item and inserting interaction
-                  if (user && supabase) {
-                    void (async () => {
-                      try {
-                        const title = `${fixture.home_team} vs ${fixture.away_team}`;
-                        const teams = [fixture.home_team, fixture.away_team].filter(Boolean);
-                        const league = fixture.league ?? null;
-                        const { data: item_id } = await supabase.rpc("ensure_match_item", {
-                          p_event_id: String(id),
-                          p_title: title,
-                          p_teams: teams,
-                          p_league: league,
-                          p_popularity: 0,
-                        });
-                        if (item_id) {
-                          await supabase.from("user_interactions").insert({ user_id: user.id, item_id, event: "click" });
-                          try { bumpInteractions(); } catch {}
-                        }
-                      } catch {}
-                    })();
-                  }
-                  router.push(`/match/${encodeURIComponent(id)}?sid=card`);
-                } catch {
-                  router.push(`/match/${encodeURIComponent(String(fixture.id))}`);
-                }
+              onClick={event => {
+                event.stopPropagation();
+                navigateToMatch();
               }}
             >
               View Details

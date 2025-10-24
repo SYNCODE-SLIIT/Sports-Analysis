@@ -1,4 +1,4 @@
-import { parseFixtures, parseHighlights, type Fixture, type Highlight } from "@/lib/schemas";
+import { parseFixtures, parseHighlights, parseLeagues, type Fixture, type Highlight, type League } from "@/lib/schemas";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -41,12 +41,13 @@ export interface NlSearchResponse {
   meta?: Record<string, unknown>;
 }
 
-export type NlHitKind = "matches" | "highlights" | "generic";
+export type NlHitKind = "matches" | "highlights" | "leagues" | "generic";
 
 export interface NlHitInterpretation {
   kind: NlHitKind;
   fixtures?: Fixture[];
   highlights?: Highlight[];
+  leagues?: League[];
   raw: NlSearchHit;
 }
 
@@ -89,6 +90,13 @@ function interpretHit(hit: NlSearchHit): NlHitInterpretation {
   if (intent === "video.highlights" || intent.includes("highlights")) {
     const highlights = parseHighlights(items);
     return { kind: "highlights", highlights, raw: hit };
+  }
+
+  if (intent.includes("league") || intent === "leagues.list") {
+    const leagues = parseLeagues(items).filter((league) => Boolean(league.id) && Boolean(league.name));
+    if (leagues.length > 0) {
+      return { kind: "leagues", leagues, raw: hit };
+    }
   }
 
   return { kind: "generic", raw: hit };
