@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { DataObject } from "@/lib/collect";
 
@@ -443,14 +444,55 @@ function H2HSection({ data, homeTeam, awayTeam }: { data: { matches: DataObject[
     <div className="space-y-3 text-sm text-muted-foreground">
       {data.matches.slice(0, 6).map((match, idx) => {
         const rec = match as Record<string, unknown>;
-        const score = pickString(rec, ["final_score", "score", "result"]);
+        // Prefer explicit fields for team names, logos, and score
+        const home = pickString(rec, ["event_home_team", "home_team", "home", "homeTeam"]);
+        const away = pickString(rec, ["event_away_team", "away_team", "away", "awayTeam"]);
+        const homeLogo = pickString(rec, ["home_team_logo", "home_logo", "homeTeamLogo"]);
+        const awayLogo = pickString(rec, ["away_team_logo", "away_logo", "awayTeamLogo"]);
+        const score = pickString(rec, ["event_final_result", "final_score", "score", "result"]);
         const venue = pickString(rec, ["venue", "location"]);
         const date = pickString(rec, ["date", "played_on", "match_date"]);
         const competition = pickString(rec, ["competition", "league"]);
         return (
-          <div key={`${competition}-${idx}`} className="rounded-lg border p-3">
-            <div className="font-semibold text-foreground">{score || `${homeTeam} vs ${awayTeam}`}</div>
-            <div>{[competition, venue, date].filter(Boolean).join(" • ") || "Details unavailable"}</div>
+          <div key={`${competition || home + '-' + away}-${idx}`} className="rounded-lg border p-3 flex items-center gap-4">
+            <div className="flex items-center gap-2 min-w-0">
+              {homeLogo ? (
+                <Image
+                  src={homeLogo}
+                  alt={home || homeTeam}
+                  width={28}
+                  height={28}
+                  className="w-7 h-7 rounded object-contain border bg-white"
+                  unoptimized
+                />
+              ) : (
+                <span className="w-7 h-7 flex items-center justify-center rounded bg-muted/40 border text-xs font-bold text-primary">
+                  {(home || homeTeam).substring(0,2).toUpperCase()}
+                </span>
+              )}
+              <span className="font-semibold text-foreground truncate max-w-[80px]">{home || homeTeam}</span>
+            </div>
+            <div className="flex-shrink-0 font-bold text-lg text-foreground tabular-nums">{score || '-'}</div>
+            <div className="flex items-center gap-2 min-w-0">
+              {awayLogo ? (
+                <Image
+                  src={awayLogo}
+                  alt={away || awayTeam}
+                  width={28}
+                  height={28}
+                  className="w-7 h-7 rounded object-contain border bg-white"
+                  unoptimized
+                />
+              ) : (
+                <span className="w-7 h-7 flex items-center justify-center rounded bg-muted/40 border text-xs font-bold text-primary">
+                  {(away || awayTeam).substring(0,2).toUpperCase()}
+                </span>
+              )}
+              <span className="font-semibold text-foreground truncate max-w-[80px]">{away || awayTeam}</span>
+            </div>
+            <div className="ml-auto text-xs text-muted-foreground text-right min-w-[120px]">
+              {[competition, venue, date].filter(Boolean).join(" • ") || "Details unavailable"}
+            </div>
           </div>
         );
       })}
