@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export function UpgradeToProModal({ plan }: { plan: "free" | "pro" | string }) {
   const [open, setOpen] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if ((plan ?? "free").toLowerCase() === "free") {
@@ -27,8 +28,13 @@ export function UpgradeToProModal({ plan }: { plan: "free" | "pro" | string }) {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Maybe later
             </Button>
-            <Button asChild>
-              <Link href="/pro">Start free trial</Link>
+            <Button
+              onClick={() => {
+                setOpen(false);
+                router.push("/pro");
+              }}
+            >
+              Start free trial
             </Button>
           </div>
         </div>

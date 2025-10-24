@@ -752,7 +752,7 @@ export default function MyTeamsPage() {
     [leagues.length, teams.length, topSuggestions.length],
   );
 
-  const visibleTeams = useMemo(() => (isPro ? teams : teams.slice(0, 3)), [teams, isPro]);
+  const visibleTeams = useMemo(() => (isPro ? teams : teams.slice(0, 4)), [teams, isPro]);
   const visibleLeagues = useMemo(() => (isPro ? leagues : leagues.slice(0, 3)), [leagues, isPro]);
   const showTeamLimitNotice = !isPro && teams.length > 3;
   const showLeagueLimitNotice = !isPro && leagues.length > 3;
