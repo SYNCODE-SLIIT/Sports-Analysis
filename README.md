@@ -1,265 +1,313 @@
-# Sports Analysis — Project Overview
+# Athlete
 
-## Quick task receipt & plan
+> Multi-agent sports analysis assistant built for fans.
 
-- Task: Add a complete README at the repository root containing project structure, file descriptions, a deep dive into `sports-ai/backend/app/agents/collector.py`, API endpoints used, usage examples, limitations, and PDF instructions.
-- Plan: Create `README.md` at repo root with a clear checklist, project layout, detailed collector reference, code usage examples, recommendations, and steps to produce a PDF.
+Athlete is a multi-agent football intelligence platform that fuses live data, model-driven analysis, and generative AI to deliver match insights in real time. The system combines a Next.js 15 web app, a FastAPI orchestration layer, Supabase for persistence, and Stripe-backed subscriptions so fans can move from live scores to deep analytics and AI-powered commentary.
 
-## Checklist
+## Live Demo
 
-- [x] Create a root `README.md` with a full project overview
-- [x] Document folder/file responsibilities
-- [x] Provide an in-depth explanation of `collector.py` (data shapes, helper functions, endpoints, public API)
-- [x] Include usage examples and edge-cases
-- [x] Add recommended improvements and testing suggestions
-- [x] Provide instructions to generate a PDF from the Markdown
+- https://athlete-analysis.vercel.app/
 
----
+## Highlights
 
-## Summary
+- Live matches and win probability dashboards with best-player heuristics (`web/src/app/page.tsx`, `sports-ai/backend/app/agents/analysis_agent.py#L1`).
+- Highlights and timeline storytelling pulled from AllSports with custom tagging (`sports-ai/backend/app/services/highlight_search.py`).
+- Personalized news and recommendation feeds powered by Supabase RPCs (`web/src/hooks/useRecommendations.ts`).
+- ATHLETE AI chatbot for Pro members, orchestrating Groq models with Tavily search (`sports-ai/backend/app/services/chatbot.py`).
+- My Teams personalization with cached logos and favorite limits (`web/src/app/my-teams/page.tsx`).
+- Stripe-backed Pro plan with 7-day trial, billing portal, and admin controls (`web/src/app/api/stripe`, `web/src/app/admin/AdminDashboard.tsx`).
 
-This repository — "Sports Analysis" — contains a small sports analytics project with a backend collector client for TheSportsDB, frontend scaffolding, docs, and notebooks. The most important active component is the synchronous client at `sports-ai/backend/app/agents/collector.py`, which fetches leagues, teams, matches and timelines from TheSportsDB v1, normalizes responses into Python dataclasses, and applies a polite retry/throttle strategy suitable for backend use.
+## Tech Stack
 
-This README captures the full project structure and a detailed reference for `collector.py` so contributors and maintainers can understand, run, and extend the project.
+- Frontend: Next.js 15, React 19, Tailwind v4, Radix UI, SWR, TanStack Query.
+- Backend: FastAPI, RouterCollector, AllSports & TheSportsDB adapters, custom analysis agents.
+- Data & Auth: Supabase (Postgres, Auth, RPC, Realtime).
+- Payments: Stripe subscriptions and billing portal.
+- AI & Search: Groq chat models, Tavily web search.
 
----
-
-## Project layout (top-level)
+## Repository layout
 
 ```
-<repo root>
-├─ README.md                # (this file)
-├─ requirements.txt         # Python dependencies
+.
+├─ run_server.py
 ├─ sports-ai/
-│  ├─ README.md
-│  ├─ backend/
-│  │  ├─ app/
-│  │  │  ├─ agents/
-│  │  │  │  ├─ collector.py         # main HTTP client for TheSportsDB (detailed below)
-│  │  │  │  ├─ demo_collector.py    # example/demo usage of the collector
-│  │  │  │  └─ SAMPLE.md
-│  │  │  ├─ models/                 # dataclasses or Pydantic models (placeholder)
-│  │  │  ├─ routers/                # API route handlers (FastAPI/Flask) (placeholder)
-│  │  │  └─ utils/                  # backend utilities (placeholder)
-│  │  └─ tests/                     # unit tests (placeholder)
-│  ├─ data/                         # datasets, fixtures (placeholder)
-│  ├─ docs/                         # documentation (placeholder)
-│  ├─ frontend/                     # UI code (placeholder)
-│  └─ notebooks/                    # Jupyter notebooks (placeholder)
+│  └─ backend/app/
+│     ├─ main.py
+│     ├─ routers/router_collector.py
+│     ├─ agents/
+│     │  ├─ analysis_agent.py
+│     │  ├─ collector_agent.py
+│     │  └─ collector.py
+│     ├─ services/
+│     │  ├─ chatbot.py
+│     │  ├─ highlight_search.py
+│     │  └─ news_feed.py
+│     └─ utils/http_client.py
+└─ web/
+   ├─ src/app/               # Next.js routes, including /match, /my-teams, /chatbot, /admin
+   ├─ src/components/        # UI, chatbot, plan-aware layouts
+   ├─ src/lib/               # API helpers, Supabase clients, Stripe helpers
+   ├─ src/hooks/             # Plan, recommendations, win probability
+   ├─ supabase.sql           # Core schema and RPCs
+   ├─ subscriptions.sql      # Stripe subscription schema
+   └─ admin_controls.sql     # Admin tables and functions
 ```
 
-Files marked "placeholder" are present in the repo as `SAMPLE.md` or placeholder directories and should be replaced with real artifacts as the project grows.
+## Environment configuration
 
----
+Create two env files:
 
-## Root purpose & responsibilities
+- `.env` for the FastAPI backend (loaded by `run_server.py`).
+- `web/.env.local` for the Next.js app.
 
-- Backend: provide APIs and data normalization for sports analytics using TheSportsDB.
-- Frontend: UI scaffolding for presenting analytics and match data.
-- Data: permanent or temporary storage of datasets/results used in analyses.
-- Notebooks: exploratory data analysis and prototyping.
+### Backend (FastAPI)
 
----
+| Variable                | Required           | Description                                                                                                             |
+| ----------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `ALLSPORTS_API_KEY`     | Yes                | Key for the AllSports football API used by `AllSportsRawAgent` (`sports-ai/backend/app/agents/collector_agent.py#L31`). |
+| `ALLSPORTS_BASE_URL`    | No                 | Override the AllSports API base URL if you use a proxy.                                                                 |
+| `THESPORTSDB_API_KEY`   | No                 | Key for TheSportsDB fallback (`sports-ai/backend/app/utils/http_client.py#L6`). Defaults to the public demo key.        |
+| `NEWS_API_KEY`          | Yes (to show news) | News provider key required by `LeagueNewsService` (`sports-ai/backend/app/services/news_feed.py#L18`).                  |
+| `NEWS_API_URL`          | No                 | Custom endpoint for the news service.                                                                                   |
+| `CHATBOT_HISTORY_LIMIT` | No                 | Adjusts how many prior messages the chatbot keeps.                                                                      |
 
-## Detailed reference: `sports-ai/backend/app/agents/collector.py`
+### AI & Search
 
-This section documents the file fully so you can maintain, extend, or refactor it.
+| Variable                                                                             | Required | Description                                                                                                           |
+| ------------------------------------------------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `GROQ_API_KEY`                                                                       | Yes      | Auth token to call Groq chat completions for planner/writer models (`sports-ai/backend/app/services/chatbot.py#L74`). |
+| `GROQ_PLANNER_MODEL`                                                                 | No       | Override the planner model name; defaults to `llama3-8b-8192`.                                                        |
+| `GROQ_WRITER_MODEL`                                                                  | No       | Override the writer model name; defaults to `llama3-70b-8192`.                                                        |
+| `GROQ_SUGGESTION_MODEL`                                                              | No       | Model used for suggested prompts.                                                                                     |
+| `GROQ_PLANNER_TEMPERATURE`, `GROQ_WRITER_TEMPERATURE`, `GROQ_SUGGESTION_TEMPERATURE` | No       | Tune output variability.                                                                                              |
+| `TAVILY_API_KEY` (or `TAVIL_API_KEY`)                                                | Yes      | API key required for Tavily web search in the chatbot planner.                                                        |
 
-### Purpose
+### Supabase (auth, RPC, preferences)
 
-A tiny synchronous client for TheSportsDB (v1). It:
+| Variable                        | Required | Description                                                                         |
+| ------------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Yes      | Public endpoint for the Supabase project (`web/src/lib/supabase/client.ts#L8`).     |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes      | Public anon key for browser clients.                                                |
+| `SUPABASE_URL`                  | Yes      | Service URL used by server-side routes (`web/src/lib/supabase/service-role.ts#L6`). |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Yes      | Service role key required for secure RPCs and Stripe webhook handlers.              |
 
-- Builds endpoint URLs using an API key from `THESPORTSDB_KEY` (defaults to the free dev key `"123"`).
-- Applies retries and backoff on transient failures.
-- Sleeps briefly between requests to stay reasonably under free-tier rate limits.
-- Normalizes raw JSON rows into typed `dataclass` models for downstream use.
-- Intentionally contains no printing or side effects; designed to be imported by backends or unit tests.
+### Stripe & payments
 
-### Configuration
+| Variable                                                                      | Required | Description                                                                                |
+| ----------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `STRIPE_SECRET_KEY`                                                           | Yes      | Server-side API key (`web/src/lib/stripe/client.ts#L7`).                                   |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`                                          | Yes      | Publishable key for client-side Stripe.js (`web/src/lib/stripe/public.ts#L9`).             |
+| `NEXT_PUBLIC_STRIPE_PRO_MONTHLY_PRICE`, `NEXT_PUBLIC_STRIPE_PRO_YEARLY_PRICE` | Yes      | Pro plan price IDs shown in UI (`web/SUPABASE_SUBSCRIPTIONS.md`).                          |
+| `STRIPE_WEBHOOK_SECRET`                                                       | Yes      | Secret to verify webhook signatures (`web/src/app/api/stripe/webhook/route.ts`).           |
+| `NEXT_PUBLIC_SITE_URL`                                                        | Yes      | Used for checkout success/cancel URLs (`web/src/app/api/stripe/create-checkout/route.ts`). |
 
-- `API_KEY = os.getenv("THESPORTSDB_KEY", "123")`
-- `BASE_URL = f"https://www.thesportsdb.com/api/v1/json/{API_KEY}"`
-- `TIMEOUT_S = 15.0` — per request timeout
-- `PAUSE_S = 0.35` — polite sleep between calls (aims to keep under ~30 req/min)
-- `RETRY_BACKOFFS = [0.5, 1.0, 2.0]` — simple retry delays for transient failures
+### Backend ↔ Frontend wiring
 
-### Data shapes (Python dataclasses)
+| Variable               | Required               | Description                                                                               |
+| ---------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `API_BASE_INTERNAL`    | Yes (server-to-server) | Internal FastAPI base URL for Next.js API routes (`web/src/app/api/summarizer/route.ts`). |
+| `NEXT_PUBLIC_API_BASE` | Optional               | If set, the browser can call FastAPI directly; otherwise, it uses Next.js proxies.        |
 
-- `League`:
+## Database setup (Supabase)
 
-  - id: str (from `idLeague`)
-  - name: str (from `strLeague`)
-  - sport: Optional[str] (from `strSport`)
-  - country: Optional[str] (from `strCountry`)
+Run these SQL files in order using the Supabase SQL editor or CLI:
 
-- `MatchSummary`:
+1. `web/supabase.sql` – creates profiles, user preferences, items, recommendation RPCs, cached logos, and interaction tracking.
+2. `web/subscriptions.sql` – provisions subscription table, trigger, policies, and plan snapshot view.
+3. `web/admin_controls.sql` – installs admin accounts, system flags, maintenance helpers, and admin dashboard RPCs.
 
-  - id: str (from `idEvent`)
-  - date: Optional[str] (raw `dateEvent` as returned by the API)
-  - league, home_team, away_team: Optional[str]
-  - home_score / away_score: Optional[int] (parsed from `intHomeScore`, `intAwayScore`)
-  - venue, status, video, thumb: Optional[str]
+Grant the service role access to execute the created functions, and ensure `public` schema RLS policies remain enabled as defined in the scripts.
 
-- `TimelineItem`:
+## Local development
 
-  - minute: Optional[int] (from `intTime`)
-  - type: str — normalized token like `GOAL`, `RED_CARD`, `YELLOW_CARD`, `SUB`, `PENALTY`, or `UNKNOWN`.
-  - team, player, detail: Optional[str]
-  - text: str — a human readable assembled line (e.g., `"45′ GOAL by John Doe (Team) — Header"`)
+1. **Install Python dependencies**
 
-- `MatchPackage`:
-  - event: MatchSummary
-  - timeline: List[TimelineItem]
-  - flags: Dict[str,bool] — keys: `has_timeline`, `has_stats`, `has_lineup`
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
 
-### Internal helpers
+2. **Install web dependencies**
 
-- `_sleep(t: float = PAUSE_S)` — wraps `time.sleep` for consistent throttling.
-- `_get(path: str, params: dict | None = None) -> dict | list` — core HTTP GET wrapper that:
-  - Builds `url = f"{BASE_URL}/{path.lstrip('/')}``
-  - Performs `httpx.get(url, params=params, timeout=TIMEOUT_S)`.
-  - Retries on status codes 429 and 5xx, and on `httpx.TimeoutException`, `httpx.TransportError`, `httpx.HTTPStatusError`.
-  - Uses `RETRY_BACKOFFS` between attempts.
-  - Returns `{}` if the API returns a dict whose values are all `None` (special-case handling for some API responses).
-  - Raises `RuntimeError` after exhausting retries.
-- `_to_int(x)` — safely parses integers, returns `None` for empty/invalid inputs.
-- `_country_aliases(name: str)` — returns common adjective/alias forms for a country name; used to fuzzily match league names to country.
-- `_normalize_league`, `_normalize_match_row`, `_normalize_timeline_row` — convert raw JSON rows into the dataclasses above. `TYPE_MAP` is used to normalize timeline event labels.
+   ```bash
+   cd web
+   npm install
+   ```
 
-### TheSportsDB endpoints used (v1)
+3. **Configure environment**
 
-The client calls these endpoints (paths match how collector constructs them):
+   - Populate `.env` with backend keys (AllSports, Groq, Tavily, News, Stripe).
+   - Populate `web/.env.local` with Supabase, Stripe, and API base values.
 
-- `search_all_leagues.php?c={country}&s={sport}` — filtered search by country & sport
-- `all_leagues.php`
-- `lookup_all_teams.php?id={league_id}`
-- `search_all_teams.php?l={league_name}`
-- `eventspastleague.php?id={league_id}`
-- `eventsnextleague.php?id={league_id}`
-- `eventslast.php?id={team_id}`
-- `eventsnext.php?id={team_id}`
-- `lookupevent.php?id={event_id}`
-- `lookuptimeline.php?id={event_id}`
-- `lookupeventstats.php?id={event_id}`
-- `lookuplineup.php?id={event_id}`
+4. **Start the FastAPI backend**
 
-Note: Endpoints return slightly different key names in JSON (`events`, `results`, `teams`, etc.) — the collector handles those variants.
+   ```bash
+   python run_server.py --reload --port 8000
+   ```
 
-### Public methods (behavior)
+   The server exposes `/health`, `/collect`, `/matches/*`, `/chatbot/web-search`, and mounts `/summarizer`.
 
-- `list_leagues(sport: str | None = None, country: str | None = None) -> List[League]`
+5. **Start the Next.js app**
 
-  - If both `sport` and `country` are provided: calls `search_all_leagues.php` first. If that returns empty, falls back to `all_leagues.php` and applies a local filter using `_country_aliases` and sport matching.
-  - Otherwise returns all leagues from `all_leagues.php`.
-  - Sleeps between calls to respect `PAUSE_S`.
+   ```bash
+   cd web
+   npm run dev
+   ```
 
-- `list_teams_in_league(league_id: str | None = None, league_name: str | None = None) -> List[dict]`
+   Visit http://localhost:3000. The app proxies backend requests through `/api/*` routes and expects the backend on `http://127.0.0.1:8000`.
 
-  - If `league_id` provided: calls `lookup_all_teams.php?id={league_id}`.
-  - If `league_name` provided: calls `search_all_teams.php?l={league_name}`.
-  - Returns pruned dicts containing keys: `idTeam`, `strTeam`, `strAlternate`, `strCountry`, `strStadium`, `strTeamBadge`.
+6. **Run Supabase migrations**
 
-- `list_matches_for_league(league_id: str, kind: str = "past", limit: int = 10) -> List[MatchSummary]`
+   Execute the SQL scripts above once per environment before logging in or running Stripe flows.
 
-  - `kind` controls whether to call `eventspastleague.php` or `eventsnextleague.php`.
-  - Returns up to `limit` normalized `MatchSummary` items.
+## Feature tour
 
-- `list_matches_for_team(team_id: str, kind: str = "last", limit: int = 5) -> List[MatchSummary]`
+- Home & live scoreboard – `web/src/app/page.tsx`: hero section, live/upcoming tabs, league fixtures, news preview, and analysis spotlight.
+- Live & upcoming matches – `web/src/components/LiveUpcomingTabs.tsx`: toggles between live data and scheduled fixtures using `events.live` and `events.list`.
+- League explorer – `web/src/app/leagues/page.tsx`: filters by country, track leagues, and persists favorites via Supabase with Pro limits.
+- News hub – `web/src/app/news/page.tsx`: league-aware articles and summary cards using the news service.
+- Match insights – `web/src/app/match/[eventId]/page.tsx`: lineups, rich timeline, best player heuristics, win probability charts, odds snapshots, and highlight reels.
+- My Teams – `web/src/app/my-teams/page.tsx`: manage favorite teams/leagues with cached logos, search integration, and Pro limits for saved items.
+- Chatbot – `web/src/app/chatbot/page.tsx` + `web/src/components/chatbot`: Pro-only chat surface backed by Groq + Tavily, with floating launcher and prompt suggestions.
+- Admin dashboard – `web/src/app/admin/AdminDashboard.tsx`: overview metrics, interactions sparklines, user list, subscriptions manager, and system flags (maintenance, highlights automation, AI alerts).
 
-  - `kind` chosen between `eventslast.php` and `eventsnext.php`.
+## Plans
 
-- `get_match(event_id: str) -> MatchPackage`
-  - Calls `lookupevent.php?id={event_id}`, extracts first event row and normalizes to `MatchSummary`.
-  - Calls `lookuptimeline.php?id={event_id}`, normalizes each timeline row.
-  - Calls `lookupeventstats.php` and `lookuplineup.php` to set flags in `MatchPackage.flags`.
+| Capability                                                        | Free Plan        | Pro Plan                            |
+| ----------------------------------------------------------------- | ---------------- | ----------------------------------- |
+| Live scores, fixtures, league tables                              | ✅               | ✅                                  |
+| Personalized news & recommendations                               | ✅               | ✅                                  |
+| Save favourite teams/leagues                                      | Up to 3 each     | Unlimited                           |
+| AI-powered match analytics (win prob, H2H summaries, best player) | Limited previews | Full access with continuous refresh |
+| Highlight search & video reels                                    | ✅               | ✅                                  |
+| ATHLETE AI chatbot                                                | 🔒               | ✅                                  |
+| Recommendations feed & interaction tracking                       | ✅               | ✅                                  |
+| Admin controls & Pro badge                                        | 🔒               | ✅                                  |
+| 7-day trial                                                       | —                | ✅ (auto-applied on first upgrade)  |
 
-### Normalization specifics
+## Backend API
 
-- `TYPE_MAP` maps human labels to canonical tokens:
-  - `"Goal" -> "GOAL"`
-  - `"Red Card" -> "RED_CARD"`
-  - `"Yellow Card" -> "YELLOW_CARD"`
-  - `"Substitution" -> "SUB"`
-  - `"Penalty" -> "PENALTY"`
-- `_normalize_timeline_row` composes a `text` field from the minute, normalized type (with underscores replaced by spaces), player, team and detail for easy display.
-- Scores are parsed via `_to_int`, returning `None` when missing or invalid.
+### POST `/collect`
 
-### Error handling & retry semantics
+Unified intent router; accepts `{ "intent": "events.list", "args": { ... } }` and dispatches to AllSports or TheSportsDB via `RouterCollector` (`sports-ai/backend/app/routers/router_collector.py#L44`).
 
-- Retries on 429 and 5xx with backoff delays.
-- Retries on `httpx` timeout and transport exceptions.
-- After exhausting retries, `_get` raises `RuntimeError("HTTP failed after retries: ...")`.
-- `_get` returns `{}` when the API returns a dict whose values are all `None` to signal an empty/no-data response for some endpoints.
-
-### Example usage (synchronous)
-
-```python
-from sports-ai.backend.app.agents.collector import SportsDBCollector
-
-c = SportsDBCollector()
-leagues = c.list_leagues(sport="Soccer", country="England")
-if leagues:
-    first = leagues[0]
-    teams = c.list_teams_in_league(league_id=first.id)
-    matches = c.list_matches_for_league(league_id=first.id, kind="past", limit=5)
-    if matches:
-        match_pkg = c.get_match(event_id=matches[0].id)
-        # Access match_pkg.event, match_pkg.timeline, match_pkg.flags
+```bash
+curl -s http://127.0.0.1:8000/collect \
+  -H "Content-Type: application/json" \
+  -d '{"intent":"analysis.winprob","args":{"eventId":"12345"}}'
 ```
 
-### Edge cases & behaviors to watch
+Response envelope:
 
-- Some API responses use `events` vs `results` vs `teams` keys. Collector handles common variants but API changes could break assumptions.
-- The API often returns empty or `null` strings; normalization uses empty string or `None` depending on context.
-- The special-case logic that returns `{}` for a dict with all-`None` values is based on observed API behavior — if the API changes format, this may need updating.
-
-### Known limitations & recommended improvements
-
-- Synchronous design: switch to `httpx.AsyncClient` if you integrate with async frameworks such as FastAPI.
-- Connection pooling: replace repeated `httpx.get` calls with a persistent `httpx.Client` (or `AsyncClient`) instance to reuse connections and reduce overhead.
-- Caching: add an in-memory TTL cache (or Redis) for repeated requests like league/team lists.
-- Rate limit handling: honor `Retry-After` header on 429, and add adaptive throttling.
-- Data validation: consider Pydantic models to validate and coerce API responses.
-- Date parsing: convert `dateEvent` to `datetime.date` for consistent handling.
-- Tests: add unit tests for normalization functions and API calls using mocking (e.g., `respx` for `httpx`).
-
----
-
-## Development recommendations & next steps
-
-- Add unit tests for `_normalize_*` functions and for `_get` using mocked HTTP responses.
-- Create `demo_collector.py` examples that call the collector and write JSON fixtures to `sports-ai/data/` for offline testing.
-- Add a small FastAPI router in `sports-ai/backend/app/routers/` that exposes endpoints backed by `SportsDBCollector`.
-- Consider adding typed Pydantic models and migrating dataclasses to Pydantic for schema validation.
-
----
-
-## How to generate a PDF from this README
-
-If you want a PDF copy of this README, install `pandoc` and a PDF engine (like `wkhtmltopdf` or a TeX distribution). Then run:
-
-```sh
-pandoc README.md -o project_overview.pdf
+```json
+{
+  "ok": true,
+  "intent": "analysis.winprob",
+  "data": {
+    "eventId": "12345",
+    "method": "form_logistic",
+    "probs": { "home": 0.47, "draw": 0.28, "away": 0.25 }
+  },
+  "meta": { "source": { "primary": "analysis" }, "trace": [...] }
+}
 ```
 
-Or use any Markdown → PDF tool or editor that supports exporting to PDF.
+### GET `/matches/details`
 
----
+Returns live and finished matches merged from providers for a date (`sports-ai/backend/app/main.py#L41`). Accepts `date=YYYY-MM-DD`.
 
-## Where to find things in the repo
+### GET `/matches/history`, `/matches/history_dual`, `/matches/history_raw`
 
-- Collector: `sports-ai/backend/app/agents/collector.py`
-- Demo usage: `sports-ai/backend/app/agents/demo_collector.py`
-- Requirements: `requirements.txt`
+Aggregated historical fixtures per league, dual-provider merging, or raw lists.
 
----
+### GET `/leagues`
 
-## Final notes
+Direct alias to `leagues.list`.
 
-This README is intended to be a single source of truth for the repository's current state and the `collector.py` client. If you want, I can:
+### POST `/chatbot/web-search`
 
-- Add targeted unit tests for the collector (with mocked HTTP responses),
-- Create an async refactor using `httpx.AsyncClient`, or
-- Generate the PDF in-repo and commit the PDF file as `docs/project_overview.pdf`.
+Routes chat questions through Groq planner & writer with Tavily context (`sports-ai/backend/app/routers/chatbot.py#L19`). Pro users call this via Next.js API (`web/src/app/api/chatbot/route.ts`).
 
-Tell me which of those you'd like next and I will implement it.
+### Summarizer (`/summarizer/summarize`)
+
+Mounted app from `sports-ai/backend/app/agents/summarizer.py` for event summaries. Accessed via `/api/summarizer` proxy.
+
+### Stripe webhooks
+
+`POST /api/stripe/webhook` (Next.js) listens for subscription events and updates Supabase (`web/src/app/api/stripe/webhook/route.ts`).
+
+## Agents and services
+
+- `AnalysisAgent` – computes win probability, form, and H2H (`sports-ai/backend/app/agents/analysis_agent.py#L34`).
+- `HighlightAgent` – merges AllSports and TSDB highlight feeds (`sports-ai/backend/app/agents/highlight_agent.py`).
+- `AllSportsRawAgent` – pass-through to AllSports with name-to-ID resolution and timeline synthesis (`sports-ai/backend/app/agents/collector_agent.py#L69`).
+- `CollectorAgentV2` – curated TheSportsDB fallback with rich ID resolution (`sports-ai/backend/app/agents/collector.py#L30`).
+- `LeagueNewsService` – wraps NewsAPI for curated articles (`sports-ai/backend/app/services/news_feed.py#L1`).
+- `ChatbotService` – orchestrates planner, search, and writer pipelines (`sports-ai/backend/app/services/chatbot.py#L20`).
+
+## Data & integrations
+
+- AllSports API: live fixtures, odds, comments, videos (requires paid key).
+- TheSportsDB: fallback for leagues, teams, timelines.
+- Tavily Search: current-event context for the chatbot.
+- Groq Models: planner/writer/tone control for AI answers.
+- Supabase: preferences, cached assets, recommendations (`web/supabase.sql`).
+- Stripe: subscriptions, webhooks, billing portal (`web/subscriptions.sql`).
+
+## Deployment notes
+
+- Deploy the Next.js app on Vercel or similar; set environment variables to point at your FastAPI base URL.
+- Run FastAPI on a managed service (Railway, Fly.io, Render) with the same `.env` you use locally. Expose ports 80/443 and ensure CORS widens to the web host (`sports-ai/backend/app/main.py#L23`).
+- Configure Stripe webhook endpoint to `https://<your-web-domain>/api/stripe/webhook`.
+- Supabase SQL scripts are idempotent and can be re-run safely when promoting environments.
+
+## Testing & quality
+
+- Backend unit tests live in `sports-ai/backend/app/tests/`; run with:
+
+  ```bash
+  pytest sports-ai/backend/app/tests
+  ```
+
+- Frontend linting:
+
+  ```bash
+  cd web
+  npm run lint
+  ```
+
+- Consider adding integration tests around `/collect` intents and Next.js API routes before production releases.
+
+## Troubleshooting
+
+- **Empty AllSports responses** – verify `ALLSPORTS_API_KEY` and provider quota; `RouterCollector` will fallback to TSDB, but some intents are AllSports-only.
+- **Chatbot refusing queries** – ensure both `GROQ_API_KEY` and `TAVILY_API_KEY` are set; missing keys throw `missing_credentials` errors (`sports-ai/backend/app/services/chatbot.py#L108`).
+- **Stripe checkout `price_xxx` errors** – set `NEXT_PUBLIC_STRIPE_PRO_MONTHLY_PRICE` and `NEXT_PUBLIC_STRIPE_PRO_YEARLY_PRICE` to real price IDs, not numeric amounts.
+- **Supabase RLS blocking inserts** – confirm service role key is available to server routes and the SQL scripts ran successfully.
+- **Missing logos** – run the app to warm `cached_teams`/`cached_leagues` tables; the My Teams page backfills logos automatically for Pro users.
+
+## Roadmap ideas
+
+- Async AllSports adapter to improve throughput.
+- Redis caching for fixture lists and highlights.
+- Expanded sport coverage beyond football.
+- Automated quality checks for AI answers with feedback loop.
+
+## Attributions & disclaimer
+
+- Data powered by AllSportsAPI and TheSportsDB – review and comply with their usage policies.
+- Chatbot answers are informational only and should not be treated as betting advice.
+- News summarisation leverages third-party APIs; respect source licenses when redistributing content.
+
+## License
+
+Athlete is released under the [Apache License 2.0](LICENSE).
+
+## Contributing & support
+
+- Fork and open pull requests; include tests and update documentation when behavior changes.
+- Use conventional commits where possible and run `pytest` / `npm run lint` before submitting.
+- For internal teams, open issues in the project tracker or contact the platform engineering group.
+
+Happy analyzing! ⚽️
