@@ -40,6 +40,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { parseHighlights, type Highlight } from "@/lib/schemas";
 import { usePlanContext } from "@/components/PlanProvider";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { getSiteOrigin } from "@/lib/url";
 
 type TeamSideValue = { home?: number; away?: number };
 type MatchStatEntry = {
@@ -1178,29 +1179,34 @@ function MatchPageInner() {
   const handleShare = async () => {
     if (!match) return;
     try {
-      const url = typeof window !== 'undefined'
-        ? `${window.location.origin}/match/${encodeURIComponent(match.eventId)}?sid=share`
-        : `/match/${encodeURIComponent(match.eventId)}?sid=share`;
+      const origin = getSiteOrigin();
+      const url = `${origin}/match/${encodeURIComponent(match.eventId)}?sid=card`;
       const title = `${match.homeTeam} vs ${match.awayTeam}`;
       const text = `Check out ${title} on Sports Analysis`;
-  if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      if (typeof navigator !== "undefined" && "share" in navigator) {
         try {
-          await (navigator as Navigator & { share?: (data: { title: string; text: string; url: string }) => Promise<void> }).share?.({ title, text, url });
-          toast.success('Shared');
-          await ensureMatchItemAndSend('share');
-          try { bumpInteractions(); } catch {}
+          await (navigator as Navigator & { share?: (data: { title: string; text: string; url: string }) => Promise<void> }).share?.({
+            title,
+            text,
+            url,
+          });
+          toast.success("Shared");
+          await ensureMatchItemAndSend("share");
+          try {
+            bumpInteractions();
+          } catch {}
           return;
-  } catch (err) {
-          // user cancelled share - do not show error
-          if (typeof err === 'object' && err !== null && 'name' in err && (err as { name?: string }).name === 'AbortError') return;
+        } catch (err) {
+          if (typeof err === "object" && err !== null && "name" in err && (err as { name?: string }).name === "AbortError") return;
         }
       }
-      // Fallback to copy link
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
-        toast.success('Link copied to clipboard');
-        await ensureMatchItemAndSend('share');
-        try { bumpInteractions(); } catch {}
+        toast.success("Link copied to clipboard");
+        await ensureMatchItemAndSend("share");
+        try {
+          bumpInteractions();
+        } catch {}
       }
     } catch {
       // ignore failures silently
