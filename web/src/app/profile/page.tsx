@@ -32,7 +32,7 @@ import { usePlanContext } from "@/components/PlanProvider";
 import { ProfilePlanSummary } from "@/components/ProfilePlan";
 import { UpgradeCta } from "@/components/pro/UpgradeCta";
 import { ProfileBillingManager } from "@/components/ProfileBillingManager";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 type ProfileState = {
   full_name: string;
@@ -1179,6 +1179,10 @@ export default function ProfilePage() {
         }}
       >
         <DialogContent className="sm:max-w-xl">
+          <DialogTitle className="sr-only">Manage subscription</DialogTitle>
+          <DialogDescription className="sr-only">
+            Update your Sports Analysis membership and billing preferences.
+          </DialogDescription>
           {plan === "pro" ? (
             <ProfileBillingManager
               key={planInfo.stripe_price_id ?? plan}
@@ -1217,7 +1221,7 @@ export default function ProfilePage() {
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="profile-action absolute top-1/2 -right-15 h-10 w-10 -translate-y-1/2 rounded-full hover:translate-y-0"
+                    className="profile-action absolute -bottom-3 -right-3 h-10 w-10 rounded-full"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploadingAvatar}
                   >
