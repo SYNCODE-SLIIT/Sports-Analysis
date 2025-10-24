@@ -5,7 +5,7 @@ import { Heart, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/components/AuthProvider";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
 import { searchLeagues, getTeam, getLeagueTable, postCollect, searchTeams } from "@/lib/collect";
@@ -281,6 +281,25 @@ const mergeLogoCache = (
   return next ?? prev;
 };
 
+const sanitizeLogoMap = (input: Record<string, unknown> | null | undefined): Record<string, string> => {
+  if (!input || typeof input !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!key) continue;
+    const logo = sanitizeLogoUrl(value);
+    if (logo) out[key] = logo;
+  }
+  return out;
+};
+
+const arraysEqual = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+};
+
 export default function MyTeamsPage() {
   const { user, supabase, loading } = useAuth();
   const { plan } = usePlanContext();
@@ -290,7 +309,6 @@ export default function MyTeamsPage() {
   const [teamLogoCache, setTeamLogoCache] = useState<Record<string, string>>({});
   const [leagueLogoCache, setLeagueLogoCache] = useState<Record<string, string>>({});
   const [addQuery, setAddQuery] = useState("");
-  const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching] = useState(false);
@@ -300,6 +318,16 @@ export default function MyTeamsPage() {
   const [activeSearchTab, setActiveSearchTab] = useState<"team" | "league">("team");
   const dialogInputRef = useRef<HTMLInputElement | null>(null);
   const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
+  const hydrationCompleteRef = useRef(false);
+  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastPersistedRef = useRef({
+    teams: [] as string[],
+    leagues: [] as string[],
+    teamLogos: {} as Record<string, string>,
+    leagueLogosMap: {} as Record<string, string>,
+  });
+  const savingRef = useRef(false);
+  const queuedSaveRef = useRef(false);
 
   const resolveLogoForDisplay = (displayName: string, userMap: Record<string,string>, cachedMap: Record<string,string>) => {
     const exact = userMap?.[displayName];
@@ -328,6 +356,7 @@ export default function MyTeamsPage() {
   useEffect(() => {
     if (!user) return;
     let mounted = true;
+    hydrationCompleteRef.current = false;
     (async () => {
       const { data } = await supabase
         .from("user_preferences")
@@ -335,21 +364,41 @@ export default function MyTeamsPage() {
         .eq("user_id", user.id)
         .single();
       if (!mounted) return;
-      setTeams(data?.favorite_teams ?? []);
-      setLeagues(data?.favorite_leagues ?? []);
-      // Prefer stored maps for instant logos if available
-      if (data?.favorite_team_logos && typeof data.favorite_team_logos === 'object') {
-        setTeamLogos(data.favorite_team_logos as Record<string,string>);
-      }
-      if (data?.favorite_league_logos && typeof data.favorite_league_logos === 'object') {
-        setLeagueLogosMap(data.favorite_league_logos as Record<string,string>);
-      }
+      const initialTeams = Array.isArray(data?.favorite_teams)
+        ? data.favorite_teams
+            .map(item => (typeof item === "string" ? item.trim() : ""))
+            .filter((item): item is string => item.length > 0)
+        : [];
+      const initialLeagues = Array.isArray(data?.favorite_leagues)
+        ? data.favorite_leagues
+            .map(item => (typeof item === "string" ? item.trim() : ""))
+            .filter((item): item is string => item.length > 0)
+        : [];
+      const initialTeamLogos = sanitizeLogoMap(data?.favorite_team_logos as Record<string, unknown> | null | undefined);
+      const initialLeagueLogos = sanitizeLogoMap(data?.favorite_league_logos as Record<string, unknown> | null | undefined);
+
+      setTeams(initialTeams);
+      setLeagues(initialLeagues);
+      setTeamLogos(initialTeamLogos);
+      setLeagueLogosMap(initialLeagueLogos);
+
+      lastPersistedRef.current = {
+        teams: initialTeams,
+        leagues: initialLeagues,
+        teamLogos: initialTeamLogos,
+        leagueLogosMap: initialLeagueLogos,
+      };
+      hydrationCompleteRef.current = true;
 
       // Load suggestions from RPC if available (ignore errors)
-    try {
-  const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
-  type Row = { team?: string };
-  const names = Array.isArray(rpc) ? rpc.map((r: unknown) => (r as Row)?.team).filter((v): v is string => typeof v === 'string' && v.trim().length > 0) : [];
+      try {
+        const { data: rpc } = await supabase.rpc("list_popular_teams", { limit_count: 25 });
+        type Row = { team?: string };
+        const names = Array.isArray(rpc)
+          ? rpc
+              .map((r: unknown) => (r as Row)?.team)
+              .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+          : [];
         setSuggestions(names);
         // Try to prefetch cached logos for suggestions so buttons can show icons
         try {
@@ -944,21 +993,31 @@ export default function MyTeamsPage() {
     });
   };
 
-  const save = async () => {
+  const persistPreferences = useCallback(async (options?: { showSuccess?: boolean }) => {
     if (!user) return;
-    setSaving(true);
-    try {
-      const sanitizedTeamsMap: Record<string, string> = {};
-      Object.entries(teamLogos).forEach(([key, value]) => {
-        const logo = sanitizeLogoUrl(value);
-        if (logo) sanitizedTeamsMap[key] = logo;
-      });
-      const sanitizedLeaguesMap: Record<string, string> = {};
-      Object.entries(leagueLogosMap).forEach(([key, value]) => {
-        const logo = sanitizeLogoUrl(value);
-        if (logo) sanitizedLeaguesMap[key] = logo;
-      });
 
+  const sanitizedTeamsMap = sanitizeLogoMap(teamLogos);
+  const sanitizedLeaguesMap = sanitizeLogoMap(leagueLogosMap);
+    const hasChanges =
+      !arraysEqual(teams, lastPersistedRef.current.teams) ||
+      !arraysEqual(leagues, lastPersistedRef.current.leagues) ||
+      !shallowEqualMap(sanitizedTeamsMap, lastPersistedRef.current.teamLogos) ||
+      !shallowEqualMap(sanitizedLeaguesMap, lastPersistedRef.current.leagueLogosMap);
+
+    if (!hasChanges) {
+      if (options?.showSuccess) {
+        toast.success("Saved your favorite teams");
+      }
+      return;
+    }
+
+    if (savingRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+
+    savingRef.current = true;
+    try {
       await supabase.from("user_preferences").upsert({
         user_id: user.id,
         favorite_teams: teams,
@@ -966,36 +1025,87 @@ export default function MyTeamsPage() {
         favorite_team_logos: sanitizedTeamsMap,
         favorite_league_logos: sanitizedLeaguesMap,
       });
-      // Upsert any known team logos into cached_teams
+
       try {
-        await Promise.all(teams.map(async (t) => {
-          const logo = sanitizeLogoUrl(teamLogos[t]);
-          if (logo) {
-            try { await supabase.rpc('upsert_cached_team', { p_provider_id: null, p_name: t, p_logo: logo, p_metadata: {} }); } catch {}
-          }
-        }));
-      } catch {}
-      // Upsert any known league logos into cached_leagues
-      try {
-        await Promise.all(leagues.map(async (l) => {
-          const logo = sanitizeLogoUrl(leagueLogosMap[l]);
-          if (logo) {
+        await Promise.all(
+          teams.map(async (t) => {
+            const logo = sanitizedTeamsMap[t] ?? sanitizeLogoUrl(teamLogos[t]);
+            if (!logo) return;
             try {
-              const { error: rpcErr } = await supabase.rpc('upsert_cached_league', { p_provider_id: null, p_name: l, p_logo: logo, p_metadata: {} });
-              if (rpcErr) console.debug('upsert_cached_league error', l, rpcErr);
-            } catch (e) { console.debug('upsert_cached_league threw', l, e); }
-          }
-        }));
+              await supabase.rpc('upsert_cached_team', {
+                p_provider_id: null,
+                p_name: t,
+                p_logo: logo,
+                p_metadata: {},
+              });
+            } catch {}
+          }),
+        );
       } catch {}
-      toast.success("Saved your favorite teams");
+
+      try {
+        await Promise.all(
+          leagues.map(async (l) => {
+            const logo = sanitizedLeaguesMap[l] ?? sanitizeLogoUrl(leagueLogosMap[l]);
+            if (!logo) return;
+            try {
+              const { error: rpcErr } = await supabase.rpc('upsert_cached_league', {
+                p_provider_id: null,
+                p_name: l,
+                p_logo: logo,
+                p_metadata: {},
+              });
+              if (rpcErr) console.debug('upsert_cached_league error', l, rpcErr);
+            } catch (error) {
+              console.debug('upsert_cached_league threw', l, error);
+            }
+          }),
+        );
+      } catch {}
+
+      lastPersistedRef.current = {
+        teams: [...teams],
+        leagues: [...leagues],
+        teamLogos: sanitizedTeamsMap,
+        leagueLogosMap: sanitizedLeaguesMap,
+      };
+
+      if (options?.showSuccess) {
+        toast.success("Saved your favorite teams");
+      }
     } catch {
       toast.error("Failed to save");
     } finally {
-      setSaving(false);
+      savingRef.current = false;
+      if (queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        void persistPreferences(options);
+      }
     }
-  };
+  }, [user, supabase, teams, leagues, teamLogos, leagueLogosMap]);
 
   // Live search teams via backend API, debounce via input onChange
+  useEffect(() => {
+    if (!user) return;
+    if (!hydrationCompleteRef.current) return;
+
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSaveTimeoutRef.current = null;
+      void persistPreferences();
+    }, 600);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+        autoSaveTimeoutRef.current = null;
+      }
+    };
+  }, [teams, leagues, teamLogos, leagueLogosMap, user, persistPreferences]);
+
   const debouncedQuery = useDebouncedValue(addQuery, 250);
 
   useEffect(() => {
@@ -1107,26 +1217,6 @@ export default function MyTeamsPage() {
               <p className="max-w-2xl text-sm text-muted-foreground md:text-base">
                 Pin the clubs and competitions you care about, then let ATHLETE surface fixtures, form streaks, and highlights the moment they matter.
               </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={() => {
-                  setActiveSearchTab("team");
-                  setAddQuery("");
-                  setIsAddDialogOpen(true);
-                }}
-                className="gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                Add favourites
-              </Button>
-              <Button variant="secondary" onClick={save} disabled={saving} className="gap-2">
-                {saving ? (
-                  <span>Saving…</span>
-                ) : (
-                  <span>Save preferences</span>
-                )}
-              </Button>
             </div>
           </div>
           <Card className="surface-card w-full max-w-sm backdrop-blur">
