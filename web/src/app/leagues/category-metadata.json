@@ -5,18 +5,19 @@
     "description": "Most-followed competitions worldwide, curated from recent trends.",
     "order": 0
   },
-  {
-    "id": "top_europe",
-    "title": "Top European Leagues",
-    "description": "Premier domestic competitions from England, Spain, Italy, Germany, and France.",
-    "order": 1
-  },
+
   {
     "id": "global_tournament",
     "title": "Global Tournaments",
     "description": "Flagship events where national teams compete on the world stage.",
-    "order": 2
+    "order": 1
     
+  },
+  {
+    "id": "continental_championship",
+    "title": "Continental Championships",
+    "description": "Major continental tournaments contested between national teams.",
+    "order": 2
   },
   {
     "id": "european_competition",
@@ -25,63 +26,15 @@
     "order": 3
   },
   {
-    "id": "other_europe",
-    "title": "Other European Leagues",
-    "description": "High-quality European leagues beyond the traditional top five.",
-    "order": 4
-  },
-  {
-    "id": "south_america",
-    "title": "South American Leagues",
-    "description": "Historic leagues from CONMEBOL nations.",
-    "order": 5
-  },
-  {
-    "id": "north_america",
-    "title": "North American Leagues",
-    "description": "Competitive leagues across the USA, Canada, and Mexico.",
-    "order": 6
-  },
-  {
-    "id": "north_america_competition",
-    "title": "North American Competitions",
-    "description": "Top continental competitions across CONCACAF.",
-    "order": 7
-  },
-  {
-    "id": "asia",
-    "title": "Asian Leagues",
-    "description": "Leading leagues from AFC member nations.",
-    "order": 8
-  },
-  {
-    "id": "asia_competition",
-    "title": "Asian Continental Competitions",
-    "description": "AFC club tournaments and cup competitions.",
-    "order": 9
-  },
-  {
-    "id": "africa_competition",
-    "title": "African Competitions",
-    "description": "CAF club competitions and regional cups.",
-    "order": 10
-  },
+  "id": "domestic",
+  "title": "Domestic Leagues & National Cups",
+  "description": "Top-level leagues and national cup competitions played within each country.",
+  "order": 4
+},
   {
     "id": "global_competition",
     "title": "Global Competitions",
     "description": "Worldwide tournaments featuring clubs or national teams.",
-    "order": 11
-  },
-    {
-    "id": "cross_border",
-    "title": "Cross-border / Special Leagues & Cups",
-    "description": "Competitions involving clubs from multiple countries or special formats.",
-    "order": 12
-  },
-  {
-    "id": "hybrid",
-    "title": "Hybrid Competitions",
-    "description": "Competitions combining group stages followed by knockout rounds.",
-    "order": 13
+    "order": 5
   }
 ]
