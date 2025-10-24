@@ -812,6 +812,25 @@ def _extract_date_window(s: str) -> Dict[str, str]:
         return _safe_date_range(today, today + timedelta(days=29))
     if re.search(r"\b(last|past)\s+year\b", normalized_low):
         return _safe_date_range(today - timedelta(days=364), today)
+    if re.search(r"\bthis\s+week\b", normalized_low):
+        start = today - timedelta(days=today.weekday())
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=6)
+        return _safe_date_range(start, end)
+    if re.search(r"\bthis\s+weekend\b", normalized_low):
+        weekend_start_offset = (5 - today.weekday()) % 7
+        start = (today + timedelta(days=weekend_start_offset)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=1)
+        return _safe_date_range(start, end)
+    if re.search(r"\bthis\s+month\b", normalized_low):
+        start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        next_month = (start + timedelta(days=32)).replace(day=1)
+        end = next_month - timedelta(days=1)
+        return _safe_date_range(start, end)
+    if re.search(r"\bthis\s+year\b", normalized_low):
+        start = today.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = today.replace(month=12, day=31, hour=0, minute=0, second=0, microsecond=0)
+        return _safe_date_range(start, end)
 
     return ents
 
@@ -948,20 +967,30 @@ def parse_nl_query(q: str) -> NLParsed:
     if "teamA" in ents and "teamB" in ents:
         a, b = ents["teamA"], ents["teamB"]
         ents.setdefault("teamName", a)
-        cands.append({
-            "intent": "h2h",
-            "args": {"h2h": f"{a}-{b}"},
-            "reason": "Parsed 'A vs B' head-to-head",
-        })
-        # Also try fixtures around today to catch scheduled match
         win = _extract_date_window(q_stripped)
-        args = {"teamName": a}
-        args.update({k: v for k, v in win.items() if k in ("date", "from", "to")})
-        if "date" in args:
-            date_val = args.pop("date")
-            args["from"] = date_val
-            args["to"] = date_val
-        cands.append({"intent": "events.list", "args": args, "reason": "Team A fixtures window"})
+        head_args: Dict[str, Any] = {
+            "teamName": a,
+            "teamA": a,
+            "teamB": b,
+            "opponentName": b,
+        }
+        if ents.get("leagueName"):
+            head_args["leagueName"] = ents["leagueName"]
+        if ents.get("countryName"):
+            head_args["countryName"] = ents["countryName"]
+        head_args.update({k: v for k, v in win.items() if k in ("date", "from", "to")})
+        if "date" in head_args:
+            date_val = head_args.pop("date")
+            head_args["from"] = date_val
+            head_args["to"] = date_val
+        if "from" not in head_args and "to" not in head_args:
+            today = datetime.now(timezone.utc).date()
+            default_window = 7
+            head_args["from"] = today.isoformat()
+            head_args["to"] = (today + timedelta(days=default_window)).isoformat()
+        head_args.setdefault("date", head_args.get("from"))
+        head_args.setdefault("timezone", "UTC")
+        cands.append({"intent": "events.list", "args": head_args, "reason": "Head-to-head fixtures window"})
 
     # 2) General matches search
     # live → events.live; else events.list with date/from-to if present
@@ -976,6 +1005,18 @@ def parse_nl_query(q: str) -> NLParsed:
     if "from" in ents and "to" in ents:
         base_args["from"] = ents["from"]
         base_args["to"] = ents["to"]
+    if (
+        (base_args.get("teamName") or base_args.get("leagueName"))
+        and "from" not in base_args
+        and "to" not in base_args
+        and not ents.get("live")
+    ):
+        today = datetime.now(timezone.utc).date()
+        default_window = 7
+        base_args["from"] = today.isoformat()
+        base_args["to"] = (today + timedelta(days=default_window)).isoformat()
+    base_args.setdefault("date", base_args.get("from"))
+    base_args.setdefault("timezone", "UTC")
 
     has_match_filters = bool(base_args)
 
@@ -984,6 +1025,21 @@ def parse_nl_query(q: str) -> NLParsed:
     if has_match_filters:
         # Only include fixtures search when we have meaningful filters to avoid empty-arg queries
         cands.append({"intent": "events.list", "args": base_args, "reason": "General fixtures search"})
+        if base_args.get("teamName"):
+            recent_args = dict(base_args)
+            today = datetime.now(timezone.utc).date()
+            recent_args["from"] = (today - timedelta(days=7)).isoformat()
+            recent_args["to"] = today.isoformat()
+            recent_args.pop("date", None)
+            recent_args.setdefault("timezone", base_args.get("timezone", "UTC"))
+            cands.append({"intent": "events.list", "args": recent_args, "reason": "Recent results window"})
+            live_args = {
+                "teamName": base_args.get("teamName"),
+                "leagueName": base_args.get("leagueName"),
+                "countryName": base_args.get("countryName"),
+                "timezone": base_args.get("timezone", "UTC"),
+            }
+            cands.append({"intent": "events.live", "args": live_args, "reason": "Live matches filter"})
 
     deduped: List[Dict[str, Any]] = []
     seen: set[tuple[str, tuple[tuple[str, Any], ...]]] = set()

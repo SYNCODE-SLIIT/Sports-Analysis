@@ -17,9 +17,10 @@ export function FloatingChatbot() {
   const { user } = useAuth();
   const { plan } = usePlanContext();
   const router = useRouter();
+  const isAdminRoute = pathname?.startsWith("/admin");
 
   // Don't show on login/signup pages
-  if (pathname?.startsWith("/auth/")) {
+  if (pathname?.startsWith("/auth/") || isAdminRoute) {
     return null;
   }
 

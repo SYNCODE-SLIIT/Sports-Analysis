@@ -56,8 +56,23 @@ export const zFixture = z.object({
   date: z.string(),
   time: z.string().optional(),
   league: z.string().optional(),
+  league_id: z.string().optional(),
+  league_country: z.string().optional(),
+  season: z.string().optional(),
+  round: z.string().optional(),
+  stage: z.string().optional(),
   status: z.string().optional(),
   venue: z.string().optional(),
+});
+
+export const zLeague = z.object({
+  id: z.string(),
+  name: z.string(),
+  country: z.string().optional(),
+  slug: z.string().optional(),
+  logo: z.string().optional(),
+  season: z.string().optional(),
+  category: z.string().optional(),
 });
 
 // Types derived from schemas
@@ -65,6 +80,7 @@ export type MatchInsights = z.infer<typeof zMatchInsights>;
 export type WinProb = z.infer<typeof zWinProb>;
 export type Event = z.infer<typeof zEvent>;
 export type Highlight = z.infer<typeof zHighlight>;
+export type League = z.infer<typeof zLeague>;
 export type Fixture = z.infer<typeof zFixture>;
 
 // Parse helpers
@@ -166,35 +182,48 @@ export function parseFixtures(data: unknown): Fixture[] {
     const date = pick(item, ['date', 'event_date', 'match_date', 'matchDate', 'strDate']);
     const time = pick(item, ['time', 'event_time', 'match_time', 'matchTime', 'strTime']);
     const league = pick(item, ['league', 'league_name', 'strLeague']);
+    const leagueId = pick(item, ['league_id', 'leagueId', 'league_key', 'idLeague', 'leagueKey']);
+    const leagueCountry = pick(item, ['country_name', 'league_country', 'country']);
+    const season = pick(item, ['season', 'league_season', 'strSeason']);
+    const round = pick(item, ['round', 'league_round', 'stage']);
+    const stage = pick(item, ['stage_name', 'stage']);
     const status = pick(item, ['status', 'event_status']);
     const venue = pick(item, ['venue', 'stadium', 'event_venue', 'strVenue', 'location']);
     // image/logo candidates (some providers embed team objects)
     const imgKeys = ['home_team_logo','team_home_badge','strHomeTeamBadge','homeBadge','home_logo','homeBadge','home_team_badge','team_logo','logo','team_logo','logo_url','team_logo_url','team_image','image','strTeamBadge'];
-    const pickImage = (obj: unknown, keys: string[]) => {
+    const pickImage = (obj: unknown, directKeys: string[], nestedKeys: string[]) => {
       const rec = (obj as Record<string, unknown>) || {};
-      for (const k of keys) {
+      for (const k of directKeys) {
         const v = rec[k];
         if (typeof v === 'string' && v.trim() !== '') return v;
       }
-      // nested shapes: home_team: { name, logo }
-      for (const cand of ['home_team', 'away_team']) {
-        const nested = rec[cand];
-        if (nested && typeof nested === 'object') {
-          for (const k of keys) {
-            const v = (nested as Record<string, unknown>)[k];
-            if (typeof v === 'string' && v.trim() !== '') return v;
-          }
-          // common nested key
-          const common = (nested as Record<string, unknown>)['logo'] || (nested as Record<string, unknown>)['badge'] || (nested as Record<string, unknown>)['image'];
-          if (typeof common === 'string' && common.trim() !== '') return common;
+      for (const nestedKey of nestedKeys) {
+        const nested = rec[nestedKey];
+        if (!nested || typeof nested !== 'object') continue;
+        for (const k of directKeys) {
+          const v = (nested as Record<string, unknown>)[k];
+          if (typeof v === 'string' && v.trim() !== '') return v;
         }
+        const common = (nested as Record<string, unknown>)['logo']
+          || (nested as Record<string, unknown>)['badge']
+          || (nested as Record<string, unknown>)['image'];
+        if (typeof common === 'string' && common.trim() !== '') return common;
       }
       return undefined;
     };
-    const homeLogo = pickImage(item, imgKeys) ?? undefined;
-    // for away logo try keys adapted for away
-    const imgKeysAway = imgKeys.map(k => k.replace(/^home_/, 'away_'));
-    const awayLogo = pickImage(item, imgKeysAway) ?? pickImage(item, imgKeys) ?? undefined;
+    const homeLogoKeys = imgKeys;
+    const awayLogoKeys = imgKeys.map(k => k.replace(/^home_/, 'away_').replace(/home/i, 'away'));
+
+    const homeLogo = pickImage(
+      item,
+      homeLogoKeys,
+      ['home_team', 'homeTeam', 'localteam', 'home', 'homeTeamData'],
+    ) ?? undefined;
+    const awayLogo = pickImage(
+      item,
+      awayLogoKeys,
+      ['away_team', 'awayTeam', 'visitorteam', 'away', 'awayTeamData'],
+    ) ?? undefined;
     const homeScore = collectScore(item, 'home');
     const awayScore = collectScore(item, 'away');
     return {
@@ -208,6 +237,11 @@ export function parseFixtures(data: unknown): Fixture[] {
       date: date ?? '',
       time,
       league,
+      league_id: leagueId,
+      league_country: leagueCountry,
+      season,
+      round,
+      stage,
       status,
       venue,
     };
@@ -219,4 +253,55 @@ export function parseFixtures(data: unknown): Fixture[] {
       return result.success ? result.data : null;
     })
     .filter(Boolean) as Fixture[];
+}
+
+export function parseLeagues(data: unknown): League[] {
+  if (!Array.isArray(data)) return [];
+
+  const pick = (obj: unknown, keys: string[]): string | undefined => {
+    const rec = (obj as Record<string, unknown>) || {};
+    for (const key of keys) {
+      const value = rec[key];
+      if (typeof value === "string" && value.trim() !== "") return value.trim();
+      if ((key.includes("id") || key.endsWith("_key") || key.endsWith("Key")) && typeof value === "number") {
+        return String(value);
+      }
+    }
+    return undefined;
+  };
+
+  const collect = (item: unknown): League | null => {
+    const id = pick(item, ["league_id", "leagueId", "league_key", "idLeague", "id", "key"]);
+    const name = pick(item, ["league_name", "league", "name", "strLeague", "display_name"]);
+    if (!id || !name) return null;
+    const country = pick(item, ["country_name", "country", "nation", "confederation"]);
+    const slug = pick(item, ["slug", "league_slug", "slug_name"]);
+    const logo = pick(item, [
+      "league_logo",
+      "logo",
+      "badge",
+      "league_badge",
+      "image",
+      "league_logo_path",
+      "league_logo_url",
+    ]);
+    const season = pick(item, ["season", "league_season", "current_season"]);
+    const category = pick(item, ["category", "type"]);
+
+    const normalized = {
+      id,
+      name,
+      country,
+      slug,
+      logo,
+      season,
+      category,
+    };
+    const result = zLeague.safeParse(normalized);
+    return result.success ? result.data : null;
+  };
+
+  return data
+    .map(collect)
+    .filter((entry): entry is League => Boolean(entry));
 }

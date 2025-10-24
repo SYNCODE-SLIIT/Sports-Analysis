@@ -39,6 +39,7 @@ from __future__ import annotations
 import os
 import time
 from typing import Any, Dict, Optional
+from difflib import SequenceMatcher
 
 import requests
 import joblib
@@ -59,6 +60,22 @@ ALLSPORTS_LEAGUES_TTL = max(int(os.environ.get("ALLSPORTS_LEAGUES_TTL", "3600"))
 _COUNTRIES_CACHE: Dict[str, Any] = {"data": None, "exp": 0.0}
 _LEAGUES_CACHE: Dict[str, Dict[str, Any]] = {}
 
+LEAGUE_ID_FALLBACK: Dict[str, str] = {
+    "premier league": "152",
+    "english premier league": "152",
+    "la liga": "302",
+    "liga": "302",
+    "serie a": "207",
+    "bundesliga": "175",
+    "ligue 1": "168",
+    "uefa champions league": "3",
+    "champions league": "3",
+    "uefa europa league": "4",
+    "europa league": "4",
+    "major league soccer": "332",
+    "mls": "332",
+    "eredivisie": "244",
+}
 
 # -----------------------
 # Errors
@@ -420,7 +437,110 @@ class AllSportsRawAgent:
         name_l = league_name.strip().lower()
         exact = [l for l in leagues if (l.get("league_name") or "").strip().lower() == name_l]
         cand = exact or [l for l in leagues if name_l in (l.get("league_name") or "").strip().lower()]
-        return (cand[0].get("league_key") if cand and cand[0].get("league_key") else None)
+        league_key = (cand[0].get("league_key") if cand and cand[0].get("league_key") else None)
+        if league_key:
+            return str(league_key)
+        fallback = LEAGUE_ID_FALLBACK.get(name_l)
+        if fallback:
+            trace.append({"step": "league_fallback_id", "leagueName": league_name, "resolved": fallback})
+            return fallback
+        return None
+
+    def _pick_best_team(self, query: str, teams: list[dict]) -> Optional[dict]:
+        q_norm = query.strip().lower()
+        if not q_norm:
+            return None
+
+        def score_name(name: str) -> float:
+            candidate = name.strip().lower()
+            if not candidate:
+                return 0.0
+            if candidate == q_norm:
+                return 1.0
+            if candidate.startswith(q_norm):
+                return 0.94
+            if q_norm in candidate:
+                # reward matches on word boundaries
+                tokens = candidate.split()
+                if any(token == q_norm for token in tokens):
+                    return 0.92
+                return 0.9
+            return SequenceMatcher(None, candidate, q_norm).ratio()
+
+        best: Optional[dict] = None
+        best_score = -1.0
+
+        name_fields = (
+            "team_name",
+            "team_name_official",
+            "team_name_en",
+            "team_name_english",
+            "team_name_short",
+            "team_name_common",
+        )
+
+        for team in teams:
+            names = [
+                str(team.get(field)).strip()
+                for field in name_fields
+                if isinstance(team.get(field), str) and str(team.get(field)).strip()
+            ]
+            if not names:
+                continue
+            score = max(score_name(name) for name in names)
+            if score > best_score:
+                best = team
+                best_score = score
+            elif score == best_score and best is not None:
+                # tie-breaker: prefer team with numeric key (provider canonical)
+                best_key = best.get("team_key") or best.get("team_id")
+                candidate_key = team.get("team_key") or team.get("team_id")
+                if candidate_key and not best_key:
+                    best = team
+        return best
+
+    def _resolve_team_id(
+        self,
+        team_name: str,
+        trace: list[dict],
+        *,
+        leagueId: str | None = None,
+        countryId: str | None = None,
+    ) -> tuple[Optional[str], Optional[str]]:
+        if not team_name:
+            return (None, None)
+        query = team_name.strip()
+        if not query:
+            return (None, None)
+
+        params: Dict[str, Any] = {"teamName": query}
+        if leagueId:
+            params["leagueId"] = leagueId
+        if countryId:
+            params["countryId"] = countryId
+
+        meta, data = self._call("Teams", params, trace)
+        teams = (data or {}).get("result") or []
+        if not teams:
+            return (None, None)
+
+        best = self._pick_best_team(query, teams)
+        if not best:
+            return (None, None)
+
+        team_key = best.get("team_key") or best.get("team_id") or best.get("teamId") or best.get("id")
+        if team_key is None:
+            return (None, None)
+
+        canonical = (
+            best.get("team_name")
+            or best.get("team_name_official")
+            or best.get("team_name_en")
+            or best.get("team_name_english")
+            or best.get("team_name_short")
+        )
+
+        return str(team_key), canonical
 
     def _ensure_ids_from_names(self, args: Dict[str, Any], trace: list[dict]) -> Dict[str, Any]:
         """
@@ -447,28 +567,79 @@ class AllSportsRawAgent:
             if lid:
                 a["leagueId"] = lid
 
-        # teamName: AllSports Teams/Players endpoints already accept teamName,
-        # but for Fixtures/Livescore it requires teamId. We'll try to resolve to teamId using Teams.
-        if a.get("teamName") and not a.get("teamId"):
-            # Try Teams with teamName (+ optional leagueId) to find a precise id
-            q = {"teamName": a["teamName"]}
-            if a.get("leagueId"):
-                q["leagueId"] = a["leagueId"]
-            meta, data = self._call("Teams", q, trace)
-            teams = (data or {}).get("result") or []
-            name_l = a["teamName"].strip().lower()
-            exact = [t for t in teams if (t.get("team_name") or "").strip().lower() == name_l]
-            pick = (exact[0] if exact else (teams[0] if teams else None))
-            if pick and pick.get("team_key"):
-                a["teamId"] = pick["team_key"]
+        league_id = str(a.get("leagueId")) if a.get("leagueId") else None
+        country_id = str(a.get("countryId")) if a.get("countryId") else None
+        team_lookup_cache: Dict[tuple[str, Optional[str], Optional[str]], tuple[Optional[str], Optional[str]]] = {}
 
-        # Trace when teamName could not be resolved to an id (helps router fallback decisions)
-        if a.get("teamName") and not a.get("teamId"):
-            trace.append({
-                "step": "asapi_team_resolve_failed",
-                "teamName": a.get("teamName"),
-                "leagueId": a.get("leagueId")
-            })
+        def resolve_team_field(field: str) -> tuple[Optional[str], Optional[str]]:
+            raw = a.get(field)
+            if not isinstance(raw, str) or not raw.strip():
+                return (None, None)
+            key = (raw.strip().lower(), league_id, country_id)
+            if key not in team_lookup_cache:
+                team_lookup_cache[key] = self._resolve_team_id(raw, trace, leagueId=league_id, countryId=country_id)
+            return team_lookup_cache[key]
+
+        team_name_raw = a.get("teamName") if isinstance(a.get("teamName"), str) else None
+        if team_name_raw and not a.get("teamId"):
+            team_id, canonical = resolve_team_field("teamName")
+            if team_id:
+                a["teamId"] = team_id
+                if canonical:
+                    a["teamName"] = canonical
+            else:
+                trace.append({
+                    "step": "asapi_team_resolve_failed",
+                    "teamName": team_name_raw,
+                    "leagueId": league_id,
+                })
+
+        # Resolve explicit teamA / teamB for head-to-head or dual-team contexts
+        team_a_raw = None
+        for key in ("teamA", "team_a"):
+            if isinstance(a.get(key), str) and a.get(key).strip():
+                team_a_raw = a.get(key)
+                if key != "teamA":
+                    a["teamA"] = a.get(key)
+                break
+        if team_a_raw:
+            team_a_id, team_a_canonical = resolve_team_field("teamA")
+            if team_a_id:
+                a["firstTeamId"] = team_a_id
+                if team_a_canonical:
+                    a["teamA"] = team_a_canonical
+            else:
+                trace.append({
+                    "step": "asapi_team_resolve_failed",
+                    "teamName": team_a_raw,
+                    "context": "teamA",
+                    "leagueId": league_id,
+                })
+
+        team_b_raw = None
+        for key in ("teamB", "team_b"):
+            if isinstance(a.get(key), str) and a.get(key).strip():
+                team_b_raw = a.get(key)
+                if key != "teamB":
+                    a["teamB"] = a.get(key)
+                break
+        if team_b_raw:
+            team_b_id, team_b_canonical = resolve_team_field("teamB")
+            if team_b_id:
+                a["secondTeamId"] = team_b_id
+                if team_b_canonical:
+                    a["teamB"] = team_b_canonical
+            else:
+                trace.append({
+                    "step": "asapi_team_resolve_failed",
+                    "teamName": team_b_raw,
+                    "context": "teamB",
+                    "leagueId": league_id,
+                })
+
+        # Compose h2h param when both ids resolved
+        if a.get("firstTeamId") and a.get("secondTeamId") and not a.get("h2h"):
+            a["h2h"] = f"{a['firstTeamId']}-{a['secondTeamId']}"
 
         # playerName: native support exists — we leave it in place.
         return a

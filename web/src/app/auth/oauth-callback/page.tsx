@@ -3,6 +3,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { isAdminEmail } from "@/lib/admin";
 
 function OAuthCallbackInner() {
   const { supabase } = useAuth();
@@ -43,6 +44,11 @@ function OAuthCallbackInner() {
           (Array.isArray(prefs.favorite_countries) ? prefs.favorite_countries.length === 0 : true);
       } catch {}
 
+      const adminRedirect = isAdminEmail(session.user.email ?? undefined) ? "/admin/overview" : null;
+      if (adminRedirect) {
+        router.replace(adminRedirect);
+        return;
+      }
       if (needsOnboarding) {
         router.replace(`/onboarding?next=${encodeURIComponent(next)}`);
       } else {

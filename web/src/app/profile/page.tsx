@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, KeyboardEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Bookmark,
@@ -32,7 +32,8 @@ import { usePlanContext } from "@/components/PlanProvider";
 import { ProfilePlanSummary } from "@/components/ProfilePlan";
 import { UpgradeCta } from "@/components/pro/UpgradeCta";
 import { ProfileBillingManager } from "@/components/ProfileBillingManager";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { getSiteOrigin } from "@/lib/url";
 
 type ProfileState = {
   full_name: string;
@@ -257,6 +258,203 @@ const mergeLogoMaps = (base: LogoMap, updates: LogoMap): LogoMap | null => {
 
 const RECOMMENDATION_LIMIT = 4;
 
+type AnyRecord = Record<string, unknown>;
+
+type RecommendationLinkInfo = {
+  kind: "match" | "league" | "other";
+  relative: string;
+  absolute: string;
+  title?: string;
+  subtitle?: string;
+};
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const MATCH_ID_KEYS = ["event_id", "eventId", "fixture_id", "fixtureId", "match_id", "matchId", "game_id", "gameId", "id"];
+const MATCH_HOME_KEYS = ["home_team", "homeTeam", "event_home_team", "home"];
+const MATCH_AWAY_KEYS = ["away_team", "awayTeam", "event_away_team", "away"];
+
+const LEAGUE_ID_KEYS = ["provider_id", "providerId", "league_id", "leagueId", "id", "league_key"];
+const LEAGUE_SLUG_KEYS = ["slug", "slug_id", "slugId", "league_slug"];
+const LEAGUE_NAME_KEYS = ["title", "league_name", "name"];
+const LEAGUE_COUNTRY_KEYS = ["country", "country_name", "nation"];
+const LEAGUE_IDENTITY_KEYS = ["identity_key", "identityKey"];
+
+const isRecord = (value: unknown): value is AnyRecord =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const coerceString = (value: unknown): string | undefined => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
+};
+
+const getValueCaseInsensitive = (record: AnyRecord, key: string): unknown => {
+  if (key in record) return record[key];
+  const lower = key.toLowerCase();
+  const matchKey = Object.keys(record).find((candidate) => candidate.toLowerCase() === lower);
+  return matchKey ? record[matchKey] : undefined;
+};
+
+const collectRecords = (value: unknown, maxDepth = 2): AnyRecord[] => {
+  const records: AnyRecord[] = [];
+  const seen = new Set<object>();
+
+  const visit = (candidate: unknown, depth: number) => {
+    if (!candidate || depth > maxDepth) return;
+    if (Array.isArray(candidate)) {
+      candidate.forEach((entry) => visit(entry, depth + 1));
+      return;
+    }
+    if (!isRecord(candidate)) return;
+    if (seen.has(candidate)) return;
+    seen.add(candidate);
+    records.push(candidate);
+    Object.values(candidate).forEach((entry) => visit(entry, depth + 1));
+  };
+
+  visit(value, 0);
+  return records;
+};
+
+type PickStringOptions = {
+  skipUuid?: boolean;
+};
+
+const pickStringFromRecords = (records: AnyRecord[], keys: string[], options: PickStringOptions = {}): string | undefined => {
+  for (const record of records) {
+    for (const key of keys) {
+      const raw = getValueCaseInsensitive(record, key);
+      const str = coerceString(raw);
+      if (!str) continue;
+      if (options.skipUuid && key.toLowerCase() === "id" && UUID_PATTERN.test(str)) continue;
+      if (key.toLowerCase() === "key" && str.includes("|") && options.skipUuid) continue;
+      return str;
+    }
+  }
+  return undefined;
+};
+
+const createIdentityKey = (providerId?: string, leagueName?: string, country?: string): string => {
+  const idPart = providerId ? providerId.trim().toLowerCase() : "";
+  const namePart = leagueName ? leagueName.trim().toLowerCase() : "";
+  const countryPart = country ? country.trim().toLowerCase() : "";
+  return [idPart, namePart, countryPart].join("|");
+};
+
+const gatherRecordsForItem = (item: AnyRecord | undefined): AnyRecord[] => {
+  if (!item) return [];
+  const records: AnyRecord[] = [];
+  const dataRecords = collectRecords(item.data, 2);
+  dataRecords.forEach((record) => {
+    if (!records.includes(record)) records.push(record);
+  });
+  const metadataRecords = collectRecords(item.metadata, 2);
+  metadataRecords.forEach((record) => {
+    if (!records.includes(record)) records.push(record);
+  });
+  const detailsRecords = collectRecords(item.details, 2);
+  detailsRecords.forEach((record) => {
+    if (!records.includes(record)) records.push(record);
+  });
+  if (!records.includes(item)) records.push(item);
+  return records;
+};
+
+const extractMatchLink = (item: AnyRecord, records: AnyRecord[], origin: string): RecommendationLinkInfo | null => {
+  const eventId = pickStringFromRecords(records, MATCH_ID_KEYS, { skipUuid: true });
+  if (!eventId) return null;
+
+  let homeTeam = pickStringFromRecords(records, MATCH_HOME_KEYS);
+  let awayTeam = pickStringFromRecords(records, MATCH_AWAY_KEYS);
+
+  if ((!homeTeam || !awayTeam) && Array.isArray(item.teams) && item.teams.length >= 2) {
+    const [home, away] = item.teams as unknown[];
+    homeTeam = homeTeam ?? coerceString(home);
+    awayTeam = awayTeam ?? coerceString(away);
+  }
+
+  const titleFromItem = coerceString(item.title);
+  const title =
+    titleFromItem ??
+    (homeTeam && awayTeam ? `${homeTeam} vs ${awayTeam}` : homeTeam ?? awayTeam ?? undefined);
+
+  const relative = `/match/${encodeURIComponent(eventId)}?sid=card`;
+  return {
+    kind: "match",
+    relative,
+    absolute: `${origin}${relative}`,
+    title,
+  };
+};
+
+const extractLeagueLink = (item: AnyRecord, records: AnyRecord[], origin: string): RecommendationLinkInfo | null => {
+  let leagueName = coerceString(item.title) ?? pickStringFromRecords(records, LEAGUE_NAME_KEYS);
+  if (!leagueName && Array.isArray(item.leagues) && item.leagues.length) {
+    leagueName = coerceString(item.leagues[0]);
+  }
+
+  let country = pickStringFromRecords(records, LEAGUE_COUNTRY_KEYS);
+  if (!country && Array.isArray(item.countries) && item.countries.length) {
+    country = coerceString(item.countries[0]);
+  }
+
+  const rawProvider = pickStringFromRecords(records, LEAGUE_ID_KEYS, { skipUuid: true });
+  const providerId =
+    rawProvider && rawProvider.includes("|") ? undefined : rawProvider ? rawProvider.trim() : undefined;
+
+  const slugCandidate = pickStringFromRecords(records, LEAGUE_SLUG_KEYS);
+  const slugSource =
+    slugCandidate && slugCandidate.trim()
+      ? slugCandidate.trim()
+      : providerId && providerId.trim()
+        ? providerId.trim()
+        : leagueName
+          ? [leagueName, country].filter(Boolean).join("::")
+          : undefined;
+
+  if (!slugSource) return null;
+
+  const params = new URLSearchParams();
+  if (leagueName) params.set("name", leagueName);
+  if (country) params.set("country", country);
+
+  const identityCandidate = pickStringFromRecords(records, LEAGUE_IDENTITY_KEYS);
+  const identityKey = identityCandidate ?? createIdentityKey(providerId, leagueName, country);
+  if (identityKey && identityKey.replace(/\|/g, "").trim()) {
+    params.set("key", identityKey);
+  }
+  if (providerId) {
+    params.set("providerId", providerId);
+  }
+
+  const query = params.toString();
+  const relative = `/leagues/${encodeURIComponent(slugSource)}${query ? `?${query}` : ""}`;
+
+  return {
+    kind: "league",
+    relative,
+    absolute: `${origin}${relative}`,
+    title: leagueName ?? undefined,
+    subtitle: country ?? undefined,
+  };
+};
+
+const buildRecommendationLink = (item: AnyRecord | undefined, origin: string): RecommendationLinkInfo | null => {
+  if (!item) return null;
+  const records = gatherRecordsForItem(item);
+  const matchLink = extractMatchLink(item, records, origin);
+  if (matchLink) return matchLink;
+  const leagueLink = extractLeagueLink(item, records, origin);
+  if (leagueLink) return leagueLink;
+  return null;
+};
+
 type ItemDetails = {
   title?: string | null;
   data?: Record<string, unknown> | null;
@@ -425,7 +623,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!loading && user && isAdmin) {
-      router.replace("/admin");
+      router.replace("/admin/overview");
     }
   }, [isAdmin, loading, router, user]);
 
@@ -902,32 +1100,74 @@ export default function ProfilePage() {
 
   const shareRecommendation = useCallback(
     async (itemId: string, item: Record<string, unknown> | undefined) => {
-      const title = (item?.title as string) || "Sports Analysis";
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const link = `${origin}/`;
+      const origin = getSiteOrigin();
+      const itemRecord = isRecord(item) ? item : undefined;
+      const linkInfo = buildRecommendationLink(itemRecord, origin);
+      const absoluteUrl = linkInfo?.absolute ?? `${origin}/`;
+      const fallbackTitle = coerceString(itemRecord?.title) ?? linkInfo?.title ?? "Sports Analysis";
+      const shareText =
+        linkInfo?.kind === "match"
+          ? `Check out ${fallbackTitle} on Sports Analysis`
+          : linkInfo?.kind === "league"
+            ? `Follow ${fallbackTitle} on Sports Analysis`
+            : "Check this out on Sports Analysis";
+
       try {
         const nav = (typeof navigator !== "undefined" ? (navigator as Navigator) : undefined) as NavigatorWithShare | undefined;
         if (nav?.share) {
           try {
-            await nav.share({ title, text: "Check this out", url: link });
+            await nav.share({ title: fallbackTitle, text: shareText, url: absoluteUrl });
             await sendInteraction(itemId, "share");
             toast.success("Shared");
             return;
           } catch (error) {
-            const err = error as unknown as { name?: string };
+            const err = error as { name?: string };
             if (err?.name === "AbortError") return;
           }
         }
         if (navigator?.clipboard?.writeText) {
-          await navigator.clipboard.writeText(link);
+          await navigator.clipboard.writeText(absoluteUrl);
           await sendInteraction(itemId, "share");
           toast.success("Link copied to clipboard");
+          return;
         }
+        toast.error("Sharing is not supported on this device yet.");
       } catch {
         toast.error("Unable to share this pick right now");
       }
     },
     [sendInteraction],
+  );
+
+  const openRecommendation = useCallback(
+    (itemId: string, item: Record<string, unknown> | undefined) => {
+      const itemRecord = isRecord(item) ? item : undefined;
+      const linkInfo = buildRecommendationLink(itemRecord, getSiteOrigin());
+      if (!linkInfo) return;
+
+      if (user && !isAdmin && supabase) {
+        void (async () => {
+          try {
+            await supabase.from("user_interactions").insert({ user_id: user.id, item_id: itemId, event: "click" });
+          } catch {
+            /* ignore logging errors */
+          }
+        })();
+      }
+
+      router.push(linkInfo.relative);
+    },
+    [isAdmin, router, supabase, user],
+  );
+
+  const handleRecommendationKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>, itemId: string, item: Record<string, unknown> | undefined) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openRecommendation(itemId, item);
+      }
+    },
+    [openRecommendation],
   );
 
   const memberSince = useMemo(() => {
@@ -1179,6 +1419,10 @@ export default function ProfilePage() {
         }}
       >
         <DialogContent className="sm:max-w-xl">
+          <DialogTitle className="sr-only">Manage subscription</DialogTitle>
+          <DialogDescription className="sr-only">
+            Update your Sports Analysis membership and billing preferences.
+          </DialogDescription>
           {plan === "pro" ? (
             <ProfileBillingManager
               key={planInfo.stripe_price_id ?? plan}
@@ -1194,7 +1438,7 @@ export default function ProfilePage() {
         </DialogContent>
       </Dialog>
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
-        <Card className="neon-card">
+        <Card className="surface-card">
           <CardContent className="p-8 space-y-6">
             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-5">
@@ -1215,9 +1459,9 @@ export default function ProfilePage() {
                   )}
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="outline"
                     size="icon"
-                    className="neon-button absolute top-1/2 -right-15 h-10 w-10 -translate-y-1/2 rounded-full shadow-md"
+                    className="profile-action absolute -bottom-3 -right-3 h-10 w-10 rounded-full"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploadingAvatar}
                   >
@@ -1291,26 +1535,26 @@ export default function ProfilePage() {
                         size="sm"
                         onClick={handleSave}
                         disabled={saving}
-                        className="neon-button px-5"
+                        className="profile-action px-5"
                       >
                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
                       </Button>
                     </>
                   ) : (
                     <Button
-                      variant="secondary"
+                      variant="default"
                       size="sm"
-                      className="neon-button px-5"
+                      className="profile-action group px-5"
                       onClick={() => setEditing(true)}
                     >
-                      <Settings className="h-4 w-4 mr-2" />
+                      <Settings className="h-4 w-4 mr-2 transition-transform duration-200 group-hover:rotate-6" />
                       Edit profile
                     </Button>
                   )}
                   <Button
                     size="sm"
-                    variant="secondary"
-                    className="neon-button px-5"
+                    variant="outline"
+                    className="profile-action group px-5"
                     onClick={async () => {
                       try {
                         await supabase.auth.signOut();
@@ -1319,7 +1563,7 @@ export default function ProfilePage() {
                       }
                     }}
                   >
-                    <LogOut className="h-4 w-4 mr-2" />
+                    <LogOut className="h-4 w-4 mr-2 transition-transform duration-200 group-hover:-translate-x-0.5" />
                     Sign out
                   </Button>
                 </div>
@@ -1352,7 +1596,7 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.6 }}>
-          <Card className="neon-card">
+          <Card className="surface-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Teams followed</CardTitle>
             </CardHeader>
@@ -1366,7 +1610,7 @@ export default function ProfilePage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.6 }}>
-          <Card className="neon-card">
+          <Card className="surface-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Leagues followed</CardTitle>
             </CardHeader>
@@ -1380,7 +1624,7 @@ export default function ProfilePage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.6 }}>
-          <Card className="neon-card">
+          <Card className="surface-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Saved matches</CardTitle>
             </CardHeader>
@@ -1394,7 +1638,7 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.6 }}>
-          <Card className="neon-card h-full">
+          <Card className="surface-card h-full">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" />
@@ -1452,7 +1696,7 @@ export default function ProfilePage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.6 }}>
-          <Card className="neon-card h-full">
+          <Card className="surface-card h-full">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <LineChart className="h-5 w-5 text-primary" />
@@ -1559,7 +1803,7 @@ export default function ProfilePage() {
       </div>
 
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.6 }}>
-        <Card className="neon-card">
+        <Card className="surface-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <Heart className="h-5 w-5 text-rose-400" />
@@ -1620,7 +1864,7 @@ export default function ProfilePage() {
                             key={team}
                             whileHover={{ scale: 1.02, translateY: -4 }}
                             transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                            className="neon-tile flex items-center gap-3 p-3"
+                            className="surface-tile flex items-center gap-3 p-3"
                           >
                             <Avatar className="h-12 w-12 border border-white/10 bg-background/70">
                               {logo ? (
@@ -1654,7 +1898,7 @@ export default function ProfilePage() {
                             key={league}
                             whileHover={{ scale: 1.02, translateY: -4 }}
                             transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                            className="neon-tile flex items-center gap-3 p-3"
+                            className="surface-tile flex items-center gap-3 p-3"
                           >
                             <Avatar className="h-12 w-12 border border-white/10 bg-background/70">
                               {logo ? (
@@ -1684,7 +1928,7 @@ export default function ProfilePage() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.6 }}>
-        <Card className="neon-card">
+        <Card className="surface-card">
           <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
               <Trophy className="h-5 w-5 text-amber-300" />
@@ -1694,9 +1938,9 @@ export default function ProfilePage() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="neon-button px-4"
+                className="profile-action group px-4"
                 onClick={() => {
                   setShowAllRecommendations(false);
                   recs.refetch?.();
@@ -1709,7 +1953,7 @@ export default function ProfilePage() {
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    <RefreshCcw className="h-4 w-4" /> Refresh
+                    <RefreshCcw className="h-4 w-4 transition-transform duration-200 group-hover:rotate-12" /> Refresh
                   </span>
                 )}
               </Button>
@@ -1723,16 +1967,22 @@ export default function ProfilePage() {
             ) : displayedRecommendations.length ? (
               <div className="space-y-3">
                 {displayedRecommendations.map((rec) => {
+                  const itemRecord = isRecord(rec.item) ? (rec.item as AnyRecord) : undefined;
                   const reason = rec.reason ? rec.reason : `Score: ${Math.round(rec.score ?? 0)}`;
                   const isLiked = !!localLiked[rec.item_id];
                   const isSaved = !!localSaved[rec.item_id];
-                  const title = ((rec.item as Record<string, unknown> | undefined)?.title as string | undefined) ?? rec.item_id;
+                  const title = coerceString(itemRecord?.title) ?? rec.item_id;
                   return (
                     <motion.div
                       key={rec.item_id}
                       whileHover={{ scale: 1.01, translateY: -3 }}
                       transition={{ type: "spring", stiffness: 240, damping: 18 }}
-                      className="neon-tile flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="surface-tile flex cursor-pointer flex-col gap-4 p-4 outline-none transition sm:flex-row sm:items-center sm:justify-between focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openRecommendation(rec.item_id, itemRecord)}
+                      onKeyDown={(event) => handleRecommendationKeyDown(event, rec.item_id, itemRecord)}
+                      aria-label={`Open ${title}`}
                     >
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1751,7 +2001,10 @@ export default function ProfilePage() {
                           className={`rounded-full border border-white/15 bg-white/5 transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:bg-primary/15 ${
                             isLiked ? "bg-primary/70 text-primary-foreground border-primary/70" : ""
                           }`}
-                          onClick={() => toggleLocalLike(rec.item_id)}
+                          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                            event.stopPropagation();
+                            toggleLocalLike(rec.item_id);
+                          }}
                           disabled={sendingFeedbackId === rec.item_id}
                           title="Like"
                         >
@@ -1764,7 +2017,10 @@ export default function ProfilePage() {
                           className={`rounded-full border border-white/15 bg-white/5 transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:bg-primary/15 ${
                             isSaved ? "bg-primary/70 text-primary-foreground border-primary/70" : ""
                           }`}
-                          onClick={() => toggleLocalSave(rec.item_id)}
+                          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                            event.stopPropagation();
+                            toggleLocalSave(rec.item_id);
+                          }}
                           disabled={sendingFeedbackId === rec.item_id}
                           title="Save"
                         >
@@ -1774,7 +2030,10 @@ export default function ProfilePage() {
                           variant="ghost"
                           size="icon"
                           className="rounded-full border border-white/15 bg-white/5 transition-all duration-300 hover:-translate-y-1 hover:border-primary/70 hover:bg-primary/15"
-                          onClick={() => shareRecommendation(rec.item_id, rec.item as Record<string, unknown>)}
+                          onClick={(event: MouseEvent<HTMLButtonElement>) => {
+                            event.stopPropagation();
+                            void shareRecommendation(rec.item_id, itemRecord);
+                          }}
                           disabled={sendingFeedbackId === rec.item_id}
                           title="Share"
                         >
@@ -1787,9 +2046,9 @@ export default function ProfilePage() {
                 {hiddenCount > 0 && (
                   <div className="pt-2 text-center">
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="neon-button px-4"
+                      className="profile-action px-4"
                       onClick={() => setShowAllRecommendations((prev) => !prev)}
                     >
                       {showAllRecommendations ? "Show fewer recommendations" : `Show ${hiddenCount} more picks`}
