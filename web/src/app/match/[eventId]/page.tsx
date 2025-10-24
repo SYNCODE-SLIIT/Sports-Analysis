@@ -1,5 +1,6 @@
 "use client";
 
+
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import Image from "next/image";
@@ -802,6 +803,8 @@ const extractLineups = (source: DataObject): { home: TeamLineup; away: TeamLineu
 };
 
 function MatchPageInner() {
+  // ...all original useState calls above...
+
   const { user, supabase, bumpInteractions } = useAuth();
   const { plan } = usePlanContext();
   const isPro = (plan ?? "free").toLowerCase() === "pro";
@@ -857,8 +860,12 @@ function MatchPageInner() {
   const [extrasLoading, setExtrasLoading] = useState(false);
   const [favoriteTeams, setFavoriteTeams] = useState<string[]>([]);
   const [favoriteTeamPending, setFavoriteTeamPending] = useState<Set<string>>(new Set());
+
   const [liked, setLiked] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Debug: Log oddsExtra.listed and oddsExtra.live at runtime
+  // (MUST be after all useState calls)
 
   const updateFavoriteTeamPending = useCallback((teamName: string, pending: boolean) => {
     setFavoriteTeamPending(prev => {
@@ -1638,8 +1645,8 @@ function MatchPageInner() {
       event.awayTeam ? getTeam(event.awayTeam) : Promise.resolve(null),
       event.homeTeam ? listTeamPlayers(event.homeTeam) : Promise.resolve(null),
       event.awayTeam ? listTeamPlayers(event.awayTeam) : Promise.resolve(null),
-      event.eventId ? postCollect("odds.list", { eventId: event.eventId }) : Promise.resolve(null),
-      event.eventId ? postCollect("odds.live", { eventId: event.eventId }) : Promise.resolve(null),
+  event.eventId ? postCollect("odds.list", { matchId: event.eventId }) : Promise.resolve(null),
+  event.eventId ? postCollect("odds.live", { matchId: event.eventId }) : Promise.resolve(null),
       Promise.resolve(null),
       event.eventId ? getForm(event.eventId) : Promise.resolve({}),
       Promise.resolve({}),
@@ -2640,58 +2647,56 @@ function MatchPageInner() {
                     </TabsList>
 
                     <TabsContent value="odds" className="space-y-4">
-                      {oddsExtra.listed.length > 0 || oddsExtra.live.length > 0 ? (
-                        <div className="space-y-4">
-                          {oddsExtra.listed.length > 0 && (
-                            <div className="rounded-lg border p-4">
-                              <h4 className="font-semibold mb-3">Listed Odds</h4>
-                              <div className="space-y-2">
-                                {oddsExtra.listed.map((odd, idx) => {
-                                  const oddRecord = odd as Record<string, unknown>;
-                                  const bookmaker = pickString(oddRecord, ["bookmaker", "name"]);
-                                  const home = pickString(oddRecord, ["home", "homeOdds"]);
-                                  const draw = pickString(oddRecord, ["draw", "drawOdds"]);
-                                  const away = pickString(oddRecord, ["away", "awayOdds"]);
-                                  return (
-                                    <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
-                                      <span className="font-medium">{bookmaker || `Bookmaker ${idx + 1}`}</span>
-                                      <div className="flex gap-4">
-                                        <span>H: {home || '-'}</span>
-                                        <span>D: {draw || '-'}</span>
-                                        <span>A: {away || '-'}</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          {oddsExtra.live.length > 0 && (
-                            <div className="rounded-lg border p-4">
-                              <h4 className="font-semibold mb-3">Live Odds</h4>
-                              <div className="space-y-2">
-                                {oddsExtra.live.map((odd, idx) => {
-                                  const oddRecord = odd as Record<string, unknown>;
-                                  const bookmaker = pickString(oddRecord, ["bookmaker", "name"]);
-                                  const home = pickString(oddRecord, ["home", "homeOdds"]);
-                                  const draw = pickString(oddRecord, ["draw", "drawOdds"]);
-                                  const away = pickString(oddRecord, ["away", "awayOdds"]);
-                                  return (
-                                    <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
-                                      <span className="font-medium">{bookmaker || `Bookmaker ${idx + 1}`}</span>
-                                      <div className="flex gap-4">
-                                        <span>H: {home || '-'}</span>
-                                        <span>D: {draw || '-'}</span>
-                                        <span>A: {away || '-'}</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
+                      {/* Debug: Log oddsExtra.listed and oddsExtra.live */}
+                      {false && <pre>{JSON.stringify({ listed: oddsExtra.listed, live: oddsExtra.live }, null, 2)}</pre>}
+                      {oddsExtra.listed.length > 0 && (
+                        <div className="rounded-lg border p-4">
+                          <h4 className="font-semibold mb-3">Listed Odds</h4>
+                          <div className="space-y-2">
+                            {oddsExtra.listed.map((odd, idx) => {
+                              const bookmaker = String(odd.odd_bookmakers || odd.bookmaker || odd.name || `Bookmaker ${idx + 1}`);
+                              const home = odd.odd_1 !== undefined && odd.odd_1 !== null ? String(odd.odd_1) : '-';
+                              const draw = odd.odd_x !== undefined && odd.odd_x !== null ? String(odd.odd_x) : '-';
+                              const away = odd.odd_2 !== undefined && odd.odd_2 !== null ? String(odd.odd_2) : '-';
+                              return (
+                                <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
+                                  <span className="font-medium">{bookmaker}</span>
+                                  <div className="flex gap-4">
+                                    <span>H: {home}</span>
+                                    <span>D: {draw}</span>
+                                    <span>A: {away}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      ) : (
+                      )}
+                      {oddsExtra.live.length > 0 && (
+                        <div className="rounded-lg border p-4">
+                          <h4 className="font-semibold mb-3">Live Odds</h4>
+                          <div className="space-y-2">
+                            {oddsExtra.live.map((odd, idx) => {
+                              const oddRecord = odd as Record<string, unknown>;
+                              const bookmaker = pickString(oddRecord, ["bookmaker", "name"]);
+                              const home = pickString(oddRecord, ["home", "homeOdds"]);
+                              const draw = pickString(oddRecord, ["draw", "drawOdds"]);
+                              const away = pickString(oddRecord, ["away", "awayOdds"]);
+                              return (
+                                <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
+                                  <span className="font-medium">{bookmaker || `Bookmaker ${idx + 1}`}</span>
+                                  <div className="flex gap-4">
+                                    <span>H: {home || '-'}</span>
+                                    <span>D: {draw || '-'}</span>
+                                    <span>A: {away || '-'}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {oddsExtra.listed.length === 0 && oddsExtra.live.length === 0 && (
                         <div className="text-sm text-muted-foreground">No odds data available.</div>
                       )}
                     </TabsContent>
@@ -2894,9 +2899,21 @@ function parseOddsResponse(res: { data?: unknown } | null): DataObject[] {
   if (!res) return [];
   const data = res.data;
   if (!data) return [];
+  // Handle nested structure: { data: { result: { [matchId]: [ ...odds ] } } }
+  if (typeof data === "object" && data !== null && 'result' in data) {
+    const result = (data as any).result;
+    if (result && typeof result === 'object') {
+      const firstArr = Object.values(result)[0];
+      if (Array.isArray(firstArr)) return toDataObjectArray(firstArr);
+    }
+  }
   if (Array.isArray(data)) return toDataObjectArray(data);
-  if (typeof data === "object") {
+  if (typeof data === "object" && data !== null) {
     const record = data as Record<string, unknown>;
+    const values = Object.values(record);
+    if (values.length && Array.isArray(values[0])) {
+      return toDataObjectArray(values[0]);
+    }
     if (Array.isArray(record.odds)) return toDataObjectArray(record.odds);
     if (Array.isArray(record.result)) return toDataObjectArray(record.result);
     if (Array.isArray(record.results)) return toDataObjectArray(record.results);
