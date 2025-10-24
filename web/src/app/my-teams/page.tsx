@@ -1242,7 +1242,7 @@ export default function MyTeamsPage() {
                 </div>
                 {showTeamLimitNotice && (
                   <p className="text-xs text-muted-foreground">
-                    Showing your first 3 pinned teams. Upgrade to Pro to manage the full list.
+                    Showing your first 4 pinned teams. Upgrade to Pro to manage the full list.
                   </p>
                 )}
               </div>
