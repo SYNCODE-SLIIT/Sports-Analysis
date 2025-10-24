@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import Image from "next/image";
 import Link from "next/link";
@@ -800,7 +800,7 @@ const extractLineups = (source: DataObject): { home: TeamLineup; away: TeamLineu
   return { home, away };
 };
 
-export default function MatchPage() {
+function MatchPageInner() {
   const { user, supabase, bumpInteractions } = useAuth();
   const { plan } = usePlanContext();
   const isPro = (plan ?? "free").toLowerCase() === "pro";
@@ -2104,20 +2104,16 @@ export default function MatchPage() {
           
           <TabsContent value="lineups" className="space-y-6">
             {(() => {
-              const hasLineups =
-                !!(
-                  lineupData &&
-                  (
-                    ((lineupData as any)?.home &&
-                      (((lineupData as any).home?.starters?.length ?? 0) +
-                        ((lineupData as any).home?.substitutes?.length ?? 0) >
-                        0)) ||
-                    ((lineupData as any)?.away &&
-                      (((lineupData as any).away?.starters?.length ?? 0) +
-                        ((lineupData as any).away?.substitutes?.length ?? 0) >
-                        0))
-                  )
-                );
+              const hasLineups = !!(
+                lineupData && (
+                  (typeof lineupData.home === "object" &&
+                    ((Array.isArray(lineupData.home.starters) ? lineupData.home.starters.length : 0) +
+                      (Array.isArray(lineupData.home.substitutes) ? lineupData.home.substitutes.length : 0) > 0)) ||
+                  (typeof lineupData.away === "object" &&
+                    ((Array.isArray(lineupData.away.starters) ? lineupData.away.starters.length : 0) +
+                      (Array.isArray(lineupData.away.substitutes) ? lineupData.away.substitutes.length : 0) > 0))
+                )
+              );
 
               return hasLineups ? (
                 <LineupField
@@ -2928,4 +2924,18 @@ function pickString(record: Record<string, unknown>, keys: string[]): string {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+export default function MatchPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">Loading match details…</div>
+        </div>
+      }
+    >
+      <MatchPageInner />
+    </Suspense>
+  );
 }
