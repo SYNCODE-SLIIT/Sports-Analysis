@@ -119,7 +119,7 @@ export function SubscriptionManager() {
   };
 
   return (
-    <Card className="admin-card">
+    <Card className="surface-card">
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="space-y-1 lg:max-w-xl">
           <CardTitle className="text-foreground">Subscription control</CardTitle>

@@ -32,7 +32,7 @@ import { usePlanContext } from "@/components/PlanProvider";
 import { ProfilePlanSummary } from "@/components/ProfilePlan";
 import { UpgradeCta } from "@/components/pro/UpgradeCta";
 import { ProfileBillingManager } from "@/components/ProfileBillingManager";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 type ProfileState = {
   full_name: string;
@@ -1179,6 +1179,10 @@ export default function ProfilePage() {
         }}
       >
         <DialogContent className="sm:max-w-xl">
+          <DialogTitle className="sr-only">Manage subscription</DialogTitle>
+          <DialogDescription className="sr-only">
+            Update your Sports Analysis membership and billing preferences.
+          </DialogDescription>
           {plan === "pro" ? (
             <ProfileBillingManager
               key={planInfo.stripe_price_id ?? plan}
@@ -1194,7 +1198,7 @@ export default function ProfilePage() {
         </DialogContent>
       </Dialog>
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8 }}>
-        <Card className="neon-card">
+        <Card className="surface-card">
           <CardContent className="p-8 space-y-6">
             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
               <div className="flex items-center gap-5">
@@ -1215,9 +1219,9 @@ export default function ProfilePage() {
                   )}
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="outline"
                     size="icon"
-                    className="neon-button absolute top-1/2 -right-15 h-10 w-10 -translate-y-1/2 rounded-full shadow-md"
+                    className="profile-action absolute -bottom-3 -right-3 h-10 w-10 rounded-full"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploadingAvatar}
                   >
@@ -1291,26 +1295,26 @@ export default function ProfilePage() {
                         size="sm"
                         onClick={handleSave}
                         disabled={saving}
-                        className="neon-button px-5"
+                        className="profile-action px-5"
                       >
                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save changes"}
                       </Button>
                     </>
                   ) : (
                     <Button
-                      variant="secondary"
+                      variant="default"
                       size="sm"
-                      className="neon-button px-5"
+                      className="profile-action group px-5"
                       onClick={() => setEditing(true)}
                     >
-                      <Settings className="h-4 w-4 mr-2" />
+                      <Settings className="h-4 w-4 mr-2 transition-transform duration-200 group-hover:rotate-6" />
                       Edit profile
                     </Button>
                   )}
                   <Button
                     size="sm"
-                    variant="secondary"
-                    className="neon-button px-5"
+                    variant="outline"
+                    className="profile-action group px-5"
                     onClick={async () => {
                       try {
                         await supabase.auth.signOut();
@@ -1319,7 +1323,7 @@ export default function ProfilePage() {
                       }
                     }}
                   >
-                    <LogOut className="h-4 w-4 mr-2" />
+                    <LogOut className="h-4 w-4 mr-2 transition-transform duration-200 group-hover:-translate-x-0.5" />
                     Sign out
                   </Button>
                 </div>
@@ -1352,7 +1356,7 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1, duration: 0.6 }}>
-          <Card className="neon-card">
+          <Card className="surface-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Teams followed</CardTitle>
             </CardHeader>
@@ -1366,7 +1370,7 @@ export default function ProfilePage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.6 }}>
-          <Card className="neon-card">
+          <Card className="surface-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Leagues followed</CardTitle>
             </CardHeader>
@@ -1380,7 +1384,7 @@ export default function ProfilePage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3, duration: 0.6 }}>
-          <Card className="neon-card">
+          <Card className="surface-card">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-muted-foreground">Saved matches</CardTitle>
             </CardHeader>
@@ -1394,7 +1398,7 @@ export default function ProfilePage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.6 }}>
-          <Card className="neon-card h-full">
+          <Card className="surface-card h-full">
             <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-primary" />
@@ -1452,7 +1456,7 @@ export default function ProfilePage() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.6 }}>
-          <Card className="neon-card h-full">
+          <Card className="surface-card h-full">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <LineChart className="h-5 w-5 text-primary" />
@@ -1559,7 +1563,7 @@ export default function ProfilePage() {
       </div>
 
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4, duration: 0.6 }}>
-        <Card className="neon-card">
+        <Card className="surface-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-foreground">
               <Heart className="h-5 w-5 text-rose-400" />
@@ -1620,7 +1624,7 @@ export default function ProfilePage() {
                             key={team}
                             whileHover={{ scale: 1.02, translateY: -4 }}
                             transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                            className="neon-tile flex items-center gap-3 p-3"
+                            className="surface-tile flex items-center gap-3 p-3"
                           >
                             <Avatar className="h-12 w-12 border border-white/10 bg-background/70">
                               {logo ? (
@@ -1654,7 +1658,7 @@ export default function ProfilePage() {
                             key={league}
                             whileHover={{ scale: 1.02, translateY: -4 }}
                             transition={{ type: "spring", stiffness: 260, damping: 20 }}
-                            className="neon-tile flex items-center gap-3 p-3"
+                            className="surface-tile flex items-center gap-3 p-3"
                           >
                             <Avatar className="h-12 w-12 border border-white/10 bg-background/70">
                               {logo ? (
@@ -1684,7 +1688,7 @@ export default function ProfilePage() {
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.6 }}>
-        <Card className="neon-card">
+        <Card className="surface-card">
           <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-2">
               <Trophy className="h-5 w-5 text-amber-300" />
@@ -1694,9 +1698,9 @@ export default function ProfilePage() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="neon-button px-4"
+                className="profile-action group px-4"
                 onClick={() => {
                   setShowAllRecommendations(false);
                   recs.refetch?.();
@@ -1709,7 +1713,7 @@ export default function ProfilePage() {
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    <RefreshCcw className="h-4 w-4" /> Refresh
+                    <RefreshCcw className="h-4 w-4 transition-transform duration-200 group-hover:rotate-12" /> Refresh
                   </span>
                 )}
               </Button>
@@ -1732,7 +1736,7 @@ export default function ProfilePage() {
                       key={rec.item_id}
                       whileHover={{ scale: 1.01, translateY: -3 }}
                       transition={{ type: "spring", stiffness: 240, damping: 18 }}
-                      className="neon-tile flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="surface-tile flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -1787,9 +1791,9 @@ export default function ProfilePage() {
                 {hiddenCount > 0 && (
                   <div className="pt-2 text-center">
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="neon-button px-4"
+                      className="profile-action px-4"
                       onClick={() => setShowAllRecommendations((prev) => !prev)}
                     >
                       {showAllRecommendations ? "Show fewer recommendations" : `Show ${hiddenCount} more picks`}

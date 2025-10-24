@@ -875,7 +875,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
       {activeTab === "overview" && (
         <>
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
-            <Card className="admin-card">
+            <Card className="surface-card">
               <CardContent className="flex flex-col gap-6 p-8 md:flex-row md:items-center md:justify-between">
                 <div className="space-y-4">
                   <Badge variant="outline" className="neon-chip">Full system control</Badge>
@@ -903,7 +903,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
                 {quickStats.map((stat) => {
                   const Icon = stat.icon;
                   return (
-                    <Card key={stat.label} className="admin-card flex-shrink-0">
+                    <Card key={stat.label} className="surface-card flex-shrink-0">
                       <CardContent className="flex h-full w-[225px] flex-col gap-2 p-5">
                         <div className="flex items-center justify-between">
                           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{stat.label}</p>
@@ -938,7 +938,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
         <TabsContent value="overview">
           <div className="container space-y-8 py-10">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-              <Card className="admin-card h-full">
+              <Card className="surface-card h-full">
                 <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -1043,7 +1043,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
             </motion.div>
 
             {/* <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05, duration: 0.5 }}>
-              <Card className="admin-card h-full">
+              <Card className="surface-card h-full">
                 <CardHeader className="space-y-1">
                   <div className="flex items-center gap-2">
                     <TrendingUp className="h-5 w-5 text-primary" />
@@ -1127,7 +1127,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
 
         <TabsContent value="users">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-            <Card className="admin-card">
+            <Card className="surface-card">
               <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex items-center gap-2">
                   <Users className="h-5 w-5 text-primary" />
@@ -1235,7 +1235,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
         <TabsContent value="system">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-              <Card className="admin-card h-full">
+              <Card className="surface-card h-full">
                 <CardHeader className="space-y-2">
                   <div className="flex items-center gap-2">
                     <Activity className="h-5 w-5 text-primary" />
@@ -1356,7 +1356,7 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
                 </CardContent>
               </Card>
 
-              <Card className="admin-card h-full">
+              <Card className="surface-card h-full">
                 <CardHeader className="flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5 text-primary" />
                   <CardTitle className="text-foreground">Active alerts</CardTitle>
