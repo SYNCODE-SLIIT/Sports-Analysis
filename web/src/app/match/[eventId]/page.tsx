@@ -1645,12 +1645,16 @@ function MatchPageInner() {
       event.awayTeam ? getTeam(event.awayTeam) : Promise.resolve(null),
       event.homeTeam ? listTeamPlayers(event.homeTeam) : Promise.resolve(null),
       event.awayTeam ? listTeamPlayers(event.awayTeam) : Promise.resolve(null),
-  event.eventId ? postCollect("odds.list", { matchId: event.eventId }) : Promise.resolve(null),
-  event.eventId ? postCollect("odds.live", { matchId: event.eventId }) : Promise.resolve(null),
+      event.eventId ? postCollect("odds.list", { matchId: event.eventId }) : Promise.resolve(null),
+      event.eventId ? postCollect("odds.live", { matchId: event.eventId }) : Promise.resolve(null),
       Promise.resolve(null),
       event.eventId ? getForm(event.eventId) : Promise.resolve({}),
       Promise.resolve({}),
-      event.homeTeam && event.awayTeam ? getH2HByTeams(event.homeTeam, event.awayTeam) : Promise.resolve(null),
+      event.eventId && event.homeTeam && event.awayTeam
+        ? postCollect("h2h", { eventId: event.eventId, teamA: event.homeTeam, teamB: event.awayTeam })
+        : (event.homeTeam && event.awayTeam
+            ? getH2HByTeams(event.homeTeam, event.awayTeam)
+            : Promise.resolve(null)),
       event.eventId ? postCollect("analysis.match_insights", { eventId: event.eventId }) : Promise.resolve(null),
     ];
 
@@ -1687,7 +1691,12 @@ function MatchPageInner() {
           }
         }
         const h2hData = isFulfilled(h2hRes) ? parseH2HResponse(h2hRes.value as unknown) : null;
-        setH2hExtra(h2hData);
+  if (isFulfilled(h2hRes)) {
+    console.debug('H2H parsed data:', h2hData, h2hRes.value);
+  } else {
+    console.debug('H2H request failed:', h2hRes);
+  }
+  setH2hExtra(h2hData);
 
         // If analysis agent output exists, prefer it
         if (isFulfilled(analysisRes) && analysisRes.value && typeof analysisRes.value === 'object') {
@@ -2797,16 +2806,40 @@ function MatchPageInner() {
                           <div className="space-y-2">
                             {h2hExtra.matches.map((match_item, idx) => {
                               const matchRecord = match_item as Record<string, unknown>;
-                              const home = pickString(matchRecord, ["home_team", "homeTeam", "home"]);
-                              const away = pickString(matchRecord, ["away_team", "awayTeam", "away"]);
-                              const homeScore = pickString(matchRecord, ["home_score", "homeScore"]);
-                              const awayScore = pickString(matchRecord, ["away_score", "awayScore"]);
-                              const date = pickString(matchRecord, ["date", "match_date"]);
+                              // Prefer AllSports-style fields
+                              const home = pickString(matchRecord, ["event_home_team", "home_team", "homeTeam", "home"]);
+                              const away = pickString(matchRecord, ["event_away_team", "away_team", "awayTeam", "away"]);
+                              const rawFinal = pickString(matchRecord, ["event_final_result", "final_result", "result"]);
+                              let homeScore = pickString(matchRecord, ["home_score", "homeScore"]);
+                              let awayScore = pickString(matchRecord, ["away_score", "awayScore"]);
+                              if (rawFinal && rawFinal.includes("-")) {
+                                const parts = rawFinal.split('-').map(p => p.trim());
+                                if (parts.length >= 2) {
+                                  // keep numeric part only
+                                  const h = parts[0].replace(/[^0-9]/g, '');
+                                  const a = parts[1].replace(/[^0-9]/g, '');
+                                  homeScore = h !== '' ? h : homeScore;
+                                  awayScore = a !== '' ? a : awayScore;
+                                }
+                              }
+                              const date = pickString(matchRecord, ["event_date", "date", "played_on", "match_date"]);
+                              const homeLogo = pickString(matchRecord, ["home_team_logo", "home_logo", "homeTeamLogo"]);
+                              const awayLogo = pickString(matchRecord, ["away_team_logo", "away_logo", "awayTeamLogo"]);
                               return (
                                 <div key={idx} className="flex items-center justify-between rounded border p-3 text-sm">
-                                  <span className="flex-1">{home || 'Home'}</span>
-                                  <span className="font-bold px-3">{homeScore || '0'} - {awayScore || '0'}</span>
-                                  <span className="flex-1 text-right">{away || 'Away'}</span>
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {homeLogo ? (
+                                      <Image src={homeLogo} alt={home || 'Home'} width={24} height={24} className="w-6 h-6 rounded object-contain border bg-white" unoptimized />
+                                    ) : null}
+                                    <span className="truncate">{home || 'Home'}</span>
+                                  </div>
+                                  <div className="font-bold px-3 tabular-nums">{(homeScore || '0')} - {(awayScore || '0')}</div>
+                                  <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
+                                    <span className="truncate text-right">{away || 'Away'}</span>
+                                    {awayLogo ? (
+                                      <Image src={awayLogo} alt={away || 'Away'} width={24} height={24} className="w-6 h-6 rounded object-contain border bg-white" unoptimized />
+                                    ) : null}
+                                  </div>
                                   {date && <span className="text-xs text-muted-foreground ml-3">{date}</span>}
                                 </div>
                               );
@@ -2927,8 +2960,18 @@ function parseOddsResponse(res: { data?: unknown } | null): DataObject[] {
 function parseH2HResponse(res: unknown): { matches: DataObject[] } | null {
   if (!res || typeof res !== "object") return null;
   const record = res as Record<string, unknown>;
-  const data = record.data && typeof record.data === "object" ? (record.data as Record<string, unknown>) : record;
-  const matches = toDataObjectArray(data.matches ?? data.results ?? data.games ?? []);
+  // Prefer data.result.H2H if present (backend structure)
+  let matches: DataObject[] = [];
+  if (record.data && typeof record.data === "object") {
+    const data = record.data as Record<string, unknown>;
+    if (data.result && typeof data.result === "object" && Array.isArray((data.result as Record<string, unknown>).H2H)) {
+      matches = toDataObjectArray((data.result as Record<string, unknown>).H2H);
+    } else {
+      matches = toDataObjectArray(data.matches ?? data.results ?? data.games ?? []);
+    }
+  } else {
+    matches = toDataObjectArray(record.matches ?? record.results ?? record.games ?? []);
+  }
   if (!matches.length) return null;
   return { matches };
 }
