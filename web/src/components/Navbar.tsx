@@ -26,6 +26,13 @@ const navItems = [
   { name: "My Teams", href: "/my-teams" },
 ];
 
+const adminNavItems = [
+  { name: "Overview", href: "/admin/overview" },
+  { name: "Users", href: "/admin/users" },
+  { name: "Subscriptions", href: "/admin/subscriptions" },
+  { name: "System", href: "/admin/system" },
+];
+
 export function Navbar() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = React.useState(false);
@@ -64,9 +71,10 @@ export function Navbar() {
             priority
           />
           <span className="text-2xl font-bold text-gradient">ATHLETE</span>
-        </Link>        {/* Desktop Navigation */}
+        </Link>
+        {/* Desktop Navigation */}
         <div className="hidden md:flex items-center gap-10">
-          {navItems.map((item) => (
+          {(isAdminUser ? adminNavItems : navItems).map((item) => (
             <Link
               key={item.name}
               href={item.href}
@@ -91,12 +99,12 @@ export function Navbar() {
 
         {/* Right Actions */}
         <div className="flex items-center space-x-2">
-          <NlSearchBar className="hidden md:flex w-72 bg-background/80" />
+          {!isAdminUser && <NlSearchBar className="hidden md:flex w-72 bg-background/80" />}
           <ThemeToggle />
           
           {user ? (
             <>
-              <PlanBadge plan={plan} />
+              {!isAdminUser && <PlanBadge plan={plan} />}
               <Button variant="ghost" size="sm" asChild className="hidden md:flex">
                 <Link href={isAdminUser ? "/admin" : "/profile"}>
                   <User className="h-4 w-4 mr-2" />
@@ -123,8 +131,8 @@ export function Navbar() {
             </SheetTrigger>
             <SheetContent side="right" className="w-80">
               <div className="flex flex-col space-y-6 mt-8">
-                <NlSearchBar className="w-full" onSubmit={() => setIsOpen(false)} />
-                {navItems.map((item) => (
+                {!isAdminUser && <NlSearchBar className="w-full" onSubmit={() => setIsOpen(false)} />}
+                {(isAdminUser ? adminNavItems : navItems).map((item) => (
                   <Link
                     key={item.name}
                     href={item.href}
@@ -143,10 +151,12 @@ export function Navbar() {
                 <div className="border-t pt-6 space-y-4">
                   {user ? (
                     <>
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm text-muted-foreground">Current plan</span>
-                        <PlanBadge plan={plan} />
-                      </div>
+                      {!isAdminUser && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">Current plan</span>
+                          <PlanBadge plan={plan} />
+                        </div>
+                      )}
                       <Button variant="outline" size="sm" asChild className="w-full justify-start">
                         <Link href={isAdminUser ? "/admin" : "/profile"} onClick={() => setIsOpen(false)}>
                           <User className="h-4 w-4 mr-2" />

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { isAdminEmail } from "@/lib/admin";
 
-export default function OAuthCallbackPage() {
+function OAuthCallbackInner() {
   const { supabase } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -43,6 +44,11 @@ export default function OAuthCallbackPage() {
           (Array.isArray(prefs.favorite_countries) ? prefs.favorite_countries.length === 0 : true);
       } catch {}
 
+      const adminRedirect = isAdminEmail(session.user.email ?? undefined) ? "/admin/overview" : null;
+      if (adminRedirect) {
+        router.replace(adminRedirect);
+        return;
+      }
       if (needsOnboarding) {
         router.replace(`/onboarding?next=${encodeURIComponent(next)}`);
       } else {
@@ -59,5 +65,19 @@ export default function OAuthCallbackPage() {
     <div className="min-h-[60vh] flex items-center justify-center">
       <div className="text-sm text-muted-foreground">Finalizing sign-in…</div>
     </div>
+  );
+}
+
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[60vh] flex items-center justify-center">
+          <div className="text-sm text-muted-foreground">Finalizing sign-in…</div>
+        </div>
+      }
+    >
+      <OAuthCallbackInner />
+    </Suspense>
   );
 }

@@ -4,23 +4,30 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, LogIn } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { ChatbotPanel } from "./ChatbotPanel";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { usePlanContext } from "@/components/PlanProvider";
+import { useRouter } from "next/navigation";
 
 export function FloatingChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
   const { user } = useAuth();
   const { plan } = usePlanContext();
+  const router = useRouter();
+  const isAdminRoute = pathname?.startsWith("/admin");
 
   // Don't show on login/signup pages
-  if (pathname?.startsWith("/auth/")) {
+  if (pathname?.startsWith("/auth/") || isAdminRoute) {
     return null;
   }
+
+  const handleUpgradeRedirect = () => {
+    setIsOpen(false);
+    router.push("/pro");
+  };
 
   return (
     <>
@@ -144,8 +151,8 @@ export function FloatingChatbot() {
                               Start a 7-day free trial of Sports Analysis Pro to unlock our AI assistant for game plans,
                               stats, and predictions.
                             </p>
-                            <Button asChild className="mt-2">
-                              <Link href="/pro">Upgrade to Pro</Link>
+                            <Button className="mt-2" onClick={handleUpgradeRedirect}>
+                              Upgrade to Pro
                             </Button>
                           </div>
                         </div>

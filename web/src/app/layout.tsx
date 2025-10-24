@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { Suspense } from "react";
 import { Providers } from "@/components/providers";
 import { AuthProvider } from "@/components/AuthProvider";
 import { Navbar } from "@/components/Navbar";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
-import { Footer } from "@/components/Footer";
+import { AdminAwareFooter } from "@/components/AdminAwareFooter";
 import { FloatingChatbot } from "@/components/chatbot/FloatingChatbot";
 import { PlanProvider } from "@/components/PlanProvider";
 import { PlanAwareLayout } from "@/components/PlanAwareLayout";
@@ -58,11 +59,15 @@ export default function RootLayout({
           <AuthProvider>
             <PlanProvider>
               <PlanAwareLayout>
-                <Navbar />
+                <Suspense fallback={null}>
+                  <Navbar />
+                </Suspense>
                 <MaintenanceBanner />
                 <main className="flex-1">{children}</main>
-                <Footer />
-                <FloatingChatbot />
+                <AdminAwareFooter />
+                <Suspense fallback={null}>
+                  <FloatingChatbot />
+                </Suspense>
               </PlanAwareLayout>
             </PlanProvider>
           </AuthProvider>

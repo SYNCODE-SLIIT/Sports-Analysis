@@ -752,7 +752,7 @@ export default function MyTeamsPage() {
     [leagues.length, teams.length, topSuggestions.length],
   );
 
-  const visibleTeams = useMemo(() => (isPro ? teams : teams.slice(0, 3)), [teams, isPro]);
+  const visibleTeams = useMemo(() => (isPro ? teams : teams.slice(0, 4)), [teams, isPro]);
   const visibleLeagues = useMemo(() => (isPro ? leagues : leagues.slice(0, 3)), [leagues, isPro]);
   const showTeamLimitNotice = !isPro && teams.length > 3;
   const showLeagueLimitNotice = !isPro && leagues.length > 3;
@@ -1129,7 +1129,7 @@ export default function MyTeamsPage() {
               </Button>
             </div>
           </div>
-          <Card className="neon-card w-full max-w-sm border border-primary/30 bg-background/80 backdrop-blur">
+          <Card className="surface-card w-full max-w-sm backdrop-blur">
             <CardContent className="flex flex-col gap-3 p-6">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">Snapshot</p>
               <div className="text-4xl font-semibold text-primary">
@@ -1155,7 +1155,7 @@ export default function MyTeamsPage() {
         className="grid gap-4 md:grid-cols-3"
       >
         {summaryTiles.map((tile) => (
-          <div key={tile.label} className="neon-card h-full rounded-2xl border border-border/40 bg-background/80 p-5">
+          <div key={tile.label} className="surface-card h-full p-5">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">{tile.label}</p>
             <p className="mt-3 text-3xl font-semibold text-primary">{tile.value || "—"}</p>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">{tile.caption}</p>
@@ -1164,7 +1164,7 @@ export default function MyTeamsPage() {
       </motion.div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-        <Card className="neon-card h-full border border-border/40 bg-background/80">
+        <Card className="surface-card h-full">
           <CardHeader className="space-y-4 pb-4">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
@@ -1250,7 +1250,7 @@ export default function MyTeamsPage() {
           </CardContent>
         </Card>
 
-        <Card className="neon-card h-full border border-border/40 bg-background/80">
+        <Card className="surface-card h-full">
           <CardHeader className="space-y-4 pb-4">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
@@ -1337,7 +1337,7 @@ export default function MyTeamsPage() {
         </Card>
       </div>
 
-      <Card className="neon-card border border-border/40 bg-background/80">
+      <Card className="surface-card">
         <CardHeader className="flex flex-col gap-2 pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="text-lg font-semibold">Smart suggestions</CardTitle>
@@ -1408,7 +1408,7 @@ export default function MyTeamsPage() {
       </Dialog>
 
       <Dialog open={isAddDialogOpen} onOpenChange={(open) => setIsAddDialogOpen(open)}>
-        <DialogContent className="neon-card border border-border/50 bg-background/95">
+        <DialogContent className="surface-card border border-border/50 bg-background/95">
           <DialogHeader>
             <DialogTitle>Add favourites</DialogTitle>
             <DialogDescription>

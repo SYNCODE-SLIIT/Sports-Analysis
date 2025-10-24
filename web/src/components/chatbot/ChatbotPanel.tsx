@@ -252,19 +252,22 @@ export function ChatbotPanel() {
                       {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
                         <div className="mt-3 space-y-2 text-xs">
                           <p className="font-semibold text-muted-foreground uppercase">Sources</p>
-                          <ul className="grid gap-1.5">
+                          <ul className="grid gap-1.5 max-w-full">
                             {msg.citations.map((cite, idx) => (
-                              <li key={cite.url ?? idx} className="rounded-md border border-border/60 bg-muted/20 p-2">
+                              <li
+                                key={cite.url ?? idx}
+                                className="rounded-md border border-border/60 bg-muted/20 p-2 break-words max-w-full overflow-hidden"
+                              >
                                 <a
                                   href={cite.url ?? undefined}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-xs font-medium text-primary hover:underline"
+                                  className="block text-xs font-medium text-primary hover:underline break-words"
                                 >
                                   {cite.title || cite.url || "Source"}
                                 </a>
                                 {cite.snippet && (
-                                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-3">
+                                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-3 break-words">
                                     {cite.snippet}
                                   </p>
                                 )}

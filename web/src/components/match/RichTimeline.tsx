@@ -292,17 +292,15 @@ export default function RichTimeline({ eventId: eventIdProp, items: initialItems
   // Ensure we always have at least HT/FT anchors so the track is meaningful
   const baseItems = useMemo<TLItem[]>(() => {
     const arr = Array.isArray(timelineItems) ? timelineItems.filter(Boolean) : [];
-    if (!arr.length) {
-      // Add some test events for demonstration
-      return [
-        { minute: 15, team: "home", type: "goal", player: "Test Player" },
-        { minute: 23, team: "away", type: "yellow", player: "Away Player" },
-        { minute: 45, team: "home", type: "ht" },
-        { minute: 67, team: "home", type: "sub", player: "Sub In", assist: "Sub Out" },
-        { minute: 90, team: "home", type: "ft" },
-      ];
+    if (!arr.length) return [];
+    const next = [...arr];
+    if (!next.some((item) => item.type === "ht")) {
+      next.push({ minute: 45, team: (next[0]?.team as TLItem["team"]) ?? "home", type: "ht" });
     }
-    return arr;
+    if (!next.some((item) => item.type === "ft")) {
+      next.push({ minute: 90, team: (next[next.length - 1]?.team as TLItem["team"]) ?? "home", type: "ft" });
+    }
+    return next;
   }, [timelineItems]);
 
   const cleaned = useMemo(() => baseItems.slice().sort((a, b) => a.minute - b.minute), [baseItems]);
@@ -564,6 +562,11 @@ export default function RichTimeline({ eventId: eventIdProp, items: initialItems
 
   const allItems = synthesized && synthesized.length ? synthesized : cleaned;
   const allClusters = useMemo(() => clusterItems(allItems), [allItems]);
+  const hasRenderableEvents = useMemo(
+    () => allItems.some((item) => item.type !== "ht" && item.type !== "ft"),
+    [allItems],
+  );
+  const showEmptyState = !hasRenderableEvents;
 
   // Horizontal layout configuration (compressed spacing)
   const cfg = useMemo(() => ({ pxPerMinute: 9, maxGapPx: 110, minGapPx: 24, leftPad: 36, rightPad: 44, startGapPx: 28, anchorGapPx: 28 }), []);
@@ -707,6 +710,23 @@ export default function RichTimeline({ eventId: eventIdProp, items: initialItems
         ></div>
         Match Timeline
       </div>
+      {showEmptyState ? (
+        <div
+          className={cn(
+            "flex flex-col items-center justify-center gap-3 rounded-2xl border px-8 py-14 text-center transition-all duration-300",
+            isDark
+              ? "border-slate-700/60 bg-slate-900/40 text-slate-200"
+              : "border-slate-200/80 bg-white text-slate-600 shadow-lg"
+          )}
+          style={{ background: surfaceStyles.background, boxShadow: surfaceStyles.boxShadow }}
+        >
+          <span className="text-base font-semibold">No match events yet</span>
+          <span className="text-sm opacity-80">
+            We will update this timeline the moment something happens on the pitch.
+          </span>
+        </div>
+      ) : (
+        <>
       <div 
         ref={scrollerRef} 
         className={cn(
@@ -904,6 +924,8 @@ export default function RichTimeline({ eventId: eventIdProp, items: initialItems
         <LegendItem color="#ff0066" label="Penalty Miss" type="pen_miss" isDark={isDark} />
         <LegendItem color="#00d4ff" label="Own Goal" type="own_goal" isDark={isDark} />
       </div>
+        </>
+      )}
     </div>
   );
 }
