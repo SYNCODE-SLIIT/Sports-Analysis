@@ -428,13 +428,10 @@ export function NlSearchResults({ query, data, isLoading, error }: NlSearchResul
       const metadata = findLeagueMetadata({ leagueName: matchAggregation.leagueName });
       if (metadata) {
         addLeague({
-          id: metadata.league_key ?? metadata.id ?? metadata.name,
+          id: String(metadata.league_key ?? metadata.id ?? metadata.name),
           name: metadata.name ?? matchAggregation.leagueName,
           country: metadata.country,
           slug: metadata.slug,
-          logo: metadata.leagueLogo,
-          season: metadata.season,
-          category: metadata.category,
         });
       } else {
         addLeague({
