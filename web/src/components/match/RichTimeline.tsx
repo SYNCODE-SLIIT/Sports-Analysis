@@ -63,9 +63,19 @@ const EVENT_ID_KEYS = [
 const ALLOWED_TYPES: TLItem["type"][] = ["goal", "own_goal", "pen_miss", "pen_score", "yellow", "red", "sub", "ht", "ft"];
 const ALLOWED_TYPES_SET = new Set<string>(ALLOWED_TYPES);
 
+const isMeaningfulTimelineItem = (item: TLItem | null | undefined): item is TLItem => {
+  if (!item) return false;
+  const minute = Number(item.minute);
+  if (item.type === "ht" || item.type === "ft") return true;
+  const hasDetail = Boolean((item.player ?? "").toString().trim() || (item.assist ?? "").toString().trim() || (item.note ?? "").toString().trim());
+  if (!hasDetail) return false;
+  if (!Number.isFinite(minute) || minute <= 0) return false;
+  return ALLOWED_TYPES_SET.has(item.type);
+};
+
 const sanitizeTimelineItems = (value: unknown): TLItem[] => {
   if (!Array.isArray(value)) return [];
-  return value
+  const normalized = value
     .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
     .map((entry) => {
       const minuteRaw = entry.minute ?? entry["minute_display"];
@@ -74,10 +84,10 @@ const sanitizeTimelineItems = (value: unknown): TLItem[] => {
         : toMinuteNumber(typeof minuteRaw === "string" ? minuteRaw : undefined) || 0;
 
       const teamValue = (entry.team ?? entry.side ?? entry["team_side"] ?? "home") as unknown;
-      const team = typeof teamValue === "string" && teamValue.toLowerCase().includes("away") ? "away" : "home";
+      const team: TLItem["team"] = typeof teamValue === "string" && teamValue.toLowerCase().includes("away") ? "away" : "home";
 
       const typeValue = String(entry.type ?? "").toLowerCase();
-      const type = ALLOWED_TYPES_SET.has(typeValue) ? (typeValue as TLItem["type"]) : "goal";
+      const type: TLItem["type"] = ALLOWED_TYPES_SET.has(typeValue) ? (typeValue as TLItem["type"]) : "goal";
 
       const playerRaw = entry.player ?? entry.player_name ?? entry.playerName;
       const player = typeof playerRaw === "string" && playerRaw.trim() ? playerRaw.trim() : undefined;
@@ -88,8 +98,10 @@ const sanitizeTimelineItems = (value: unknown): TLItem[] => {
       const noteRaw = entry.note ?? entry.info ?? entry.reason ?? entry.detail;
       const note = typeof noteRaw === "string" && noteRaw.trim() ? noteRaw.trim() : undefined;
 
-      return { minute, team, type, player, assist, note };
+      return { minute, team, type, player, assist, note } as TLItem;
     });
+
+  return normalized.filter(isMeaningfulTimelineItem);
 };
 
 const resolveEventId = (eventId?: string, raw?: BasicRecord | null): string | undefined => {
@@ -291,7 +303,7 @@ export default function RichTimeline({ eventId: eventIdProp, items: initialItems
 
   // Ensure we always have at least HT/FT anchors so the track is meaningful
   const baseItems = useMemo<TLItem[]>(() => {
-    const arr = Array.isArray(timelineItems) ? timelineItems.filter(Boolean) : [];
+    const arr = Array.isArray(timelineItems) ? timelineItems.filter(isMeaningfulTimelineItem) : [];
     if (!arr.length) return [];
     const next = [...arr];
     if (!next.some((item) => item.type === "ht")) {
@@ -560,7 +572,8 @@ export default function RichTimeline({ eventId: eventIdProp, items: initialItems
     return out;
   }, [matchRaw, cleaned]);
 
-  const allItems = synthesized && synthesized.length ? synthesized : cleaned;
+  const synthesizedFiltered = useMemo(() => (synthesized ?? []).filter(isMeaningfulTimelineItem), [synthesized]);
+  const allItems = synthesizedFiltered.length ? synthesizedFiltered : cleaned;
   const allClusters = useMemo(() => clusterItems(allItems), [allItems]);
   const hasRenderableEvents = useMemo(
     () => allItems.some((item) => item.type !== "ht" && item.type !== "ft"),
