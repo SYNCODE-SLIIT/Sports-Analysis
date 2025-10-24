@@ -32,25 +32,47 @@ Athlete is a multi-agent football intelligence platform that fuses live data, mo
 ├─ run_server.py
 ├─ sports-ai/
 │  └─ backend/app/
-│     ├─ main.py
-│     ├─ routers/router_collector.py
+│     ├─ main.py                       # FastAPI entrypoint
+│     ├─ routers/
+│     │  ├─ router_collector.py        # Intent router
+│     │  └─ chatbot.py                 # Chatbot-specific routes
 │     ├─ agents/
 │     │  ├─ analysis_agent.py
-│     │  ├─ collector_agent.py
-│     │  └─ collector.py
+│     │  ├─ collector.py               # TheSportsDB agent
+│     │  ├─ collector_agent.py         # AllSports agent
+│     │  ├─ highlight_agent.py
+│     │  └─ summarizer.py              # Markdown summarizer FastAPI app
 │     ├─ services/
-│     │  ├─ chatbot.py
+│     │  ├─ chatbot.py                 # Groq + Tavily orchestration
 │     │  ├─ highlight_search.py
-│     │  └─ news_feed.py
+│     │  ├─ news_feed.py
+│     │  └─ nl_search.py
+│     ├─ adapters/                     # Provider wrappers
+│     ├─ cache/                        # Fixture snapshots
 │     └─ utils/http_client.py
 └─ web/
-   ├─ src/app/               # Next.js routes, including /match, /my-teams, /chatbot, /admin
-   ├─ src/components/        # UI, chatbot, plan-aware layouts
-   ├─ src/lib/               # API helpers, Supabase clients, Stripe helpers
-   ├─ src/hooks/             # Plan, recommendations, win probability
-   ├─ supabase.sql           # Core schema and RPCs
-   ├─ subscriptions.sql      # Stripe subscription schema
-   └─ admin_controls.sql     # Admin tables and functions
+   ├─ src/app/
+   │  ├─ page.tsx                      # Landing page
+   │  ├─ live/page.tsx                 # Live fixture hub
+   │  ├─ upcoming-fixtures/page.tsx
+   │  ├─ leagues/page.tsx
+   │  ├─ news/page.tsx
+   │  ├─ match/[eventId]/page.tsx
+   │  ├─ my-teams/page.tsx
+   │  ├─ chatbot/page.tsx
+   │  └─ admin/                        # Admin dashboard routes
+   │     ├─ AdminDashboard.tsx
+   │     ├─ SubscriptionManager.tsx
+   │     ├─ overview/page.tsx
+   │     ├─ subscriptions/page.tsx
+   │     └─ system/page.tsx
+   ├─ src/components/                  # UI kit, chatbot, plan-aware layouts
+   ├─ src/lib/                         # API helpers, Supabase & Stripe clients
+   ├─ src/hooks/                       # Plan, recommendations, win probability
+   ├─ tools/backfill_logos.ts          # Logo ingestion helper
+   ├─ supabase.sql                     # Core schema and RPCs
+   ├─ subscriptions.sql                # Stripe subscription schema
+   └─ admin_controls.sql               # Admin tables and functions
 ```
 
 ## Environment configuration
