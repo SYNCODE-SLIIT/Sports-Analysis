@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -314,7 +314,7 @@ function SummaryList({ title, items }: { title: string; items: Option[] }) {
   );
 }
 
-export default function OnboardingPage() {
+function OnboardingInner() {
   const { supabase, user, loading, bumpPreferences } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
@@ -983,5 +983,19 @@ export default function OnboardingPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[80vh] flex items-center justify-center py-12">
+          <div className="text-sm text-muted-foreground">Loading preferences…</div>
+        </div>
+      }
+    >
+      <OnboardingInner />
+    </Suspense>
   );
 }

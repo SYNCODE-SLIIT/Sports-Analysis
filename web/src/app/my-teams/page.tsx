@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/components/AuthProvider";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import useDebouncedValue from "@/hooks/useDebouncedValue";
 import { searchLeagues, getTeam, getLeagueTable, postCollect, searchTeams } from "@/lib/collect";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { usePlanContext } from "@/components/PlanProvider";
 
 type SearchResult = {
   name: string;
@@ -281,6 +283,8 @@ const mergeLogoCache = (
 
 export default function MyTeamsPage() {
   const { user, supabase, loading } = useAuth();
+  const { plan } = usePlanContext();
+  const isPro = (plan ?? "free").toLowerCase() === "pro";
   const [teams, setTeams] = useState<string[]>([]);
   const [teamLogos, setTeamLogos] = useState<Record<string, string>>({});
   const [teamLogoCache, setTeamLogoCache] = useState<Record<string, string>>({});
@@ -295,6 +299,7 @@ export default function MyTeamsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [activeSearchTab, setActiveSearchTab] = useState<"team" | "league">("team");
   const dialogInputRef = useRef<HTMLInputElement | null>(null);
+  const [upgradeDialogOpen, setUpgradeDialogOpen] = useState(false);
 
   const resolveLogoForDisplay = (displayName: string, userMap: Record<string,string>, cachedMap: Record<string,string>) => {
     const exact = userMap?.[displayName];
@@ -747,11 +752,20 @@ export default function MyTeamsPage() {
     [leagues.length, teams.length, topSuggestions.length],
   );
 
+  const visibleTeams = useMemo(() => (isPro ? teams : teams.slice(0, 3)), [teams, isPro]);
+  const visibleLeagues = useMemo(() => (isPro ? leagues : leagues.slice(0, 3)), [leagues, isPro]);
+  const showTeamLimitNotice = !isPro && teams.length > 3;
+  const showLeagueLimitNotice = !isPro && leagues.length > 3;
+
   const addTeam = (t: string): boolean => {
     const name = t.trim();
     if (!name) return false;
     if (teams.includes(name)) {
       toast.info("Already added");
+      return false;
+    }
+    if (!isPro && teams.length >= 3) {
+      setUpgradeDialogOpen(true);
       return false;
     }
     setTeams(prev => [...prev, name]);
@@ -849,6 +863,10 @@ export default function MyTeamsPage() {
     if (!name) return;
     if (leagues.includes(name)) {
       toast.info('Already following');
+      return;
+    }
+    if (!isPro && leagues.length >= 3) {
+      setUpgradeDialogOpen(true);
       return;
     }
     setLeagues(prev => [...prev, name]);
@@ -1180,46 +1198,53 @@ export default function MyTeamsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {teams.map((team) => {
-                  const logo = resolveTeamLogo(team);
-                  return (
-                    <div
-                      key={team}
-                      className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-background/85 via-background/70 to-primary/10 p-4 transition hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10"
-                    >
-                      <div className="flex items-start gap-4">
-                        <Avatar className="mt-1 h-12 w-12 border border-primary/20 bg-background/90">
-                          {logo ? <AvatarImage src={logo} alt={team} /> : <AvatarFallback>{team.slice(0, 2).toUpperCase()}</AvatarFallback>}
-                        </Avatar>
-                        <div className="flex-1 space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="text-base font-semibold leading-tight">{team}</p>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{createTeamTagline(team)}</p>
+              <div className="space-y-3">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {visibleTeams.map((team) => {
+                    const logo = resolveTeamLogo(team);
+                    return (
+                      <div
+                        key={team}
+                        className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-background/85 via-background/70 to-primary/10 p-4 transition hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10"
+                      >
+                        <div className="flex items-start gap-4">
+                          <Avatar className="mt-1 h-12 w-12 border border-primary/20 bg-background/90">
+                            {logo ? <AvatarImage src={logo} alt={team} /> : <AvatarFallback>{team.slice(0, 2).toUpperCase()}</AvatarFallback>}
+                          </Avatar>
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-base font-semibold leading-tight">{team}</p>
+                                <p className="text-xs text-muted-foreground leading-relaxed">{createTeamTagline(team)}</p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="mt-[-4px] rounded-full border border-transparent bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                                onClick={() => removeTeam(team)}
+                                aria-label={`Remove ${team}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="mt-[-4px] rounded-full border border-transparent bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
-                              onClick={() => removeTeam(team)}
-                              aria-label={`Remove ${team}`}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-primary/80">
-                            {TEAM_CARD_TOKENS.map((token) => (
-                              <span key={`${team}-${token}`} className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5">
-                                {token}
-                              </span>
-                            ))}
+                            <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-primary/80">
+                              {TEAM_CARD_TOKENS.map((token) => (
+                                <span key={`${team}-${token}`} className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5">
+                                  {token}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                {showTeamLimitNotice && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing your first 3 pinned teams. Upgrade to Pro to manage the full list.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
@@ -1259,46 +1284,53 @@ export default function MyTeamsPage() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-4">
-                {leagues.map((league) => {
-                  const logo = resolveLeagueLogo(league);
-                  return (
-                    <div
-                      key={league}
-                      className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-background/85 via-background/70 to-primary/10 p-4 transition hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10"
-                    >
-                      <div className="flex items-start gap-4">
-                        <Avatar className="mt-1 h-11 w-11 border border-primary/20 bg-background/90">
-                          {logo ? <AvatarImage src={logo} alt={league} /> : <AvatarFallback>{league.slice(0, 2).toUpperCase()}</AvatarFallback>}
-                        </Avatar>
-                        <div className="flex-1 space-y-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="space-y-1">
-                              <p className="text-base font-semibold leading-tight">{league}</p>
-                              <p className="text-xs text-muted-foreground leading-relaxed">{createLeagueTagline(league)}</p>
+              <div className="space-y-3">
+                <div className="space-y-4">
+                  {visibleLeagues.map((league) => {
+                    const logo = resolveLeagueLogo(league);
+                    return (
+                      <div
+                        key={league}
+                        className="group relative overflow-hidden rounded-2xl border border-primary/15 bg-gradient-to-br from-background/85 via-background/70 to-primary/10 p-4 transition hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10"
+                      >
+                        <div className="flex items-start gap-4">
+                          <Avatar className="mt-1 h-11 w-11 border border-primary/20 bg-background/90">
+                            {logo ? <AvatarImage src={logo} alt={league} /> : <AvatarFallback>{league.slice(0, 2).toUpperCase()}</AvatarFallback>}
+                          </Avatar>
+                          <div className="flex-1 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <p className="text-base font-semibold leading-tight">{league}</p>
+                                <p className="text-xs text-muted-foreground leading-relaxed">{createLeagueTagline(league)}</p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="mt-[-4px] rounded-full border border-transparent bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
+                                onClick={() => unfollowLeague(league)}
+                                aria-label={`Unfollow ${league}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="mt-[-4px] rounded-full border border-transparent bg-background/70 text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-primary"
-                              onClick={() => unfollowLeague(league)}
-                              aria-label={`Unfollow ${league}`}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-primary/80">
-                            {LEAGUE_CARD_TOKENS.map((token) => (
-                              <span key={`${league}-${token}`} className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5">
-                                {token}
-                              </span>
-                            ))}
+                            <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-primary/80">
+                              {LEAGUE_CARD_TOKENS.map((token) => (
+                                <span key={`${league}-${token}`} className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5">
+                                  {token}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+                {showLeagueLimitNotice && (
+                  <p className="text-xs text-muted-foreground">
+                    Showing your first 3 leagues. Upgrade to Pro to follow every competition you track.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
@@ -1355,6 +1387,25 @@ export default function MyTeamsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={upgradeDialogOpen} onOpenChange={setUpgradeDialogOpen}>
+        <DialogContent className="border border-primary/40">
+          <DialogHeader>
+            <DialogTitle>Upgrade to save more favourites</DialogTitle>
+            <DialogDescription>
+              Start a 7-day free trial of Sports Analysis Pro to pin unlimited teams and leagues, plus unlock deeper analytics.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col sm:flex-row sm:justify-end gap-2">
+            <Button variant="outline" onClick={() => setUpgradeDialogOpen(false)}>
+              Maybe later
+            </Button>
+            <Button asChild>
+              <Link href="/pro">Upgrade to Pro</Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isAddDialogOpen} onOpenChange={(open) => setIsAddDialogOpen(open)}>
         <DialogContent className="neon-card border border-border/50 bg-background/95">
