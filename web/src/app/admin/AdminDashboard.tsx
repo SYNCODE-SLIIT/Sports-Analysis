@@ -885,13 +885,25 @@ export function AdminDashboard({ initialTab }: { initialTab: AdminTab }) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Button variant="secondary" className="neon-button" onClick={handleExport}>
-                    <ClipboardCheck className="mr-2 h-4 w-4" /> Export report
+                  <Button variant="default" className="surface-action group px-5" onClick={handleExport}>
+                    <ClipboardCheck className="mr-2 h-4 w-4 transition-transform duration-200 group-hover:scale-110" /> Export report
                   </Button>
-                  <Button variant="secondary" className="neon-button" onClick={refreshSnapshot} disabled={refreshing || snapshotLoading}>
-                    {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />} Refresh data
+                  <Button
+                    variant="outline"
+                    className="surface-action group px-5"
+                    onClick={refreshSnapshot}
+                    disabled={refreshing || snapshotLoading}
+                  >
+                    {refreshing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCcw className="mr-2 h-4 w-4 transition-transform duration-200 group-hover:rotate-12" />
+                    )}{" "}
+                    Refresh data
                   </Button>
-                  <Button variant="ghost" onClick={handleSignOut}>Sign out</Button>
+                  <Button variant="ghost" className="surface-action group px-5" onClick={handleSignOut}>
+                    Sign out
+                  </Button>
                 </div>
               </CardContent>
             </Card>

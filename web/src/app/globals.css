@@ -223,6 +223,7 @@
   @apply -translate-y-1 border-primary/50 shadow-xl;
 }
 
+.surface-action,
 .profile-action {
   @apply transition-all duration-200 ease-out shadow-sm hover:-translate-y-1 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-primary/30;
 }
