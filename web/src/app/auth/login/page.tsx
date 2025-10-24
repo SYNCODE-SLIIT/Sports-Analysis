@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
 import Link from "next/link";
+import { isAdminEmail } from "@/lib/admin";
 
 function LoginInner() {
   const { supabase } = useAuth();
@@ -56,6 +57,12 @@ function LoginInner() {
         } catch {}
       }
       toast.success("Signed in");
+      const isAdminUser = data?.user ? isAdminEmail(data.user.email ?? undefined) : false;
+      if (isAdminUser) {
+        router.replace("/admin/overview");
+        return;
+      }
+
       if (needsOnboarding) {
         const nextUrl = encodeURIComponent(desiredRedirect || "/");
         router.replace(`/onboarding?next=${nextUrl}`);

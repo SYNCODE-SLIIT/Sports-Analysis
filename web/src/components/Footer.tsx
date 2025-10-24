@@ -2,7 +2,11 @@ import Link from "next/link";
 import { ASSETS } from "@/lib/assets";
 import Image from "next/image";
 
-export function Footer() {
+type FooterProps = {
+  showExplore?: boolean;
+};
+
+export function Footer({ showExplore = true }: FooterProps) {
   return (
     <footer className="border-t bg-muted/30">
       <div className="container py-6 md:py-8">
@@ -41,29 +45,31 @@ export function Footer() {
           </div>
 
           {/* Explore */}
-          <div className="space-y-4 text-center flex flex-col items-center group">
-            <div className="space-y-0.5">
-              <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Explore</h4>
-              <span className="relative block h-0.5 w-14 overflow-hidden rounded-full">
-                <span className="absolute inset-0 h-full w-full bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 dark:from-white/30 dark:via-white/60 dark:to-white/30" />
-                <span className="absolute inset-0 h-full w-full translate-x-[-100%] bg-gradient-to-r from-white/0 via-white/60 to-white/0 dark:from-primary/10 dark:via-primary/60 dark:to-primary/10 animate-[marquee_2.8s_linear_infinite]" />
-              </span>
+          {showExplore ? (
+            <div className="space-y-4 text-center flex flex-col items-center group">
+              <div className="space-y-0.5">
+                <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Explore</h4>
+                <span className="relative block h-0.5 w-14 overflow-hidden rounded-full">
+                  <span className="absolute inset-0 h-full w-full bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 dark:from-white/30 dark:via-white/60 dark:to-white/30" />
+                  <span className="absolute inset-0 h-full w-full translate-x-[-100%] bg-gradient-to-r from-white/0 via-white/60 to-white/0 dark:from-primary/10 dark:via-primary/60 dark:to-primary/10 animate-[marquee_2.8s_linear_infinite]" />
+                </span>
+              </div>
+              <div className="flex flex-col items-center space-y-3 text-sm">
+                <Link href="/live" className="text-muted-foreground hover:text-primary transition-colors">
+                  Live Matches
+                </Link>
+                <Link href="/leagues" className="text-muted-foreground hover:text-primary transition-colors">
+                  League Explorer
+                </Link>
+                <Link href="/about" className="text-muted-foreground hover:text-primary transition-colors">
+                  About Us
+                </Link>
+                <Link href="/news" className="text-muted-foreground hover:text-primary transition-colors">
+                  News & Trends
+                </Link>
+              </div>
             </div>
-            <div className="flex flex-col items-center space-y-3 text-sm">
-              <Link href="/live" className="text-muted-foreground hover:text-primary transition-colors">
-                Live Matches
-              </Link>
-              <Link href="/leagues" className="text-muted-foreground hover:text-primary transition-colors">
-                League Explorer
-              </Link>
-              <Link href="/about" className="text-muted-foreground hover:text-primary transition-colors">
-                About Us
-              </Link>
-              <Link href="/news" className="text-muted-foreground hover:text-primary transition-colors">
-                News & Trends
-              </Link>
-            </div>
-          </div>
+          ) : null}
 
           {/* Media */}
           <div className="space-y-4 text-center flex flex-col items-center group">

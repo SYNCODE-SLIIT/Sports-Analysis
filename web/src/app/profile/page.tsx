@@ -425,7 +425,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!loading && user && isAdmin) {
-      router.replace("/admin");
+      router.replace("/admin/overview");
     }
   }, [isAdmin, loading, router, user]);
 
