@@ -2901,7 +2901,8 @@ function parseOddsResponse(res: { data?: unknown } | null): DataObject[] {
   if (!data) return [];
   // Handle nested structure: { data: { result: { [matchId]: [ ...odds ] } } }
   if (typeof data === "object" && data !== null && 'result' in data) {
-    const result = (data as any).result;
+  const dataRecord = data as Record<string, unknown>;
+  const result = dataRecord.result;
     if (result && typeof result === 'object') {
       const firstArr = Object.values(result)[0];
       if (Array.isArray(firstArr)) return toDataObjectArray(firstArr);
