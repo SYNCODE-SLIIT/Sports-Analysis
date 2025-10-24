@@ -1,5 +1,5 @@
 [
-  {
+{
     "id": 1,
     "slug": "fifa_world_cup",
     "name": "World Cup",
@@ -16,6 +16,352 @@
   },
   {
     "id": 2,
+    "slug": "uefa_world_cup_qualifiers",
+    "name": "UEFA World Cup Qualifiers",
+    "country": "Worldcup",
+    "confederation": "UEFA",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 4,
+    "aliases": [
+      "European World Cup Qualifiers"
+    ],
+    "active": true,
+    "league_key": "24"
+  },
+  {
+    "id": 3,
+    "slug": "caf_world_cup_qualifiers",
+    "name": "CAF World Cup Qualifiers",
+    "country": "Worldcup",
+    "confederation": "CAF",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 5,
+    "aliases": [],
+    "active": true,
+    "league_key": "21"
+  },
+  {
+    "id": 4,
+    "slug": "afc_world_cup_qualifiers",
+    "name": "AFC World Cup Qualifiers",
+    "country": "Worldcup",
+    "confederation": "AFC",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 6,
+    "aliases": [],
+    "active": true,
+    "league_key": "22"
+  },
+  {
+    "id": 5,
+    "slug": "concacaf_world_cup_qualifiers",
+    "name": "CONCACAF World Cup Qualifiers",
+    "country": "Worldcup",
+    "confederation": "CONCACAF",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 7,
+    "aliases": [],
+    "active": true,
+    "league_key": "23"
+  },
+  {
+    "id": 6,
+    "slug": "conmebol_copa_america",
+    "name": "CONMEBOL Copa America",
+    "country": "intl",
+    "confederation": "CONMEBOL",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 8,
+    "aliases": [
+      "Copa America"
+    ],
+    "active": true,
+    "league_key": "17"
+  },
+  {
+    "id": 7,
+    "slug": "concacaf_gold_cup",
+    "name": "CONCACAF Gold Cup",
+    "country": "intl",
+    "confederation": "CONCACAF",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 9,
+    "aliases": [
+      "Gold Cup"
+    ],
+    "active": true,
+    "league_key": "15"
+  },
+  {
+    "id": 8,
+    "slug": "africa_cup_of_nations",
+    "name": "Africa Cup of Nations",
+    "country": "intl",
+    "confederation": "CAF",
+    "type": "international",
+    "category": "global_tournament",
+    "fame_rank": 10,
+    "aliases": [
+      "AFCON"
+    ],
+    "active": true,
+    "league_key": "19"
+  },
+    {
+    "id": 9,
+    "slug": "uefa_european_championship",
+    "name": "UEFA European Championship",
+    "country": "Europe",
+    "confederation": "UEFA",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 11,
+    "aliases": [ "Euro" ],
+    "active": true,
+    "league_key": "1"
+  },
+  {
+    "id": 10,
+    "slug": "afc_asian_cup",
+    "name": "AFC Asian Cup",
+    "country": "Asia",
+    "confederation": "AFC",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 12,
+    "aliases": [],
+    "active": true,
+    "league_key": "347"
+  },
+  {
+    "id": 11,
+    "slug": "ofc_mens_nations_cup",
+    "name": "OFC Men’s Nations Cup",
+    "country": "Oceania",
+    "confederation": "OFC",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 13,
+    "aliases": [],
+    "active": true,
+    "league_key": "??"
+  },
+  {
+    "id": 12,
+    "slug": "caf_africa_cup_of_nations",
+    "name": "Africa Cup of Nations",
+    "country": "Africa",
+    "confederation": "CAF",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 14,
+    "aliases": [ "AFCON" ],
+    "active": true,
+    "league_key": "29"
+  },
+  {
+    "id": 13,
+    "slug": "concacaf_gold_cup",
+    "name": "CONCACAF Gold Cup",
+    "country": "North America",
+    "confederation": "CONCACAF",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 15,
+    "aliases": [ "Gold Cup" ],
+    "active": true,
+    "league_key": "15"
+  },
+  {
+    "id": 14,
+    "slug": "conmebol_copa_america",
+    "name": "CONMEBOL Copa América",
+    "country": "South America",
+    "confederation": "CONMEBOL",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 16,
+    "aliases": [ "Copa America" ],
+    "active": true,
+    "league_key": "17"
+  },
+  {
+    "id": 15,
+    "slug": "uefa_womens_championship",
+    "name": "UEFA Women’s Championship",
+    "country": "Europe",
+    "confederation": "UEFA",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 17,
+    "aliases": [],
+    "active": true,
+    "league_key": "499"
+  },
+  {
+    "id": 16,
+    "slug": "conmebol_copa_america_femenina",
+    "name": "CONMEBOL Copa América Femenina",
+    "country": "South America",
+    "confederation": "CONMEBOL",
+    "type": "international",
+    "category": "continental_championship",
+    "fame_rank": 18,
+    "aliases": [],
+    "active": true,
+    "league_key": "7553"
+  },
+  {
+    "id": 17,
+    "slug": "english_premier_league",
+    "name": "Premier League",
+    "country": "England",
+    "confederation": "UEFA",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 1,
+    "aliases": ["EPL", "Barclays Premier League"],
+    "active": true,
+    "league_key": "152"
+  },
+  {
+    "id": 18,
+    "slug": "la_liga",
+    "name": "La Liga",
+    "country": "Spain",
+    "confederation": "UEFA",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 2,
+    "aliases": ["Primera División", "LaLiga EA Sports"],
+    "active": true,
+    "league_key": "302"
+  },
+  {
+    "id": 19,
+    "slug": "bundesliga",
+    "name": "Bundesliga",
+    "country": "Germany",
+    "confederation": "UEFA",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 3,
+    "aliases": [],
+    "active": true,
+    "league_key": "175"
+  },
+  {
+    "id": 20,
+    "slug": "serie_a",
+    "name": "Serie A",
+    "country": "Italy",
+    "confederation": "UEFA",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 4,
+    "aliases": ["Serie A TIM"],
+    "active": true,
+    "league_key": "207"
+  },
+  {
+    "id": 21,
+    "slug": "ligue_1",
+    "name": "Ligue 1",
+    "country": "France",
+    "confederation": "UEFA",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 5,
+    "aliases": ["Ligue 1 Uber Eats"],
+    "active": true,
+    "league_key": "168"
+  },
+  {
+    "id": 22,
+    "slug": "campeonato_brasileiro_serie_a",
+    "name": "Campeonato Brasileiro Série A",
+    "country": "Brazil",
+    "confederation": "CONMEBOL",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 6,
+    "aliases": ["Brasileirão"],
+    "active": true,
+    "league_key": "99"
+  },
+  {
+    "id": 23,
+    "slug": "chinese_super_league",
+    "name": "Chinese Super League",
+    "country": "China",
+    "confederation": "AFC",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 7,
+    "aliases": ["CSL"],
+    "active": true,
+    "league_key": "118"
+  },
+  {
+    "id": 24,
+    "slug": "saudi_pro_league",
+    "name": "Saudi Pro League",
+    "country": "Saudi Arabia",
+    "confederation": "AFC",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 8,
+    "aliases": ["Roshn Saudi League"],
+    "active": true,
+    "league_key": "278"
+  },
+  {
+    "id": 25,
+    "slug": "major_league_soccer",
+    "name": "Major League Soccer",
+    "country": "USA",
+    "confederation": "CONCACAF",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 9,
+    "aliases": ["MLS"],
+    "active": true,
+    "league_key": "332"
+  },
+  {
+    "id": 26,
+    "slug": "liga_mx",
+    "name": "Liga MX",
+    "country": "Mexico",
+    "confederation": "CONCACAF",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 10,
+    "aliases": ["Liga MX BBVA Bancomer"],
+    "active": true,
+    "league_key": "235"
+  },
+  {
+    "id": 27,
+    "slug": "argentine_primera_division",
+    "name": "Liga Profesional Argentina",
+    "country": "Argentina",
+    "confederation": "CONMEBOL",
+    "type": "domestic",
+    "category": "domestic",
+    "fame_rank": 11,
+    "aliases": ["Primera División Argentina"],
+    "active": true,
+    "league_key": "44"
+  },
+  {
+    "id": 28,
     "slug": "uefa_champions_league",
     "name": "UEFA Champions League",
     "country": "eurocups",
@@ -30,22 +376,7 @@
     "league_key": "3"
   },
   {
-    "id": 3,
-    "slug": "uefa_european_championship",
-    "name": "UEFA European Championship",
-    "country": "eurocups",
-    "confederation": "UEFA",
-    "type": "international",
-    "category": "global_tournament",
-    "fame_rank": 3,
-    "aliases": [
-      "EURO"
-    ],
-    "active": true,
-    "league_key": "1"
-  },
-  {
-    "id": 4,
+    "id": 29,
     "slug": "uefa_europa_league",
     "name": "UEFA Europa League",
     "country": "eurocups",
@@ -60,7 +391,7 @@
     "league_key": "4"
   },
   {
-    "id": 5,
+    "id": 30,
     "slug": "uefa_nations_league",
     "name": "UEFA Nations League",
     "country": "eurocups",
@@ -73,7 +404,7 @@
     "league_key": "633"
   },
   {
-    "id": 6,
+    "id": 31,
     "slug": "uefa_europa_conference_league",
     "name": "UEFA Conference League",
     "country": "eurocups",
@@ -86,363 +417,6 @@
     ],
     "active": true,
     "league_key": "683"
-  },
-  {
-    "id": 7,
-    "slug": "english_premier_league",
-    "name": "Premier League",
-    "country": "England",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "top_europe",
-    "fame_rank": 7,
-    "aliases": [
-      "EPL"
-    ],
-    "active": true,
-    "strength_score": 92.6,
-    "league_key": "152"
-  },
-  {
-    "id": 8,
-    "slug": "la_liga",
-    "name": "La Liga",
-    "country": "Spain",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "top_europe",
-    "fame_rank": 8,
-    "aliases": [
-      "Primera División",
-      "La Liga"
-    ],
-    "active": true,
-    "league_key": "302"
-  },
-  {
-    "id": 9,
-    "slug": "serie_a",
-    "name": "Serie A",
-    "country": "Italy",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "top_europe",
-    "fame_rank": 9,
-    "aliases": [
-      "Serie A"
-    ],
-    "active": true,
-    "league_key": "207"
-  },
-  {
-    "id": 10,
-    "slug": "bundesliga",
-    "name": "Bundesliga",
-    "country": "Germany",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "top_europe",
-    "fame_rank": 10,
-    "aliases": [],
-    "active": true,
-    "league_key": "175"
-  },
-  {
-    "id": 11,
-    "slug": "ligue_1",
-    "name": "Ligue 1",
-    "country": "France",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "top_europe",
-    "fame_rank": 11,
-    "aliases": [
-      "Ligue 1"
-    ],
-    "active": true,
-    "league_key": "168"
-  },
-  {
-    "id": 12,
-    "slug": "campeonato_brasileiro_serie_a",
-    "name": "Campeonato Brasileiro Série A",
-    "country": "Brazil",
-    "confederation": "CONMEBOL",
-    "type": "domestic",
-    "category": "south_america",
-    "fame_rank": 12,
-    "aliases": [
-      "Brasileirão"
-    ],
-    "active": true,
-    "league_key": "99"
-  },
-  {
-    "id": 13,
-    "slug": "argentine_primera_division",
-    "name": "Liga Profesional Argentina",
-    "country": "Argentina",
-    "confederation": "CONMEBOL",
-    "type": "domestic",
-    "category": "south_america",
-    "fame_rank": 13,
-    "aliases": [
-      "Primera División Argentina"
-    ],
-    "active": true,
-    "league_key": "44"
-  },
-  {
-    "id": 14,
-    "slug": "primeira_liga",
-    "name": "Primeira Liga",
-    "country": "Portugal",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 14,
-    "aliases": [
-      "Liga Portugal"
-    ],
-    "active": true,
-    "league_key": "266"
-  },
-  {
-    "id": 15,
-    "slug": "eredivisie",
-    "name": "Eredivisie",
-    "country": "Netherlands",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 15,
-    "aliases": [],
-    "active": true,
-    "league_key": "244"
-  },
-  {
-    "id": 16,
-    "slug": "jupiler_pro_league",
-    "name": "First Division A",
-    "country": "Belgium",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 16,
-    "aliases": [
-      "Belgian Pro League"
-    ],
-    "active": true,
-    "league_key": "63"
-  },
-  {
-    "id": 17,
-    "slug": "super_lig_turkey",
-    "name": "Süper Lig",
-    "country": "Turkey",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 17,
-    "aliases": [
-      "Turkish Super Lig"
-    ],
-    "active": true,
-    "league_key": "322"
-  },
-  {
-    "id": 18,
-    "slug": "scottish_premiership",
-    "name": "Scottish Premiership",
-    "country": "Scotland",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 18,
-    "aliases": [],
-    "active": true,
-    "league_key": "279"
-  },
-  {
-    "id": 19,
-    "slug": "danish_superliga",
-    "name": "Danish Superliga",
-    "country": "Denmark",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 19,
-    "aliases": [],
-    "active": true,
-    "league_key": "135"
-  },
-  {
-    "id": 20,
-    "slug": "swiss_super_league",
-    "name": "Super League",
-    "country": "Switzerland",
-    "confederation": "UEFA",
-    "type": "domestic",
-    "category": "other_europe",
-    "fame_rank": 20,
-    "aliases": [],
-    "active": true,
-    "league_key": "308"
-  },
-  {
-    "id": 21,
-    "slug": "liga_mx",
-    "name": "Liga MX",
-    "country": "Mexico",
-    "confederation": "CONCACAF",
-    "type": "domestic",
-    "category": "north_america",
-    "fame_rank": 21,
-    "aliases": [
-      "Liga MX"
-    ],
-    "active": true,
-    "league_key": "235"
-  },
-  {
-    "id": 22,
-    "slug": "mls",
-    "name": "MLS",
-    "country": "USA",
-    "confederation": "CONCACAF",
-    "type": "domestic",
-    "category": "north_america",
-    "fame_rank": 22,
-    "aliases": [
-      "MLS"
-    ],
-    "active": true,
-    "league_key": "332"
-  },
-  {
-    "id": 23,
-    "slug": "saudi_pro_league",
-    "name": "Saudi League",
-    "country": "Saudi Arabia",
-    "confederation": "AFC",
-    "type": "domestic",
-    "category": "asia",
-    "fame_rank": 23,
-    "aliases": [],
-    "active": true,
-    "league_key": "278"
-  },
-  {
-    "id": 24,
-    "slug": "chinese_super_league",
-    "name": "Chinese Super League",
-    "country": "China",
-    "confederation": "AFC",
-    "type": "domestic",
-    "category": "asia",
-    "fame_rank": 24,
-    "aliases": [],
-    "active": true,
-    "league_key": "118"
-  },
-  {
-    "id": 25,
-    "slug": "a_league",
-    "name": "A-League Men",
-    "country": "Australia",
-    "confederation": "AFC",
-    "type": "domestic",
-    "category": "asia",
-    "fame_rank": 25,
-    "aliases": [
-      "A League"
-    ],
-    "active": true,
-    "league_key": "49"
-  },
-  {
-    "id": 26,
-    "slug": "j1_league",
-    "name": "J1 League",
-    "country": "Japan",
-    "confederation": "AFC",
-    "type": "domestic",
-    "category": "asia",
-    "fame_rank": 26,
-    "aliases": [],
-    "active": true,
-    "league_key": "209"
-  },
-  {
-    "id": 27,
-    "slug": "k_league_1",
-    "name": "K League 1",
-    "country": "Korea Republic",
-    "confederation": "AFC",
-    "type": "domestic",
-    "category": "asia",
-    "fame_rank": 27,
-    "aliases": [],
-    "active": true,
-    "league_key": "219"
-  },
-  {
-    "id": 28,
-    "slug": "cafa_champions_league",
-    "name": "CAF Champions League",
-    "country": "intl",
-    "confederation": "CAF",
-    "type": "continental",
-    "category": "africa_competition",
-    "fame_rank": 28,
-    "aliases": [
-      "CAF Champions"
-    ],
-    "active": true,
-    "league_key": "346"
-  },
-  {
-    "id": 29,
-    "slug": "afc_champions_league",
-    "name": "AFC Champions League",
-    "country": "intl",
-    "confederation": "AFC",
-    "type": "continental",
-    "category": "asia_competition",
-    "fame_rank": 29,
-    "aliases": [
-      "ACL"
-    ],
-    "active": true,
-    "league_key": "727"
-  },
-  {
-    "id": 30,
-    "slug": "concacaf_champions_cup",
-    "name": "CONCACAF Champions Cup",
-    "country": "intl",
-    "confederation": "CONCACAF",
-    "type": "continental",
-    "category": "north_america_competition",
-    "fame_rank": 30,
-    "aliases": [],
-    "active": true,
-    "league_key": "5"
-  },
-  {
-    "id": 31,
-    "slug": "indian_super_league",
-    "name": "Indian Super League",
-    "country": "India",
-    "confederation": "AFC",
-    "type": "domestic",
-    "category": "asia",
-    "fame_rank": 31,
-    "aliases": [
-      "ISL"
-    ],
-    "active": true,
-    "league_key": "566"
   },
   {
     "id": 32,
