@@ -197,7 +197,7 @@ export function ChatbotPanel() {
   const promptsToRender = (suggestedPrompts.length > 0 ? suggestedPrompts : FALLBACK_PROMPTS).slice(0, 4);
 
   return (
-    <Card className="shadow-lg border-primary/10 bg-background/70 backdrop-blur flex flex-col h-full min-h-[75vh]">
+    <Card className="shadow-2xl border-primary/20 bg-gradient-to-br from-background/95 to-background/80 backdrop-blur-md flex flex-col h-full min-h-[75vh]">
       <CardHeader className="pb-1.5 pt-2 flex-shrink-0 hidden">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -218,10 +218,10 @@ export function ChatbotPanel() {
           )}
         </div>
       </CardHeader>
-      <CardContent className="pt-2 pb-2 flex flex-col flex-1 min-h-0 relative overflow-hidden">
-        <div className="flex-1 min-h-0 mb-3">
+      <CardContent className="pt-1.5 pb-1 px-3 flex flex-col flex-1 min-h-0 relative overflow-hidden">
+        <div className="flex-1 min-h-0 mb-2">
           {messages.length > 0 ? (
-            <ScrollArea className="h-full rounded-xl border bg-muted/30 p-4">
+            <ScrollArea className="h-full rounded-2xl border border-primary/10 bg-muted/20 shadow-inner p-3">
               <div className="space-y-4">
                 {messages.map((msg) => (
                   <div
@@ -231,10 +231,10 @@ export function ChatbotPanel() {
                   >
                     <div
                       className={cn(
-                        "rounded-lg border p-3 shadow-sm max-w-full sm:max-w-[75%] break-words",
+                        "rounded-2xl border p-3 shadow-md max-w-full sm:max-w-[75%] break-words",
                         msg.role === "user"
-                          ? "border-primary/40 bg-primary/10 text-primary-foreground/90 dark:text-primary-foreground"
-                          : "border-border bg-background"
+                          ? "border-primary/40 bg-gradient-to-br from-primary/20 to-primary/10 text-primary-foreground/90 dark:text-primary-foreground shadow-primary/20"
+                          : "border-border bg-gradient-to-br from-background to-muted/40 shadow-lg"
                       )}
                     >
                       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -256,7 +256,7 @@ export function ChatbotPanel() {
                             {msg.citations.map((cite, idx) => (
                               <li
                                 key={cite.url ?? idx}
-                                className="rounded-md border border-border/60 bg-muted/20 p-2 break-words max-w-full overflow-hidden"
+                                className="rounded-xl border border-border/60 bg-muted/30 p-2 break-words max-w-full overflow-hidden shadow-sm"
                               >
                                 <a
                                   href={cite.url ?? undefined}
@@ -289,7 +289,7 @@ export function ChatbotPanel() {
               </div>
             </ScrollArea>
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-6 rounded-xl border border-dashed border-primary/30 bg-muted/15 p-8 text-center">
+            <div className="flex h-full flex-col items-center justify-center gap-6 rounded-2xl border border-dashed border-primary/30 bg-gradient-to-br from-muted/20 to-muted/5 shadow-inner p-6 text-center">
               <div className="space-y-3">
                 <h3 className="text-base font-semibold text-foreground">Ask about the sports world</h3>
                 <p className="text-sm text-muted-foreground">Try one of these prompts to explore matches, players, and trends.</p>
@@ -300,7 +300,7 @@ export function ChatbotPanel() {
                     key={prompt}
                     type="button"
                     variant="outline"
-                    className="h-auto justify-start whitespace-normal px-4 py-3 text-left text-sm"
+                    className="h-auto justify-start whitespace-normal px-4 py-3 text-left text-sm rounded-xl shadow-sm hover:shadow-md transition-shadow"
                     onClick={() => handleSuggestionSelect(prompt)}
                     disabled={isLoading}
                   >
@@ -319,35 +319,21 @@ export function ChatbotPanel() {
           )}
         </div>
 
-        <div className="mt-auto space-y-1.5">
+        <div className="mt-auto space-y-1">
           {error && (
-            <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-1.5 text-xs text-red-600 dark:text-red-400">
+            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 p-1.5 text-xs text-red-600 dark:text-red-400 shadow-sm">
               {error}
             </div>
           )}
 
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80 text-center sm:text-left">
-            ATHLETE AI can make mistakes
-          </p>
           <form onSubmit={handleSubmit} className="space-y-1.5">
-            <textarea
-              id="question"
-              name="question"
-              ref={inputRef}
-              value={inputValue}
-              onChange={(event) => setInputValue(event.currentTarget.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask a question... (Enter to send, Shift+Enter for new line)"
-              rows={2}
-              className="w-full resize-none rounded-lg border border-input bg-background px-2.5 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
-            />
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center">
               <label className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
                 Depth
                 <select
                   value={topK}
                   onChange={(event) => setTopK(Number(event.currentTarget.value))}
-                  className="rounded-md border border-input bg-background px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                  className="rounded-xl border border-input bg-background px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                 >
                   {[3, 5, 7, 10].map((value) => (
                     <option key={value} value={value}>
@@ -356,21 +342,42 @@ export function ChatbotPanel() {
                   ))}
                 </select>
               </label>
-              <Button type="submit" size="sm" disabled={isLoading}>
+            </div>
+            <div className="relative flex items-center">
+              <textarea
+                id="question"
+                name="question"
+                ref={inputRef}
+                value={inputValue}
+                onChange={(event) => setInputValue(event.currentTarget.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask a question... (Enter to send, Shift+Enter for new line)"
+                rows={1}
+                className="w-full resize-none rounded-full border border-input bg-background/50 backdrop-blur-sm pl-4 pr-24 py-2.5 text-sm shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:shadow-lg transition-shadow"
+              />
+              <Button 
+                type="submit" 
+                size="sm" 
+                disabled={isLoading} 
+                className="absolute right-1.5 rounded-full px-4 shadow-md hover:shadow-lg transition-shadow h-8"
+              >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Thinking…
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    <span className="text-xs">Thinking…</span>
                   </>
                 ) : (
                   <>
-                    <Send className="mr-2 h-4 w-4" />
-                    Ask
+                    <Send className="mr-1.5 h-3.5 w-3.5" />
+                    <span className="text-xs">Ask</span>
                   </>
                 )}
               </Button>
             </div>
           </form>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground/80 text-center pt-0">
+            ATHLETE AI can make mistakes
+          </p>
         </div>
       </CardContent>
     </Card>
