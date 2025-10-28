@@ -75,6 +75,13 @@ Athlete is a multi-agent football intelligence platform that fuses live data, mo
    └─ admin_controls.sql               # Admin tables and functions
 ```
 
+
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=SYNCODE-SLIIT/Sports-Analysis)](https://github.com/SYNCODE-SLIIT/Sports-Analysis/graphs/contributors)
+
+See [all contributors](https://github.com/SYNCODE-SLIIT/Sports-Analysis/graphs/contributors).
+
 ## Environment configuration
 
 Create two env files:
