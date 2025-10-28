@@ -82,6 +82,15 @@ Athlete is a multi-agent football intelligence platform that fuses live data, mo
 
 See [all contributors](https://github.com/SYNCODE-SLIIT/Sports-Analysis/graphs/contributors).
 
+### Submitted By
+
+| IT Number   | Student Name      | Student Email Address           |
+|------------ |------------------|---------------------------------|
+| IT23439078  | Perera E V       | it23439078@my.sliit.lk          |
+| IT23157132  | Jayakody J A S R | it23157132@my.sliit.lk          |
+| IT23148086  | Perera P D       | it23148086@my.sliit.lk          |
+| IT23141506  | Liyanage L N P   | it23141506@my.sliit.lk          |
+
 ## Environment configuration
 
 Create two env files:
