@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Suspense } from "react";
+import { Analytics } from "@vercel/analytics/next";
 import { Providers } from "@/components/providers";
 import { AuthProvider } from "@/components/AuthProvider";
 import { Navbar } from "@/components/Navbar";
@@ -71,7 +72,8 @@ export default function RootLayout({
               </PlanAwareLayout>
             </PlanProvider>
           </AuthProvider>
-        </Providers>
+  </Providers>
+  <Analytics />
       </body>
     </html>
   );
